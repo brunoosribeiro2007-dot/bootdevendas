@@ -17,6 +17,9 @@ const whatsappPublisher = require('./publishers/whatsapp.publisher');
 // Healthcheck
 app.get('/health', (req, res) => res.json({ status: 'OK' }));
 
+// Redireciona a raiz para o qr code
+app.get('/', (req, res) => res.redirect('/qr'));
+
 // QR Code Endpoint
 app.get('/qr', (req, res) => {
     if (whatsappPublisher.isReady) {
