@@ -56,10 +56,8 @@ app.get('/qr', (req, res) => {
                     height: 256
                 });
 
-                // Tenta recarregar a cada 10 segundos caso mude
-                setTimeout(() => {
-                    window.location.reload();
-                }, 10000);
+                // Dica: Se o QR Code expirar, você pode recarregar a página manualmente no botão do navegador
+                console.log('Esperando o escaneamento na nuvem...');
             </script>
         </body>
         </html>

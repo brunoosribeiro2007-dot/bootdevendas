@@ -11,7 +11,16 @@ class WhatsappPublisher extends BasePublisher {
       authStrategy: new LocalAuth(),
       puppeteer: {
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu']
+          args: [
+              '--no-sandbox', 
+              '--disable-setuid-sandbox', 
+              '--disable-dev-shm-usage', 
+              '--disable-accelerated-2d-canvas', 
+              '--no-first-run', 
+              '--disable-gpu',
+              '--no-zygote'
+          ],
+          authTimeoutMs: 60000
       }
     });
 
