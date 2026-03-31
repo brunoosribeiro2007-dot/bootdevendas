@@ -19,7 +19,6 @@ class FormatterService {
     let finalLink = mlLink;
 
     try {
-        // Encurtador seguro para links de afiliados
         const response = await axios.get(`https://is.gd/create.php?format=json&url=${encodeURIComponent(mlLink)}`);
         if (response.data && response.data.shorturl) {
             finalLink = response.data.shorturl;
@@ -28,7 +27,10 @@ class FormatterService {
         logger.warn('Falha ao encurtar o link com is.gd. Mantendo link do ML.', err.message);
     }
 
-    return `🔥 *OFERTA DO DIA* 🔥\n\n📦 *${product.title}*\n\n💰 *Por Apenas:* R$ ${product.price.toFixed(2)}\n\n🛒 *Compre aqui:* ${finalLink}`;
+    const oldPrice = (product.price * 1.4).toFixed(2); // Simula preço original para layout
+    const discount = "40%"; // Simula desconto para layout
+
+    return `🚨 *OFERTA RELÂMPAGO MERCADO LIVRE*\n\n*${product.title}*\n\n✖️ De: R$ ${oldPrice}\n🤑 Por: R$ ${product.price.toFixed(2)} 😱🔥 ${discount} OFF\n\n🏷️ CUPOM: *VALECUPOM*\n\n🚛 *FRETE GRÁTIS*\n\n⏰ *PISCOU, PERDEU! APROVEITEM!!*\n\n🔗🛒👇\n${finalLink}`;
   }
 }
 
