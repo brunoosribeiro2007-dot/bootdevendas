@@ -10,8 +10,7 @@ class WhatsappPublisher extends BasePublisher {
     this.client = new Client({
       authStrategy: new LocalAuth(),
       webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        type: 'none'
       },
       puppeteer: {
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
@@ -22,7 +21,8 @@ class WhatsappPublisher extends BasePublisher {
               '--disable-accelerated-2d-canvas', 
               '--no-first-run', 
               '--disable-gpu',
-              '--no-zygote'
+              '--no-zygote',
+              '--single-process'
           ],
           authTimeoutMs: 60000
       }
@@ -48,7 +48,9 @@ class WhatsappPublisher extends BasePublisher {
     });
 
     // Iniciar o cliente do wpp localmente no momento que este arquivo for chamado
-    this.client.initialize();
+    this.client.initialize().catch(err => {
+        logger.error('Falha crítica ao inicializar o WhatsApp Web (Chromium/Puppeteer):', err);
+    });
   }
 
   async publish(item) {
