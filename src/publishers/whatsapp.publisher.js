@@ -16,15 +16,18 @@ class WhatsappPublisher extends BasePublisher {
     });
 
     this.isReady = false;
+    this.latestQr = null;
 
     this.client.on('qr', (qr) => {
         logger.info('🚀 ALERTA: NOVO QR CODE DO WHATSAPP GERADO! Escaneie pelo seu celular:');
         qrcode.generate(qr, { small: true });
+        this.latestQr = qr;
     });
 
     this.client.on('ready', () => {
         logger.info('✅ WhatsApp conectado com sucesso! Pronto para postar!');
         this.isReady = true;
+        this.latestQr = null;
     });
 
     this.client.on('auth_failure', () => {
