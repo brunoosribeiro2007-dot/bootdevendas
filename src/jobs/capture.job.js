@@ -25,6 +25,9 @@ const captureTask = async () => {
       if (added) addedCount++;
     }
 
+    const { publishTask } = require('./publisher.job');
+    publishTask();
+
     logger.info(`Job de captura finalizado. ${addedCount} novos produtos adicionados à fila pendente.`);
   } catch (error) {
     logger.error('Erro no job de captura:', error);
