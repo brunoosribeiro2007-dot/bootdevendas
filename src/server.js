@@ -14,32 +14,32 @@ const { startCleanupJob, cleanupTask } = require('./jobs/cleanup.job');
 
 const startServer = async () => {
   try {
-    // Inicializar o banco de dados
+    // 1. Iniciar servidor web IMEDIATAMENTE para o Render não derrubar por timeout de porta
+    app.listen(env.port, () => {
+      logger.info(`🚀 Servidor pronto e escutando na porta ${env.port}`);
+    });
+
+    // 2. Inicializar o banco de dados
     await initializeDB();
     
-    // Iniciar jobs
+    // 3. Iniciar jobs
     startCleanupJob();
     startCaptureJob();
     startPublishJob();
 
-    // Executar limpeza inicial como precaução
+    // 4. Executar limpeza inicial como precaução
     await cleanupTask();
 
-    // Disparar uma captura inicial daqui a 120 segundos (2 minutos)
-    // Isso dá tempo do WhatsApp conectar/gerar QR sem competir por RAM com o Scraper.
+    // 5. Disparar uma captura inicial daqui a 120 segundos (2 minutos)
     setTimeout(() => {
-        logger.info('🚀 Disparando captura inicial segura (após delay de 120s para equilibrar RAM)...');
+        logger.info('🛰️ Iniciando primeira captura de ofertas...');
         const { captureTask } = require('./jobs/capture.job');
         captureTask();
     }, 120000);
 
-    // Iniciar servidor web
-    app.listen(env.port, () => {
-      logger.info(`Servidor rodando na porta ${env.port}`);
-    });
   } catch (error) {
-    logger.error('Falha ao iniciar a aplicação:', error);
-    process.exit(1);
+    logger.error('Falha crítica na inicialização:', error);
+    // Não dar process.exit(1) imediatamente aqui para tentar manter o servidor web vivo se possível
   }
 };
 
