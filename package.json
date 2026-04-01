@@ -20,7 +20,8 @@
     "@whiskeysockets/baileys": "^6.6.0",
     "@hapi/boom": "^10.0.1",
     "qrcode": "^1.5.3",
-    "pino": "^8.19.0"
+    "pino": "^8.19.0",
+    "puppeteer": "^21.9.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

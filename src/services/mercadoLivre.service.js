@@ -35,9 +35,15 @@ class MercadoLivreService {
         
         logger.warn(`API retornou zero resultados para '${searchTerm}'.`);
     } catch (e) {
-        logger.error(`Erro crítico na busca via API de: ${searchTerm} (${e.message})`);
-        // Opcional: Se o usuário estiver no Render PRO, poderia ativar o Scraper aqui.
-        // Mas no Render Free (512MB), abrir um segundo navegador é OOM garantido.
+        logger.warn(`⚠️ API falhou ou deu 403 (${e.message}). Tentando Scraper Robusto...`);
+        try {
+            const scraperProducts = await scraperService.searchWithBrowser(searchTerm);
+            if (scraperProducts && scraperProducts.length > 0) {
+                return scraperProducts.map(p => this.normalizeProduct(p));
+            }
+        } catch (err) {
+            logger.error(`Scraper robusto também falhou: ${err.message}`);
+        }
     }
 
     return [];
