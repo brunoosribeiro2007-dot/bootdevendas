@@ -11,14 +11,16 @@ class WhatsappPublisher {
     this.sock = null;
     this.latestQr = null;
     this.isReady = false;
-    this.authPath = path.resolve(process.cwd(), '.wwebjs_auth'); // Reaproveitando o nome da pasta para não quebrar o gitignore se houver
+    this.authPath = path.resolve(process.cwd(), '.baileys_auth');
     
-    // Garantir que a pasta de auth existe
+    // Garantir que a pasta de auth existe e está limpa para o novo motor
     if (!fs.existsSync(this.authPath)) {
         fs.mkdirSync(this.authPath, { recursive: true });
     }
 
-    this.initialize();
+    this.initialize().catch(err => {
+        logger.error('Falha fatal na inicialização do Baileys:', err);
+    });
   }
 
   async initialize() {
