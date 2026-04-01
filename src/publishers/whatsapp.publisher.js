@@ -9,6 +9,8 @@ class WhatsappPublisher extends BasePublisher {
     logger.info('Inicializando cliente do WhatsApp Web Automático...');
     this.client = new Client({
       authStrategy: new LocalAuth(),
+      authTimeoutMs: 120000, // Aumentado para 120 segundos (Render-friendly)
+      qrMaxRetries: 15,     // Dá bastante chances para carregar
       puppeteer: {
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
           headless: true,

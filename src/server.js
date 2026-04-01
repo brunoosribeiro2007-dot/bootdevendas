@@ -1,6 +1,12 @@
 const app = require('./app');
 const env = require('./config/env');
 const logger = require('./config/logger');
+
+// Capturar erros globais para evitar que o Render derrube o serviço em timeouts
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const { initializeDB } = require('./database/init');
 const { startCaptureJob } = require('./jobs/capture.job');
 const { startPublishJob } = require('./jobs/publisher.job');
