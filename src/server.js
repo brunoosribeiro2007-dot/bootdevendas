@@ -4,6 +4,7 @@ const logger = require('./config/logger');
 const { initializeDB } = require('./database/init');
 const { startCaptureJob } = require('./jobs/capture.job');
 const { startPublishJob } = require('./jobs/publisher.job');
+const { startCleanupJob, cleanupTask } = require('./jobs/cleanup.job');
 
 const startServer = async () => {
   try {
@@ -11,12 +12,20 @@ const startServer = async () => {
     await initializeDB();
     
     // Iniciar jobs
+    startCleanupJob();
     startCaptureJob();
     startPublishJob();
 
-    // Disparar uma captura inicial IMEDIATA para o bot não começar vazio
-    const { captureTask } = require('./jobs/capture.job');
-    captureTask();
+    // Executar limpeza inicial como precaução
+    cleanupTask();
+
+    // Disparar uma captura inicial daqui a 15 segundos para o bot não começar vazio
+    // e dar tempo dele carregar o QR/Sessão e estar Ready.
+    setTimeout(() => {
+        logger.info('Disparando captura inicial após delay de 15s...');
+        const { captureTask } = require('./jobs/capture.job');
+        captureTask();
+    }, 15000);
 
     // Iniciar servidor web
     app.listen(env.port, () => {

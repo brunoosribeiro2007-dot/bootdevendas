@@ -1,4 +1,5 @@
 const { db } = require('./init');
+const logger = require('../config/logger');
 
 const saveProduct = (product) => {
   return new Promise((resolve, reject) => {
@@ -73,11 +74,27 @@ const getNextApprovedItem = () => {
     });
 }
 
+const clearQueue = () => {
+  return new Promise((resolve, reject) => {
+    db.run('DELETE FROM queue', [], function(err) {
+      if (err) reject(err);
+      else {
+        // Opcional: Limpar também produtos antigos para não acumular lixo
+        db.run('DELETE FROM products', [], (err2) => {
+            if (err2) logger.warn('Falha ao limpar tabela de produtos:', err2);
+            resolve(this.changes);
+        });
+      }
+    });
+  });
+};
+
 module.exports = {
   saveProduct,
   getProductById,
   enqueueProduct,
   getQueue,
   updateQueueStatus,
-  getNextApprovedItem
+  getNextApprovedItem,
+  clearQueue
 };

@@ -6,31 +6,36 @@ const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 
 const captureTask = async () => {
-  logger.info('Iniciando job de captura de produtos do ML...');
+  logger.info('Iniciando job de captura multi-item do ML...');
   try {
-    const products = await mlService.searchProducts(env.mlSearchKeyword, env.mlCategory);
-    logger.info(`Busca retornou ${products.length} produtos. Processando...`);
+    const keywords = env.mlSearchKeyword.split(',').map(k => k.trim());
+    let totalAddedCount = 0;
 
-    let addedCount = 0;
-    for (const product of products) {
-      if (!product.title || !product.price || !product.link || !product.imageUrl) {
-        logger.warn(`Produto inválido ignorado: ${product.id}`);
-        continue;
-      }
+    for (const keyword of keywords) {
+        logger.info(`Buscando por: ${keyword}`);
+        const products = await mlService.searchProducts(keyword, env.mlCategory);
+        logger.info(`Busca por '${keyword}' retornou ${products.length} produtos.`);
 
-      const rawMessage = await formatterService.generateRawMessage(product);
-      const formattedMessage = await formatterService.generateFormattedMessage(product);
+        for (const product of products) {
+            if (!product.title || !product.price || !product.link || !product.imageUrl) {
+                continue;
+            }
 
-      const added = await queueService.addToQueue(product, rawMessage, formattedMessage);
-      if (added) addedCount++;
+            const rawMessage = await formatterService.generateRawMessage(product);
+            const formattedMessage = await formatterService.generateFormattedMessage(product);
+
+            const added = await queueService.addToQueue(product, rawMessage, formattedMessage);
+            if (added) totalAddedCount++;
+        }
     }
 
+    // Disparar publicação após terminar todas as capturas
     const { publishTask } = require('./publisher.job');
     publishTask();
 
-    logger.info(`Job de captura finalizado. ${addedCount} novos produtos adicionados à fila pendente.`);
+    logger.info(`Job de captura multi-item finalizado. ${totalAddedCount} novos produtos adicionados à fila pendente.`);
   } catch (error) {
-    logger.error('Erro no job de captura:', error);
+    logger.error('Erro no job de captura multi-item:', error);
   }
 };
 
