@@ -11,32 +11,33 @@ class MercadoLivreService {
     
     const searchTerm = keyword || 'oferta';
     
-    // 1. TENTA PRIMEIRO VIA API (MAIS LEVE PARA MEMÓRIA)
+    // 🎯 FOCO NA API PARA ECONOMIA DE RAM (Evita estourar o limite de 512MB do Render)
     try {
-        const searchUrl = `${BASE_URL}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&sort=relevance&condition=new&limit=20`;
-        logger.info(`Tentando busca via API leve para: ${searchTerm}...`);
+        const searchUrl = `${BASE_URL}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&sort=relevance&condition=new&limit=25`;
+        logger.info(`Buscando via API para: ${searchTerm}...`);
         
         const response = await axios.get(searchUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Origin': 'https://www.mercadolivre.com.br',
+                'Referer': 'https://www.mercadolivre.com.br/'
+            },
+            timeout: 15000 // Tenta por 15s antes de desistir
         });
 
         if (response.data && response.data.results && response.data.results.length > 0) {
-            return response.data.results.map(p => this.normalizeProduct(p));
+            const products = response.data.results.map(p => this.normalizeProduct(p));
+            logger.info(`✅ API retornou ${products.length} produtos para '${searchTerm}'.`);
+            return products;
         }
+        
+        logger.warn(`API retornou zero resultados para '${searchTerm}'.`);
     } catch (e) {
-        logger.warn(`API falhou ou deu 403 (${e.message}). Tentando Scraper de navegador...`);
-    }
-
-    // 2. TENTA VIA NAVEGADOR (ÚLTIMO RECURSO POIS GASTA MUITA RAM)
-    try {
-        const browserProducts = await scraperService.searchWithBrowser(searchTerm);
-        if (browserProducts && browserProducts.length > 0) {
-            return browserProducts.map(p => this.normalizeProduct(p));
-        }
-    } catch (e) {
-        logger.error(`Scraper via navegador também falhou: ${e.message}`);
+        logger.error(`Erro crítico na busca via API de: ${searchTerm} (${e.message})`);
+        // Opcional: Se o usuário estiver no Render PRO, poderia ativar o Scraper aqui.
+        // Mas no Render Free (512MB), abrir um segundo navegador é OOM garantido.
     }
 
     return [];
