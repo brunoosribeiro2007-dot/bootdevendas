@@ -65,13 +65,14 @@ class WhatsappPublisher extends BasePublisher {
 
       if (targetGroup) {
          try {
-             // getChats() pega o histórico do Wpp (onde o grupo deve estar)
+             logger.info(`Buscando grupo: ${targetGroup}`);
              const chats = await this.client.getChats();
              const group = chats.find(c => c.isGroup && c.name.toLowerCase() === targetGroup.toLowerCase());
              if (group) {
                  chatId = group.id._serialized;
+                 logger.info(`✅ Grupo encontrado! ID: ${chatId}`);
              } else {
-                 logger.warn(`Grupo '${targetGroup}' não encontrado na lista de conversas. Veja se você tem mensagens lá. Vamos tentar usar o número pessoal como plano B.`);
+                 logger.warn(`⚠️ Grupo '${targetGroup}' NÃO encontrado na sua lista de chats recentes! Verifique se digitou o nome EXATO.`);
              }
          } catch(e) {
              logger.error("Erro ao tentar ler histórico de grupos: ", e);
@@ -80,12 +81,13 @@ class WhatsappPublisher extends BasePublisher {
 
       if (!chatId) {
           if (!targetNumber) {
-            logger.error('ATENÇÃO: Você não configurou a variável WHATSAPP_TARGET_NUMBER no seu arquivo .env.');
+            logger.error('ATENÇÃO: Você não configurou nem Grupo nem Número de WhatsApp para envio.');
             return false;
           }
           let formattedNumber = String(targetNumber);
           if (!formattedNumber.startsWith('55')) formattedNumber = '55' + formattedNumber;
           chatId = formattedNumber.includes('@c.us') ? formattedNumber : `${formattedNumber}@c.us`; 
+          logger.info(`Usando número pessoal como destino: ${chatId}`);
       }
 
       logger.info(`Enviando mensagem sobre ${item.product_id} para o destino -> ${chatId}`);

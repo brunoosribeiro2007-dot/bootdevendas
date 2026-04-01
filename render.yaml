@@ -20,4 +20,4 @@ services:
       - key: CRON_CAPTURE_SCHEDULE
         value: "0 * * * *"
       - key: CRON_PUBLISH_SCHEDULE
-        value: "*/30 * * * *"
+        value: "*/5 * * * *"
