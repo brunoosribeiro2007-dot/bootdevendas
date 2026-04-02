@@ -74,19 +74,21 @@ class WhatsappPublisher {
             this.initStatus = `Conexão fechada (${code}). Resetando...`;
             this.addLog(`❌ Erro ${code}: ${errorMsg}`);
             
-            // Se for erro de autenticação ou conflito (405/401), limpamos a pasta para forçar novo QR
+            // Erro de autenticação ou conflito (405): limpamos e esperamos MAIS tempo
             if (code === 405 || code === 401 || code === 403) {
-                this.addLog('🧹 Limpando arquivos de sessão corrompidos...');
+                this.addLog('🧹 Limpando arquivos corrompidos e aguardando 1min...');
                 try {
                     fs.rmSync(this.authPath, { recursive: true, force: true });
                     fs.mkdirSync(this.authPath, { recursive: true });
                 } catch (e) {
                     this.addLog('⚠️ Erro ao limpar pasta.');
                 }
+                // Espera de 60s para o proxy do Render "esquecer" o erro anterior
+                setTimeout(() => this.initialize(), 60000);
+            } else {
+                // Outro erro qualquer (ex: timeout)
+                setTimeout(() => this.initialize(), 15000);
             }
-
-            // Tentativa de reconexão inteligente
-            setTimeout(() => this.initialize(), 10000); // 10s para o Render respirar
           } else if (connection === 'open') {
             this.initStatus = '✅ Conectado!';
             this.addLog('✅ Sucesso! Bot pronto e ativo.');
