@@ -1,5 +1,3 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, delay } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const env = require('../config/env');
 const logger = require('../config/logger');
@@ -24,6 +22,11 @@ class WhatsappPublisher {
   }
 
   async initialize() {
+    // Carregamento dinâmico para evitar ERR_REQUIRE_ESM
+    const baileys = await import('@whiskeysockets/baileys');
+    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+    const { Boom } = await import('@hapi/boom');
+
     const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -32,8 +35,8 @@ class WhatsappPublisher {
     this.sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: true,
-      logger: pino({ level: 'silent' }), // Deixa o console limpo, usaremos nosso logger
+      printQRInTerminal: false, // Desativado para economizar logs no Render
+      logger: pino({ level: 'silent' }),
       browser: ['Antigravity Bot', 'Chrome', '1.0.0']
     });
 
