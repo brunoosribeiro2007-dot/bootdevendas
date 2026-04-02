@@ -41,18 +41,26 @@ class WhatsappPublisher {
         this.addLog('📂 Motor: Configurando autenticação...');
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
 
-        this.addLog('🚀 Motor: Conectando (Padrão Auto)...');
+        this.addLog('🚀 Motor: Conectando (Bypass de Proxy)...');
         this.sock = makeWASocket({
           auth: state,
           printQRInTerminal: false,
-          logger: pino({ level: 'warn' }), // Ver mais logs no Render
-          browser: ['Ubuntu', 'Chrome', '20.0.0'], // Identidade conservadora
-          connectTimeoutMs: 120000, // Dobro do tempo para casos lentos
+          logger: pino({ level: 'warn' }), 
+          browser: ['Ubuntu', 'Chrome', '20.0.0'],
+          connectTimeoutMs: 120000,
           defaultQueryTimeoutMs: 120000,
           authTimeoutMs: 120000,
-          keepAliveIntervalMs: 20000, // Pings mais frequentes
+          keepAliveIntervalMs: 20000,
           emitOwnEvents: true,
-          generateHighQualityQR: true
+          generateHighQualityQR: true,
+          // 🛠️ BYPASS DE REDE: Injetando cabeçalhos manuais no WebSocket
+          options: {
+              headers: {
+                  'Origin': 'https://web.whatsapp.com',
+                  'Host': 'web.whatsapp.com',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+              }
+          }
         });
 
         this.sock.ev.on('creds.update', saveCreds);
