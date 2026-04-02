@@ -9,7 +9,8 @@ class WhatsappPublisher {
     this.sock = null;
     this.latestQr = null;
     this.isReady = false;
-    this.initStatus = 'Aguardando inicialização...';
+    this.initStatus = 'Iniciando...';
+    this.logs = []; // Histórico para debug na web
     this.authPath = path.resolve(process.cwd(), '.baileys_auth');
     
     // Garantir que a pasta de auth existe
@@ -22,26 +23,34 @@ class WhatsappPublisher {
     }
   }
 
+  addLog(msg) {
+    const time = new Date().toLocaleTimeString();
+    this.logs.unshift(`[${time}] ${msg}`);
+    if (this.logs.length > 5) this.logs.pop();
+    logger.info(msg);
+  }
+
   async initialize() {
-    logger.info('⚙️ Módulo WhatsApp: Iniciando carregamento dinâmico...');
+    this.addLog('⚙️ Motor: Carregando módulos...');
     try {
         const baileys = await import('@whiskeysockets/baileys');
         const { default: makeWASocket, useMultiFileAuthState } = baileys;
         const { Boom } = await import('@hapi/boom');
 
-        logger.info('📂 Módulo WhatsApp: Configurando autenticação...');
+        this.addLog('📂 Motor: Configurando autenticação...');
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
 
-        logger.info('🚀 Módulo WhatsApp: Conectando ao servidor...');
+        this.addLog('🚀 Motor: Conectando (Padrão Linux)...');
         this.sock = makeWASocket({
           auth: state,
-          version: [2, 3000, 1015901307], // Versão fixa estável
+          version: [2, 3000, 1015901307],
           printQRInTerminal: false,
           logger: pino({ level: 'silent' }),
-          browser: ['Antigravity Bot', 'Chrome', '1.0.0'],
+          browser: ['Ubuntu', 'Chrome', '1.0.0'], // Identidade padrão
           connectTimeoutMs: 60000,
           defaultQueryTimeoutMs: 60000,
           authTimeoutMs: 60000,
+          keepAliveIntervalMs: 30000,
           generateHighQualityQR: true
         });
 
@@ -53,7 +62,7 @@ class WhatsappPublisher {
           if (qr) {
             this.latestQr = qr;
             this.initStatus = 'Escaneie o QR Code abaixo';
-            logger.info('📱 QR Code recebido e pronto para exibição.');
+            this.addLog('📱 QR Code gerado pelo servidor!');
           }
 
           if (connection === 'close') {
@@ -61,12 +70,14 @@ class WhatsappPublisher {
                 lastDisconnect.error.output?.statusCode : 0;
             
             this.isReady = false;
-            this.initStatus = `Conexão fechada (${code}). Reconectando...`;
-            logger.warn(`Conexão fechada: ${code}. Reconectando...`);
-            this.initialize();
+            this.initStatus = `Desistência na Rede ou Desconectado (${code})`;
+            this.addLog(`❌ Conexão fechada: ${code}`);
+            
+            // Tentativa de reconexão inteligente
+            setTimeout(() => this.initialize(), 5000);
           } else if (connection === 'open') {
             this.initStatus = '✅ Conectado!';
-            logger.info('✅ WhatsApp Conectado!');
+            this.addLog('✅ Sucesso! Bot pronto e ativo.');
             this.isReady = true;
             this.latestQr = null;
           }

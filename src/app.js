@@ -33,6 +33,10 @@ app.get('/qr', (req, res) => {
             <style>body { font-family: sans-serif; text-align: center; margin-top: 50px; background: #121212; color: #fff; }</style>
             <h2>Aguardando geração do QR Code...</h2>
             <p>Status atual: <strong>${whatsappPublisher.initStatus || 'Iniciando...'}</strong></p>
+            <div style="background: #1e1e1e; padding: 10px; border-radius: 5px; width: 80%; margin: 20px auto; text-align: left; font-size: 14px; color: #999;">
+                <p style="margin: 0; color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">Logs do Sistema:</p>
+                ${whatsappPublisher.logs.map(log => `<p style="margin: 5px 0;">${log}</p>`).join('')}
+            </div>
             <p>A página irá recarregar automaticamente em 5 segundos.</p>
         `);
     }
