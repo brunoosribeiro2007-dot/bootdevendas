@@ -22,28 +22,29 @@ class WhatsappPublisher {
   }
 
   async initialize() {
-    // Carregamento dinâmico para evitar ERR_REQUIRE_ESM
-    const baileys = await import('@whiskeysockets/baileys');
-    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
-    const { Boom } = await import('@hapi/boom');
+    logger.info('⚙️ Módulo WhatsApp: Iniciando carregamento dinâmico...');
+    try {
+        const baileys = await import('@whiskeysockets/baileys');
+        const { default: makeWASocket, useMultiFileAuthState } = baileys;
+        const { Boom } = await import('@hapi/boom');
 
-    const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
-    const { version } = await fetchLatestBaileysVersion();
+        logger.info('📂 Módulo WhatsApp: Configurando autenticação...');
+        const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
 
-    logger.info(`Iniciando Motor Leve (Baileys v${version.join('.')})...`);
+        logger.info('🚀 Módulo WhatsApp: Conectando ao servidor...');
+        this.sock = makeWASocket({
+          auth: state,
+          printQRInTerminal: false,
+          logger: pino({ level: 'silent' }),
+          browser: ['Antigravity Bot', 'Chrome', '1.0.0'],
+          connectTimeoutMs: 60000, // Aumentado para lidar com rede lenta do Free Tier
+          defaultQueryTimeoutMs: 60000
+        });
 
-    this.sock = makeWASocket({
-      version,
-      auth: state,
-      printQRInTerminal: false, // Desativado para economizar logs no Render
-      logger: pino({ level: 'silent' }),
-      browser: ['Antigravity Bot', 'Chrome', '1.0.0']
-    });
+        this.sock.ev.on('creds.update', saveCreds);
 
-    this.sock.ev.on('creds.update', saveCreds);
-
-    this.sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
+        this.sock.ev.on('connection.update', (update) => {
+          const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
         this.latestQr = qr;
@@ -67,6 +68,9 @@ class WhatsappPublisher {
         this.latestQr = null;
       }
     });
+    } catch (err) {
+        logger.error('❌ Módulo WhatsApp: Erro fatal na inicialização:', err.message);
+    }
   }
 
   async publish(item) {
