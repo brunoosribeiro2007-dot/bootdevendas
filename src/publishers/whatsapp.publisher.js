@@ -13,14 +13,14 @@ class WhatsappPublisher {
     this.isReady = false;
     this.authPath = path.resolve(process.cwd(), '.baileys_auth');
     
-    // Garantir que a pasta de auth existe e está limpa para o novo motor
+    // Garantir que a pasta de auth existe
     if (!fs.existsSync(this.authPath)) {
-        fs.mkdirSync(this.authPath, { recursive: true });
+        try {
+            fs.mkdirSync(this.authPath, { recursive: true });
+        } catch (e) {
+            logger.error('Erro ao criar pasta de auth:', e);
+        }
     }
-
-    this.initialize().catch(err => {
-        logger.error('Falha fatal na inicialização do Baileys:', err);
-    });
   }
 
   async initialize() {

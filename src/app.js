@@ -12,16 +12,17 @@ app.use(express.json());
 // Routes
 app.use('/api', routes);
 
-const whatsappPublisher = require('./publishers/whatsapp.publisher');
-
-// Healthcheck
-app.get('/health', (req, res) => res.json({ status: 'OK' }));
+// Healthcheck (CRITICAL for Render)
+app.get('/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() }));
 
 // Redireciona a raiz para o qr code
 app.get('/', (req, res) => res.redirect('/qr'));
 
 // QR Code Endpoint
 app.get('/qr', (req, res) => {
+    // Require LAZY para não travar o boot
+    const whatsappPublisher = require('./publishers/whatsapp.publisher');
+    
     if (whatsappPublisher.isReady) {
         return res.send('<h2>O WhatsApp já está conectado!</h2><p>Nenhuma ação necessária.</p>');
     }
