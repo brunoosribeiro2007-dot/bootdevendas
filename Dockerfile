@@ -1,6 +1,6 @@
-FROM node:20
+FROM node:18
 
-# Instalando ferramentas de compilação essenciais
+# Ferramentas para o SQLite
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -15,7 +15,7 @@ RUN npm install --omit=dev
 
 COPY . .
 
-# Usaremos o /tmp para a sessão por ser mais rápido no Render Free
+# Permissões totais no /tmp
 RUN mkdir -p /tmp/.baileys_auth && chmod 777 /tmp/.baileys_auth
 
 EXPOSE 3000

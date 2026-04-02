@@ -40,16 +40,17 @@ class WhatsappPublisher {
         this.addLog('📂 Motor: Configurando autenticação...');
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
 
-        this.addLog('🚀 Motor: Conectando (Modo macOS)...');
+        this.addLog('🚀 Motor: Conectando (Padrão Auto)...');
         this.sock = makeWASocket({
           auth: state,
           printQRInTerminal: false,
-          logger: pino({ level: 'silent' }),
-          browser: ['macOS', 'Chrome', '1.0.0'], // Identidade MacBook
-          connectTimeoutMs: 60000,
-          defaultQueryTimeoutMs: 60000,
-          authTimeoutMs: 60000,
-          keepAliveIntervalMs: 30000,
+          logger: pino({ level: 'warn' }), // Ver mais logs no Render
+          browser: ['Ubuntu', 'Chrome', '20.0.0'], // Identidade conservadora
+          connectTimeoutMs: 120000, // Dobro do tempo para casos lentos
+          defaultQueryTimeoutMs: 120000,
+          authTimeoutMs: 120000,
+          keepAliveIntervalMs: 20000, // Pings mais frequentes
+          emitOwnEvents: true,
           generateHighQualityQR: true
         });
 
