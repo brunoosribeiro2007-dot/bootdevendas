@@ -7,7 +7,10 @@ const pool = new Pool({
   connectionString: env.databaseUrl,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  max: 5, // Limite para o plano free do Neon
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
 });
 
 // Adaptador para manter compatibilidade com as queries antigas (SQLite style)
