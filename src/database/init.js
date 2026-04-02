@@ -3,8 +3,12 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 
 // Configuração do Banco Neon (Postgres)
+if (!env.databaseUrl) {
+    logger.error('❌ ERRO: DATABASE_URL não encontrada! Configure no Render para o robô funcionar.');
+}
+
 const pool = new Pool({
-  connectionString: env.databaseUrl,
+  connectionString: env.databaseUrl || 'postgresql://fake:fake@localhost:5432/fake', // Fallback anti-crash
   ssl: {
     rejectUnauthorized: false
   },

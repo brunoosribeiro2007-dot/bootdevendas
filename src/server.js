@@ -46,4 +46,6 @@ const startServer = async () => {
     }
 };
 
-startServer();
+startServer().catch(err => {
+    logger.error('❌ FALHA NO STARTUP DO SERVIDOR:', err.message);
+});
