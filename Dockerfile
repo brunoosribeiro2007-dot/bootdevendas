@@ -7,20 +7,11 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 WORKDIR /usr/src/app
 
 COPY package*.json ./
-
 USER root
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN npm install --production
+RUN npm install
 
 COPY . .
 
-# Criar a pasta de autenticação do whatsapp
 RUN mkdir -p .baileys_auth
 RUN chown -R pptruser:pptruser /usr/src/app
 
