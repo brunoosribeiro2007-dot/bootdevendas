@@ -85,9 +85,8 @@ class WhatsappPublisher {
         this.sock = makeWASocket({
           version,
           auth: state,
-          printQRInTerminal: true,
           logger: pino({ level: 'silent' }),
-          browser: ['Antigravity Bot', 'Chrome', '1.0.0']
+          browser: ['MercadoLivreBot', 'Chrome', '1.0.0']
         });
 
         // SALVA NO BANCO SEMPRE QUE O LOGIN MUDA

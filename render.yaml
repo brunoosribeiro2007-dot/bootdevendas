@@ -9,8 +9,8 @@ services:
         value: 3000
       - key: NODE_ENV
         value: production
-      - key: ML_SEARCH_KEYWORD
-        value: ofertas
+      - key: DATABASE_URL
+        sync: false
       - key: WHATSAPP_TARGET_NUMBER
         sync: false
       - key: WHATSAPP_TARGET_GROUP
@@ -18,7 +18,7 @@ services:
       - key: ML_AFFILIATE_TAG
         sync: false
       - key: ML_SEARCH_KEYWORD
-        value: ofertas
+        value: "Xiaomi, iPhone, Samsung Galaxy, TV AOC, TV LG, TV Philco, fone de ouvido bluetooth, monitor gamer, projetor, drone camera, tablet, acessorios pc gamer, cabo hdmi hub usb, teclado mouse gamer"
       - key: CRON_CAPTURE_SCHEDULE
         value: "0 * * * *"
       - key: CRON_PUBLISH_SCHEDULE
