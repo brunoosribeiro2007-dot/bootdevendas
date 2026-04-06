@@ -1,6 +1,7 @@
 services:
   - type: web
     name: ml-afiliados-bot
+    region: frankfurt
     env: docker
     plan: free
     healthCheckPath: /health
