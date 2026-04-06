@@ -76,6 +76,10 @@ app.get('/qr', (req, res) => {
             <p style="margin: 0; color: #fff; border-bottom: 1px solid #333; padding-bottom: 5px;">Logs do Sistema:</p>
             ${whatsappPublisher.logs.map(log => `<p style="margin: 5px 0;">${log}</p>`).join('')}
         </div>
+
+        <div style="margin-top: 30px;">
+            <a href="/logout" style="color: #ff5252; text-decoration: none; font-size: 12px; border: 1px solid #ff5252; padding: 5px 10px; border-radius: 5px;">🛑 Erro de Conexão? Clique aqui para Resetar Sessão</a>
+        </div>
     `);
 });
 
@@ -88,6 +92,31 @@ app.post('/qr', async (req, res) => {
         await whatsappPublisher.triggerPairing(phone);
     }
     res.redirect('/qr');
+});
+
+// Endpoint para forçar logout e limpeza de sessão
+app.get('/logout', async (req, res) => {
+    const whatsappPublisher = require('./publishers/whatsapp.publisher');
+    const { pool } = require('./database/init');
+    const fs = require('fs');
+    
+    try {
+        // Limpa banco
+        if (pool) await pool.query('DELETE FROM sessions');
+        
+        // Limpa pasta local
+        if (fs.existsSync(whatsappPublisher.authPath)) {
+            fs.rmSync(whatsappPublisher.authPath, { recursive: true, force: true });
+        }
+        
+        // Reinicia o motor
+        whatsappPublisher.isReady = false;
+        whatsappPublisher.initialize();
+        
+        res.send('Sessão limpa! Volte para <a href="/qr">/qr</a> para escanear novamente.');
+    } catch (e) {
+        res.status(500).send('Erro ao limpar sessão: ' + e.message);
+    }
 });
 
 app.use('/api', routes);
