@@ -43,12 +43,12 @@ const startCaptureJob = () => {
   logger.info(`Agendando job de captura com cron: ${env.cronCaptureSchedule}`);
   cron.schedule(env.cronCaptureSchedule, captureTask);
 
-  // Disparo inicial após 30 segundos para não sobrecarregar o boot
+  // Disparo inicial após 10 segundos para resultados imediatos
   if (env.nodeEnv === 'production' || true) {
-      logger.info('🚀 Agendando captura inicial para 30 segundos após o boot...');
+      logger.info('🚀 Agendando captura inicial para 10 segundos após o boot...');
       setTimeout(() => {
           captureTask().catch(err => logger.error('Erro na captura inicial:', err));
-      }, 30000);
+      }, 10000);
   }
 };
 
