@@ -216,6 +216,7 @@ app.get('/qr', (req, res) => {
                             <a href="/api/capture/force" target="_blank" class="btn btn-outline">🔍 Forçar Captura</a>
                             <a href="/api/publish/force" target="_blank" class="btn btn-outline">📤 Forçar Publicação</a>
                             <a href="/api/queue?status=approved" target="_blank" class="btn btn-outline">📦 Ver Fila Aprovada</a>
+                            <a href="/api/database/clear" class="btn btn-outline" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.3);" onclick="return confirm('Isso apagará TODA a fila e histórico de produtos. O bot começará do zero com o novo nicho. Continuar?')">🧹 Limpar Banco e Fila</a>
                             
                             <a href="/logout" class="btn btn-danger" onclick="return confirm('Isso irá desconectar o WhatsApp e limpar a sessão. Continuar?')">🛑 Logout e Reset de Sessão</a>
                         </div>

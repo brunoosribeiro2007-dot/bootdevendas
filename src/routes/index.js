@@ -49,4 +49,16 @@ router.get('/search/test', async (req, res) => {
     }
 });
 
+// Limpar Banco de Dados Total (Novos nichos)
+router.get('/database/clear', async (req, res) => {
+    logger.info('Solicitação de limpeza total do banco recebida.');
+    try {
+        await repository.clearQueue();
+        res.json({ success: true, message: 'Banco de dados e fila limpos com sucesso! O bot agora buscará apenas os novos nichos.' });
+    } catch (err) {
+        logger.error('Erro ao limpar banco via API:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
