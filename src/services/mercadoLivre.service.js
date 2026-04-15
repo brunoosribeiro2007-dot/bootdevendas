@@ -140,49 +140,48 @@ const getRandomBrIP = () => {
  * API Fallback camuflada com Headers de App Mobile e Spoofing de IP
  */
 const fetchFromBackupAPI = async (searchTerm) => {
-    try {
-        const fakeIP = getRandomBrIP();
-        logger.info(`🔌 Tentando API Fallback camuflada (IP Simulado: ${fakeIP}) para: ${searchTerm}...`);
-        
-        // Jitter maior para evitar detecção
-        await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+    // Tenta domínios diferentes caso um falhe no DNS (comum no Render)
+    const apiDomains = ['api.mercadolivre.com', 'api.mercadolibre.com'];
+    
+    for (const domain of apiDomains) {
+        try {
+            const fakeIP = getRandomBrIP();
+            logger.info(`🔌 Tentando API Fallback (${domain}) para: ${searchTerm}...`);
+            
+            await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
 
-        const apiUrl = `https://api.mercadolivre.com/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&limit=15&offset=${Math.floor(Math.random() * 5)}`;
-        
-        const { data } = await axios.get(apiUrl, {
-            headers: {
-                'User-Agent': 'MercadoLibre/10.354.0 (iPhone; iOS 17.4.1; Scale/3.00)',
-                'Accept': 'application/json',
-                'X-Platform': 'iOS',
-                'X-App-Version': '10.354.0',
-                'X-Forwarded-For': fakeIP,
-                'X-Real-IP': fakeIP,
-                'Accept-Language': 'pt-BR,pt;q=0.9',
-            },
-            timeout: 10000,
-            validateStatus: (status) => status < 500
-        });
-        
-        if (data.results && data.results.length > 0) {
-            const results = data.results.map(p => ({
-                id: p.id,
-                title: p.title,
-                price: p.price,
-                link: p.permalink,
-                imageUrl: p.thumbnail?.replace('-I.jpg', '-O.jpg'),
-                description: 'Oferta (API Mobile)'
-            }));
-            logger.info(`✅ API Fallback funcionou para "${searchTerm}"! (${results.length} itens).`);
-            return results;
+            const apiUrl = `https://${domain}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&limit=15`;
+            
+            const { data } = await axios.get(apiUrl, {
+                headers: {
+                    'User-Agent': 'MercadoLibre/10.354.0 (iPhone; iOS 17.4.1)',
+                    'X-Forwarded-For': fakeIP,
+                },
+                timeout: 8000
+            });
+            
+            if (data.results && data.results.length > 0) {
+                const results = data.results.map(p => ({
+                    id: p.id,
+                    title: p.title,
+                    price: p.price,
+                    oldPrice: p.original_price, // Agora capturando o preço original da API
+                    link: p.permalink,
+                    imageUrl: p.thumbnail?.replace('-I.jpg', '-O.jpg'),
+                    description: 'Oferta (API Mobile)'
+                }));
+                logger.info(`✅ API Fallback (${domain}) funcionou para "${searchTerm}"!`);
+                return results;
+            }
+        } catch (apiErr) {
+            logger.warn(`⚠️ Falha no domínio ${domain}: ${apiErr.message}`);
+            continue; // Tenta o próximo domínio
         }
-
-        throw new Error('Retorno vazio na API');
-
-    } catch (apiErr) {
-        const isBlock = apiErr.response?.status === 403 || apiErr.message.includes('403');
-        const statusMsg = isBlock ? 'Bloqueio Persistente (ML detectou o Render)' : apiErr.message;
-        logger.error(`❌ Falha total (${statusMsg}) para "${searchTerm}".`);
-        return [];
+    }
+    
+    logger.error(`❌ Falha total em todos os domínios de API para "${searchTerm}".`);
+    return [];
+};
     }
 };
 
