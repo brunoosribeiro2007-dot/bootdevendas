@@ -53,6 +53,28 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
 
                 const titleElement = $(element).find('.poly-component__title, .ui-search-item__title, .ui-search-result__content-title, .ui-search-item__group__element.ui-search-item__title, h2, h3').first();
                 const title = titleElement.text().trim();
+
+                // ⭐ VERIFICAÇÃO DE QUALIDADE (Avaliação e Vendas)
+                const ratingText = $(element).find('.poly-reviews__rating, .ui-search-reviews__rating-number').first().text();
+                const rating = parseFloat(ratingText.replace(',', '.'));
+                
+                const reviewsCountText = $(element).find('.poly-reviews__total, .ui-search-reviews__amount').first().text();
+                const salesText = $(element).find('.poly-component__sales, .ui-search-item__group__element--shipping').text().toLowerCase();
+                
+                // Critério: Se tiver avaliação e for menor que 4.0, a gente ignora. 
+                // Se não tiver avaliação nenhuma, a gente só aceita se for "Loja Oficial" ou tiver muitas vendas.
+                const isOfficialStore = $(element).text().toLowerCase().includes('loja oficial');
+                const hasGoodSales = salesText.includes('vendidos') && !salesText.includes('5 vendidos') && !salesText.includes('2 vendidos');
+
+                if (rating && rating < 4.0) {
+                    logger.debug(`⏩ Ignorando "${title}" por baixa avaliação: ${rating}`);
+                    return;
+                }
+                
+                if (!rating && !isOfficialStore && !hasGoodSales) {
+                    logger.debug(`⏩ Ignorando "${title}" por falta de indicadores de confiança.`);
+                    return;
+                }
                 
                 // 💰 CAPTURA DE PREÇO MELHORADA (Pega o preço atual/final)
                 const priceContainer = $(element).find('.andes-money-amount--current, .ui-search-price__second-line').first();
