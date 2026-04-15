@@ -65,9 +65,10 @@ const clearQueue = async () => {
         const res = await db.run('DELETE FROM products', []);
         return res.rowCount;
     } catch (err) {
-        logger.error('Erro ao limpar banco Neon:', err);
+        logger.error('Erro ao limpar banco:', err);
     }
 };
+
 
 module.exports = {
   saveProduct,

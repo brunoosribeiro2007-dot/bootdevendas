@@ -31,37 +31,53 @@ if (USE_NEON) {
 // Adaptador unificado — mesma interface para Postgres e SQLite
 const db = {
     run: async (query, params = []) => {
-        if (USE_NEON) {
-            let index = 1;
-            const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-            return pool.query(pgQuery, params);
-        } else {
-            // SQLite retorna info parecida
-            const stmt = sqliteDb.prepare(query);
-            const result = stmt.run(...params);
-            return { rowCount: result.changes };
+        try {
+            if (USE_NEON) {
+                let index = 1;
+                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                const res = await pool.query(pgQuery, params);
+                return { rowCount: res.rowCount };
+            } else {
+                const stmt = sqliteDb.prepare(query);
+                // better-sqlite3 run can take params as multiple arguments or an array
+                const result = stmt.run(...params);
+                return { rowCount: result.changes };
+            }
+        } catch (err) {
+            logger.error(`❌ Erro no Banco (${USE_NEON ? 'Neon' : 'SQLite'}): ${err.message}`, { query, params });
+            throw err;
         }
     },
     get: async (query, params = []) => {
-        if (USE_NEON) {
-            let index = 1;
-            const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-            const res = await pool.query(pgQuery, params);
-            return res.rows[0];
-        } else {
-            const stmt = sqliteDb.prepare(query);
-            return stmt.get(...params);
+        try {
+            if (USE_NEON) {
+                let index = 1;
+                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                const res = await pool.query(pgQuery, params);
+                return res.rows[0];
+            } else {
+                const stmt = sqliteDb.prepare(query);
+                return stmt.get(...params);
+            }
+        } catch (err) {
+            logger.error(`❌ Erro no Banco (GET): ${err.message}`, { query, params });
+            throw err;
         }
     },
     all: async (query, params = []) => {
-        if (USE_NEON) {
-            let index = 1;
-            const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-            const res = await pool.query(pgQuery, params);
-            return res.rows;
-        } else {
-            const stmt = sqliteDb.prepare(query);
-            return stmt.all(...params);
+        try {
+            if (USE_NEON) {
+                let index = 1;
+                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                const res = await pool.query(pgQuery, params);
+                return res.rows;
+            } else {
+                const stmt = sqliteDb.prepare(query);
+                return stmt.all(...params);
+            }
+        } catch (err) {
+            logger.error(`❌ Erro no Banco (ALL): ${err.message}`, { query, params });
+            throw err;
         }
     }
 };
@@ -141,6 +157,18 @@ const saveSessionFile = async (id, data) => {
     }
 };
 
+const deleteSessionFile = async (id) => {
+    try {
+        if (USE_NEON) {
+            await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
+        } else {
+            sqliteDb.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+        }
+    } catch (err) {
+        logger.warn(`Falha ao deletar sessão ${id}:`, err.message);
+    }
+};
+
 const getAllSessionFiles = async () => {
     try {
         if (USE_NEON) {
@@ -155,4 +183,5 @@ const getAllSessionFiles = async () => {
     }
 };
 
-module.exports = { db, pool, initializeDB, saveSessionFile, getAllSessionFiles };
+module.exports = { db, pool, initializeDB, saveSessionFile, deleteSessionFile, getAllSessionFiles };
+

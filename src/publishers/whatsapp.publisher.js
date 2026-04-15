@@ -42,24 +42,30 @@ class WhatsappPublisher {
       }
   }
 
-  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON
-  async syncFileToNeon(fileName) {
+  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Sync total)
+  async syncSessionToNeon() {
       const { saveSessionFile } = require('../database/init');
       try {
-          const filePath = path.join(this.authPath, fileName);
-          if (fs.existsSync(filePath)) {
-              const data = fs.readFileSync(filePath, 'utf-8');
-              await saveSessionFile(fileName, data);
+          if (!fs.existsSync(this.authPath)) return;
+          const files = fs.readdirSync(this.authPath);
+          this.addLog(`📤 Sincronizando ${files.length} arquivos de sessão para o Neon...`);
+          
+          for (const file of files) {
+              const filePath = path.join(this.authPath, file);
+              if (fs.lstatSync(filePath).isFile()) {
+                  const data = fs.readFileSync(filePath, 'utf-8');
+                  await saveSessionFile(file, data);
+              }
           }
       } catch (e) {
-          logger.warn(`Erro ao sincronizar ${fileName} para o Neon:`, e.message);
+          logger.warn(`Erro na sincronização total para o Neon:`, e.message);
       }
   }
 
   addLog(msg) {
     const time = new Date().toLocaleTimeString();
     this.logs.unshift(`[${time}] ${msg}`);
-    if (this.logs.length > 5) this.logs.pop();
+    if (this.logs.length > 20) this.logs.pop(); // Aumentado para 20
     logger.info(msg);
   }
 
@@ -76,7 +82,7 @@ class WhatsappPublisher {
     this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
     try {
         const baileys = await import('@whiskeysockets/baileys');
-        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = baileys;
+        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = baileys;
         const { Boom } = await import('@hapi/boom');
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
@@ -86,13 +92,14 @@ class WhatsappPublisher {
           version,
           auth: state,
           logger: pino({ level: 'silent' }),
-          browser: ['MercadoLivreBot', 'Chrome', '1.0.0']
+          browser: ['MercadoLivreBot', 'Chrome', '1.0.0'],
+          printQRInTerminal: true
         });
 
         // SALVA NO BANCO SEMPRE QUE O LOGIN MUDA
         this.sock.ev.on('creds.update', async () => {
             await saveCreds();
-            await this.syncFileToNeon('creds.json'); // Arquivo mais crítico!
+            await this.syncSessionToNeon(); // Sincroniza tudo
         });
 
         this.sock.ev.on('connection.update', (update) => {
@@ -105,18 +112,25 @@ class WhatsappPublisher {
           }
 
           if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? 
-                lastDisconnect.error.output?.statusCode !== 401 : true;
+            const statusCode = (lastDisconnect.error instanceof Boom) ? 
+                lastDisconnect.error.output?.statusCode : 0;
+            
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
             this.isReady = false;
             this.initStatus = 'Reconectando...';
-            this.addLog(`❌ Conexão fechada. Reconectando: ${shouldReconnect}`);
-            if (shouldReconnect) setTimeout(() => this.initialize(), 15000);
+            this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando: ${shouldReconnect}`);
+            
+            if (shouldReconnect) {
+                setTimeout(() => this.initialize(), 15000);
+            } else {
+                this.initStatus = 'Desconectado (Scan Necessário)';
+            }
           } else if (connection === 'open') {
             this.initStatus = '✅ Conectado!';
             this.isReady = true;
             this.latestQr = null;
-            this.addLog('✅ Conexo realizada!');
+            this.addLog('✅ Conexão realizada com sucesso!');
           }
         });
     } catch (err) {
@@ -139,34 +153,55 @@ class WhatsappPublisher {
   }
 
   async publish(item) {
-    if (!this.isReady || !this.sock) return false;
+    if (!this.isReady || !this.sock) {
+        logger.warn(`Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
+        return false;
+    }
+    
     try {
       const targetNumber = env.whatsappTargetNumber;
       const targetGroup = env.whatsappTargetGroup;
       let chatId = null;
 
       if (targetGroup) {
-          const groups = await this.sock.groupFetchAllParticipating();
-          const group = Object.values(groups).find(g => g.subject.toLowerCase() === targetGroup.toLowerCase());
-          if (group) chatId = group.id;
+          try {
+              const groups = await this.sock.groupFetchAllParticipating();
+              const group = Object.values(groups).find(g => g.subject.toLowerCase() === targetGroup.toLowerCase());
+              if (group) {
+                  chatId = group.id;
+                  logger.debug(`Grupo encontrado: ${targetGroup} (${chatId})`);
+              } else {
+                  logger.warn(`Grupo "${targetGroup}" não encontrado.`);
+              }
+          } catch (gErr) {
+              logger.error('Erro ao buscar grupos:', gErr.message);
+          }
       }
 
       if (!chatId && targetNumber) {
           chatId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
       }
 
-      if (!chatId) return false;
+      if (!chatId) {
+          logger.error('Não foi possível determinar o destino (Grupo ou Número).');
+          return false;
+      }
 
+      this.addLog(`📤 Publicando produto: ${item.title.substring(0, 30)}...`);
+      
       await this.sock.sendMessage(chatId, {
           image: { url: item.image_url },
           caption: item.formatted_message
       });
+      
       return true;
     } catch (error) {
-      logger.error('Erro ao publicar:', error);
+      logger.error('Erro ao publicar mensagem no WhatsApp:', error);
       return false;
     }
   }
+}
+
 }
 
 module.exports = new WhatsappPublisher();

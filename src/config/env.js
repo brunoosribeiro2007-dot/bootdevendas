@@ -5,10 +5,11 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'production',
   databaseUrl: process.env.DATABASE_URL,
   dbPath: process.env.DB_PATH || './database.sqlite',
-  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'cadeira gamer',
+  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'air fryer, cafeteira, ventilador, jogo de panelas, aspirador de po, batedeira',
   mlCategory: process.env.ML_CATEGORY || '',
-  cronCaptureSchedule: process.env.CRON_CAPTURE_SCHEDULE || '*/15 * * * *',
-  cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/10 * * * *',
+  cronCaptureSchedule: process.env.CRON_CAPTURE_SCHEDULE || '0 */2 * * *', // A cada 2 horas para evitar ban
+  cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/30 * * * *', // A cada 30 min
+
   whatsappTargetNumber: process.env.WHATSAPP_TARGET_NUMBER || '5569984520192',
   whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || 'ofertas do dia',
   mlAffiliateTag: process.env.ML_AFFILIATE_TAG || 'bv20260330080614',
