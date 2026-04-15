@@ -182,8 +182,6 @@ const fetchFromBackupAPI = async (searchTerm) => {
     logger.error(`❌ Falha total em todos os domínios de API para "${searchTerm}".`);
     return [];
 };
-    }
-};
 
 /**
  * Bypass via Bing Translator (Stealth Proxy 2)
