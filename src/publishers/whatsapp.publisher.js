@@ -98,8 +98,12 @@ class WhatsappPublisher {
 
         // SALVA NO BANCO SEMPRE QUE O LOGIN MUDA
         this.sock.ev.on('creds.update', async () => {
-            await saveCreds();
-            await this.syncSessionToNeon(); // Sincroniza tudo
+            try {
+                await saveCreds();
+                await this.syncSessionToNeon(); // Sincroniza tudo
+            } catch (err) {
+                logger.error('Erro ao sincronizar credenciais:', err);
+            }
         });
 
         this.sock.ev.on('connection.update', (update) => {
@@ -187,7 +191,8 @@ class WhatsappPublisher {
           return false;
       }
 
-      this.addLog(`📤 Publicando produto: ${item.title.substring(0, 30)}...`);
+      const displayTitle = item.title || 'Sem título';
+      this.addLog(`📤 Publicando produto: ${displayTitle.substring(0, 30)}...`);
       
       await this.sock.sendMessage(chatId, {
           image: { url: item.image_url },

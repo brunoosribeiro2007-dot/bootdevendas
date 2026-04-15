@@ -55,7 +55,7 @@ const updateQueueStatus = async (id, status) => {
 };
 
 const getNextApprovedItem = async () => {
-    const query = "SELECT q.*, p.image_url FROM queue q JOIN products p ON q.product_id = p.id WHERE q.status = 'approved' ORDER BY q.updated_at ASC LIMIT 1";
+    const query = "SELECT q.*, p.title, p.image_url FROM queue q JOIN products p ON q.product_id = p.id WHERE q.status = 'approved' ORDER BY q.updated_at ASC LIMIT 1";
     return await db.get(query, []);
 };
 

@@ -9,10 +9,11 @@ const whatsappPublisher = require('./publishers/whatsapp.publisher');
 
 // Proteção contra erros fatais não tratados
 process.on('unhandledRejection', (reason) => {
-    logger.error('Unhandled Rejection:', String(reason));
+    const errorMsg = reason instanceof Error ? reason.stack : String(reason);
+    logger.error(`Unhandled Rejection: ${errorMsg}`);
 });
 process.on('uncaughtException', (err) => {
-    logger.error('Uncaught Exception:', err.message);
+    logger.error(`Uncaught Exception: ${err.stack || err.message}`);
 });
 
 const startServer = async () => {
