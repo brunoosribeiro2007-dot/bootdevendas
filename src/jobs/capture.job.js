@@ -8,13 +8,16 @@ const queueService = require('../services/queue.service');
 const captureTask = async () => {
   logger.info('🚀 Iniciando job de captura multi-item do ML...');
   try {
-    if (!env.mlSearchKeyword) {
-        logger.warn('⚠️ Nenhuma palavra-chave configurada em ML_SEARCH_KEYWORD.');
-        return;
+    let keywordsString = env.mlSearchKeyword || '';
+    
+    // 🚨 OVERRIDE FORÇADO: Se as keywords do painel do Render ainda forem as antigas, ignoramos e usamos as novas.
+    if (keywordsString.toLowerCase().includes('xiaomi') || keywordsString.toLowerCase().includes('iphone') || keywordsString.toLowerCase().includes('teclado')) {
+        logger.warn('⚠️ Detectadas keywords antigas no painel do Render. Aplicando OVERRIDE para o novo nicho (Casa/Limpeza).');
+        keywordsString = 'sabão líquido OMO, amaciante Downy, geladeira Frost Free, fogão 4 bocas, máquina de lavar, sofá retrátil, guarda-roupa, mesa de jantar, fritadeira Air Fryer, micro-ondas, ar condicionado';
     }
 
-    const keywords = env.mlSearchKeyword.split(',').map(k => k.trim()).filter(k => k.length > 0);
-    logger.info(`📋 Processando ${keywords.length} palavras-chave: ${keywords.join(', ')}`);
+    const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    logger.info(`📋 Keywords ativas para busca: ${keywords.join(', ')}`);
     
     let totalAddedCount = 0;
 
