@@ -68,7 +68,11 @@ const searchProducts = async (searchTerm, category = '') => {
         
     } catch (error) {
         logger.warn(`⚠️ Erro no Scraper Direto (${error.message}). Tentando Modo Stealth...`);
-        return await searchViaStealthProxy(searchTerm, ca/**
+        return await searchViaStealthProxy(searchTerm, category);
+    }
+};
+
+/**
  * Bypass de IP via Google Translate (Stealth Proxy 1)
  */
 const searchViaStealthProxy = async (searchTerm, category = '') => {
@@ -198,12 +202,97 @@ const fetchFromBackupAPI = async (searchTerm) => {
     }
 };
 
-: ${apiErr.message}`);
-        return [];
-    }
+/**
+ * Parser unificado para as páginas do Mercado Livre
+ */
+const parseProducts = (html, searchTerm, isProxy = false) => {
+    const $ = cheerio.load(html);
+    const products = [];
+    
+    const getStableId = (link, title) => {
+        const mlbMatch = link.match(/MLB-?(\d+)/i);
+        if (mlbMatch) return `MLB${mlbMatch[1]}`;
+        const hash = Buffer.from(title || link).toString('base64').substring(0, 8).replace(/[^a-zA-Z0-9]/g, 'x');
+        return `MLH-${hash}`;
+    };
+
+    const unwrapLink = (link) => {
+        if (!link) return link;
+        if (isProxy && link.includes('translate.google.com')) {
+            try {
+                const urlObj = new URL(link);
+                const u = urlObj.searchParams.get('u');
+                return u ? u : link;
+            } catch (e) { return link; }
+        }
+        return link;
+    };
+
+    // Seletores de itens
+    const containerSelectors = [
+        '.poly-card', 
+        '.ui-search-result__content-wrapper', 
+        '.ui-search-result', 
+        '.ui-search-layout__item',
+        '.poly-card__content',
+        'li.ui-search-layout__item'
+    ];
+    
+    containerSelectors.forEach(selector => {
+        if (products.length >= 10) return;
+        
+        $(selector).each((i, element) => {
+            if (products.length >= 10) return false;
+            try {
+                const titleElement = $(element).find('.poly-component__title, .ui-search-item__title, .ui-search-result__content-title, .ui-search-item__group__element.ui-search-item__title, h2, h3').first();
+                const title = titleElement.text().trim();
+                
+                const priceElement = $(element).find('.andes-money-amount__fraction, .price-tag-fraction').first();
+                const priceFrac = priceElement.text().replace(/\D/g, '');
+                const priceCents = $(element).find('.andes-money-amount__cents, .price-tag-cents').first().text().replace(/\D/g, '') || '00';
+                
+                if (!title || !priceFrac) return;
+
+                const price = parseFloat(`${priceFrac}.${priceCents}`);
+                
+                let link = $(element).find('a').attr('href') || titleElement.closest('a').attr('href') || $(element).find('.ui-search-link').attr('href');
+                link = unwrapLink(link);
+                
+                if (link && link.startsWith('//')) link = 'https:' + link;
+
+                // Tentar várias formas de pegar a imagem
+                let image = $(element).find('img').attr('data-src') || 
+                            $(element).find('img').attr('src') ||
+                            $(element).find('img').attr('srcset')?.split(' ')[0] ||
+                            $(element).find('.poly-component__picture img').attr('src');
+
+                // Evitar placeholders ou imagens de carregamento
+                if (image && (image.includes('data:image') || image.includes('pixel.gif'))) {
+                    image = $(element).find('img').attr('data-src') || $(element).find('img').attr('data-srcset')?.split(' ')[0];
+                }
+
+                if (title && price && link) {
+                    const id = getStableId(link, title);
+                    if (!products.find(p => p.id === id)) {
+                        products.push({ 
+                            id, 
+                            title, 
+                            price, 
+                            link, 
+                            imageUrl: image, 
+                            description: `Oferta imperdível: ${searchTerm}${isProxy ? ' (via Stealth)' : ''}` 
+                        });
+                    }
+                }
+            } catch (err) {
+                logger.debug(`Erro no loop de parse: ${err.message}`);
+            }
+        });
+    });
+
+    return products;
 };
 
 module.exports = {
   searchProducts
 };
-
