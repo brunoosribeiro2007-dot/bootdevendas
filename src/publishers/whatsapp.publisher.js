@@ -202,6 +202,4 @@ class WhatsappPublisher {
   }
 }
 
-}
-
 module.exports = new WhatsappPublisher();

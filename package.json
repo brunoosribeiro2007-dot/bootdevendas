@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Sistema de automacao de ofertas de afiliado",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
