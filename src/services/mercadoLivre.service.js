@@ -41,7 +41,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
     
     let containerFound = false;
     containerSelectors.forEach(selector => {
-        if (products.length >= 10) return;
+        if (products.length >= 30) return;
         const els = $(selector);
         if (els.length > 0) {
             containerFound = true;
@@ -49,7 +49,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
         }
         
         els.each((i, element) => {
-            if (products.length >= 10) return false;
+            if (products.length >= 30) return false;
             try {
                 // 🛑 VERIFICAÇÃO DE DISPONIBILIDADE
                 const isUnavailable = $(element).text().toLowerCase().includes('esgotado') || 
@@ -151,7 +151,9 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
         }
     }
 
-    return products;
+    // ⭐ EMBARALHAMENTO PARA MAIS VARIEDADE
+    // Se encontrarmos muitos, pegamos 10 aleatórios dos primeiros 30 para não ser sempre igual
+    return products.sort(() => Math.random() - 0.5).slice(0, 10);
 };
 
 const getRandomBrIP = () => {
@@ -175,7 +177,7 @@ const fetchFromBackupAPI = async (searchTerm) => {
             
             await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
 
-            const apiUrl = `https://${domain}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&limit=15`;
+            const apiUrl = `https://${domain}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&limit=50`;
             
             const { data } = await axios.get(apiUrl, {
                 headers: {

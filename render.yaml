@@ -19,7 +19,7 @@ services:
       - key: ML_AFFILIATE_TAG
         sync: false
       - key: ML_SEARCH_KEYWORD
-        value: "geladeira, fogão, máquina de lavar, sofá, guarda-roupa, mesa de jantar, eletrodomésticos, móveis, utilidades domésticas, cama box, ar condicionado"
+        value: "geladeira, fogão, máquina de lavar, sofá, guarda-roupa, mesa de jantar, eletrodomésticos, móveis, utilidades domésticas, cama box, ar condicionado, micro-ondas, fritadeira air fryer, cafeteira, ventilador, jogo de jantar, conjunto lençol, luminária, poltrona, rack sala, painel tv, smart tv 50 polegadas, aspirador de pó, batedeira, sanduicheira, liquidificador, purificador de água"
       - key: CRON_CAPTURE_SCHEDULE
         value: "0 * * * *"
       - key: CRON_PUBLISH_SCHEDULE
