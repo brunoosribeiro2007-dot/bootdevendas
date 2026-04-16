@@ -95,7 +95,8 @@ class WhatsappPublisher {
           version,
           auth: state,
           logger: pino({ level: 'silent' }),
-          browser: ['MercadoLivreBot', 'Chrome', '1.0.0'],
+          browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
+          connectTimeoutMs: 60000,
           printQRInTerminal: true
         });
 
@@ -126,11 +127,17 @@ class WhatsappPublisher {
             const shouldReconnect = !isLoggedOut;
             
             this.isReady = false;
-            this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando: ${shouldReconnect}`);
+            
+            if (statusCode === 408) {
+                this.addLog(`⏳ Timeout de conexão (408). Aguardando rede para tentar novamente...`);
+            } else {
+                this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando: ${shouldReconnect}`);
+            }
             
             if (shouldReconnect) {
                 this.initStatus = 'Reconectando...';
-                setTimeout(() => this.initialize(), 15000);
+                // Aumentado para 30 segundos para evitar loops rápidos no Render
+                setTimeout(() => this.initialize(), 30000);
             } else {
                 this.initStatus = 'Sessão Inválida (Limpando...)';
                 // Se foi deslogado, precisamos limpar tudo para gerar novo QR
