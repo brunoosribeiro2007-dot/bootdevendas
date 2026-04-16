@@ -7,8 +7,8 @@ const publisher = require('../publishers/whatsapp.publisher');
 const publishTask = async () => {
   logger.info('Verificando fila de publicação...');
   try {
-    // Publica até 5 itens por ciclo para não ficar lento
-    const maxPerCycle = 5;
+    // Reduzindo para 3 itens no máximo para não dar block do WPP
+    const maxPerCycle = 3;
     let publishedCount = 0;
 
     for (let i = 0; i < maxPerCycle; i++) {
@@ -29,9 +29,12 @@ const publishTask = async () => {
         publishedCount++;
         logger.info(`✅ Item ${item.id} publicado com sucesso. (${publishedCount}/${maxPerCycle})`);
         
-        // Aguarda 30 segundos entre posts para não parecer spam
+        // Aumentando BASTANTE o delay para o WhatsApp não bloquear
+        // Tempo randomizado entre 45 e 90 segundos para parecer humano
         if (i < maxPerCycle - 1) {
-          await new Promise(r => setTimeout(r, 30000));
+          const delayMs = Math.floor(Math.random() * (90000 - 45000 + 1)) + 45000;
+          logger.info(`⏳ Aguardando ${delayMs/1000}s para o próximo post...`);
+          await new Promise(r => setTimeout(r, delayMs));
         }
       } else {
         logger.error(`Falha ao publicar item ${item.id}. Tentando próximo.`);
