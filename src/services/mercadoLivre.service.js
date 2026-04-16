@@ -56,12 +56,30 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                                     $(element).text().toLowerCase().includes('indisponível') ||
                                     $(element).find('.ui-search-item__status-ticket').text().toLowerCase().includes('indisponível');
                 
-                if (isUnavailable) return;
+                // 🔗 CAPTURA DE LINK
+                const linkElement = $(element).find('a.poly-component__title, a.ui-search-link, a.poly-card__title').first();
+                let link = linkElement.attr('href');
+                if (!link) return;
 
+                // 🚨 GARANTIA DE AFILIADO: Ignoramos links de anúncios (click1/mclics)
+                // porque eles não aceitam a tag de afiliado '&matt_tool' corretamente
+                // e muitas vezes expiram. Preferimos links diretos da loja.
+                if (link.includes('click1.mercadolivre') || link.includes('mclics')) {
+                    logger.debug(`⏩ Ignorando anúncio patrocinado para garantir link de afiliado: ${title}`);
+                    return;
+                }
+
+                // 🏷️ VERIFICAÇÃO DE PROMOÇÃO (Só aceita se tiver selo de desconto real)
+                const hasDiscount = $(element).find('.andes-money-amount__discount, .ui-search-price__discount').length > 0;
+                if (!hasDiscount) {
+                   logger.debug(`⏩ Ignorando "${title}" porque não está em promoção (sem selo de desconto).`);
+                   return;
+                }
+
+                // ⭐ VERIFICAÇÃO DE QUALIDADE (Avaliação e Vendas)
                 const titleElement = $(element).find('.poly-component__title, .ui-search-item__title, .ui-search-result__content-title, .ui-search-item__group__element.ui-search-item__title, h2, h3').first();
                 const title = titleElement.text().trim();
 
-                // ⭐ VERIFICAÇÃO DE QUALIDADE (Avaliação e Vendas)
                 const ratingElement = $(element).find('.poly-reviews__rating, .ui-search-reviews__rating-number, .ui-search-item__group__element--reviews').first();
                 const ratingText = ratingElement.text();
                 const rating = parseFloat(ratingText.replace(',', '.'));

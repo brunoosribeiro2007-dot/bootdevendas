@@ -6,20 +6,14 @@ class FormatterService {
   formatLink(link) {
       if (!link) return '';
       
-      // Se for um link de rastreio interno do ML (mclics), NÃO podemos limpar os parâmetros
-      // senão o link para de funcionar.
-      if (link.includes('click1.mercadolivre') || link.includes('mclics')) {
-          return link; 
-      }
-
-      // Para links comuns, limpamos apenas o básico para não poluir
+      // Remove qualquer parâmetro de busca original para garantir que nossa tag seja a principal
       let cleanLink = link.split('?')[0];
       if (cleanLink.includes('#')) cleanLink = cleanLink.split('#')[0];
 
       if (!env.mlAffiliateTag) return cleanLink;
 
-      const finalLink = `${cleanLink}?matt_tool=${env.mlAffiliateTag}&utm_source=whatsapp&utm_medium=chatbot&utm_campaign=afiliados_bot`;
-      return finalLink;
+      // Adiciona sua Tag de Afiliado e rastreio de campanha
+      return `${cleanLink}?matt_tool=${env.mlAffiliateTag}&utm_source=whatsapp&utm_medium=chatbot&utm_campaign=afiliados_bot`;
   }
 
   async generateRawMessage(product) {
