@@ -22,33 +22,28 @@ class FormatterService {
   }
 
   async generateFormattedMessage(product) {
-    const mlLink = this.formatLink(product.link);
-    let finalLink = mlLink;
-
-    try {
-        // Mudando para o TinyURL que é mais resiliente a links muito longos/complexos
-        const response = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(mlLink)}`, {
-            timeout: 5000
-        });
-        if (response.data && response.data.startsWith('http')) {
-            finalLink = response.data;
-        }
-    } catch(err) {
-        logger.warn('Falha ao encurtar o link. Mantendo original.', err.message);
-    }
+    const finalLink = this.formatLink(product.link);
 
     const currentPrice = product.price;
-    const originalPrice = product.oldPrice || (currentPrice * 1.15); // Fallback visual de 15%
+    const hasOriginalPrice = product.oldPrice && product.oldPrice > currentPrice;
+    const originalPrice = hasOriginalPrice ? product.oldPrice : (currentPrice * 1.15); // Fallback visual apenas se necessário
     
     // Cálculo do desconto real
     let discountPercent = 0;
-    if (product.oldPrice && product.oldPrice > currentPrice) {
+    if (hasOriginalPrice) {
         discountPercent = Math.round(((product.oldPrice - currentPrice) / product.oldPrice) * 100);
     } else {
         discountPercent = Math.floor(Math.random() * (25 - 10 + 1)) + 10; // Fallback entre 10% e 25%
     }
 
-    return `🚨 *OFERTA RELÂMPAGO MERCADO LIVRE*\n\n*${product.title}*\n\n✖️ De: R$ ${originalPrice.toFixed(2)}\n🤑 Por: R$ ${currentPrice.toFixed(2)} 😱🔥 ${discountPercent}% OFF\n\n🏷️ CUPOM: *VALECUPOM*\n\n🚛 *FRETE GRÁTIS*\n\n⏰ *PISCOU, PERDEU! APROVEITEM!!*\n\n🔗🛒👇\n${finalLink}`;
+    // Se o preço capturado for bizarro (ou o bot falhou em pegar o desconto real), 
+    // tentamos deixar a mensagem o mais honesta possível.
+    let priceSection = `✖️ De: R$ ${originalPrice.toFixed(2)}\n🤑 Por: R$ ${currentPrice.toFixed(2)}`;
+    if (discountPercent > 0) {
+        priceSection += ` 😱🔥 ${discountPercent}% OFF`;
+    }
+
+    return `🚨 *OFERTA RELÂMPAGO MERCADO LIVRE*\n\n*${product.title}*\n\n${priceSection}\n\n🏷️ CUPOM: *VALECUPOM*\n\n🚛 *FRETE GRÁTIS*\n\n⏰ *PISCOU, PERDEU! APROVEITEM!!*\n\n🔗🛒👇\n${finalLink}`;
   }
 }
 

@@ -98,14 +98,23 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 }
                 
                 // 💰 CAPTURA DE PREÇO MELHORADA
-                const priceContainer = $(element).find('.andes-money-amount--current, .ui-search-price__second-line').first();
-                const priceFrac = priceContainer.find('.andes-money-amount__fraction').text().replace(/\D/g, '') || 
-                                 $(element).find('.andes-money-amount__fraction').first().text().replace(/\D/g, '');
-                const priceCents = priceContainer.find('.andes-money-amount__cents').text().replace(/\D/g, '') || '00';
+                const currentPriceEl = $(element).find('.andes-money-amount--current').first();
+                const previousPriceEl = $(element).find('.andes-money-amount--previous').first();
+
+                // Pega a fração do preço atual
+                let priceFrac = currentPriceEl.find('.andes-money-amount__fraction').text().replace(/\D/g, '');
                 
-                // Tenta pegar o preço antigo para calcular desconto real
-                const oldPriceElement = $(element).find('.andes-money-amount--previous, .ui-search-price__part--original').first();
-                const oldPriceFrac = oldPriceElement.find('.andes-money-amount__fraction').text().replace(/\D/g, '');
+                // Fallback se o seletor específico falhar (alguns layouts antigos)
+                if (!priceFrac) {
+                    priceFrac = $(element).find('.ui-search-price__second-line .andes-money-amount__fraction').text().replace(/\D/g, '') ||
+                                $(element).find('.andes-money-amount__fraction').last().text().replace(/\D/g, '');
+                }
+
+                const priceCents = currentPriceEl.find('.andes-money-amount__cents').text().replace(/\D/g, '') || '00';
+                
+                // Pega o preço antigo (original)
+                const oldPriceFrac = previousPriceEl.find('.andes-money-amount__fraction').text().replace(/\D/g, '') ||
+                                     $(element).find('.ui-search-price__part--original .andes-money-amount__fraction').text().replace(/\D/g, '');
                 const oldPrice = oldPriceFrac ? parseFloat(oldPriceFrac) : null;
 
                 if (!priceFrac) return;
