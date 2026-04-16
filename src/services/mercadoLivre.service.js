@@ -52,10 +52,13 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
             if (products.length >= 30) return false;
             try {
                 // 🛑 VERIFICAÇÃO DE DISPONIBILIDADE
-                const isUnavailable = $(element).text().toLowerCase().includes('esgotado') || 
-                                    $(element).text().toLowerCase().includes('indisponível') ||
+                const elementText = $(element).text().toLowerCase();
+                const isUnavailable = elementText.includes('esgotado') || 
+                                    elementText.includes('indisponível') ||
                                     $(element).find('.ui-search-item__status-ticket').text().toLowerCase().includes('indisponível');
-                         // 🔗 CAPTURA DE TÍTULO (Necessário para logs iniciais)
+                if (isUnavailable) return; // ← CORRIGIDO: Estava sendo ignorado!
+
+                // 🔗 CAPTURA DE TÍTULO
                 const titleElement = $(element).find('.poly-component__title, .ui-search-item__title, .ui-search-result__content-title, .ui-search-item__group__element.ui-search-item__title, h2, h3').first();
                 const title = titleElement.text().trim();
                 if (!title) return;
@@ -69,16 +72,12 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
 
                 // 🚨 GARANTIA DE AFILIADO: Ignoramos links de anúncios (click1/mclics)
                 if (link.includes('click1.mercadolivre') || link.includes('mclics')) {
-                    logger.debug(`⏩ Ignorando anúncio patrocinado para garantir link de afiliado: ${title}`);
+                    logger.debug(`⏩ Ignorando anúncio patrocinado: ${title}`);
                     return;
                 }
 
-                // 🏷️ VERIFICAÇÃO DE PROMOÇÃO (Só aceita se tiver selo de desconto real)
+                // 🏷️ VERIFICAÇÃO DE PROMOÇÃO (Preferência, não obrigatório)
                 const hasDiscount = $(element).find('.andes-money-amount__discount, .ui-search-price__discount').length > 0;
-                if (!hasDiscount) {
-                   logger.debug(`⏩ Ignorando "${title}" porque não está em promoção (sem selo de desconto).`);
-                   return;
-                }
 
                 // ⭐ VERIFICAÇÃO DE QUALIDADE (Avaliação e Vendas)
                 const ratingElement = $(element).find('.poly-reviews__rating, .ui-search-reviews__rating-number, .ui-search-item__group__element--reviews').first();
@@ -153,9 +152,10 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                             title, 
                             price, 
                             oldPrice,
+                            hasDiscount,
                             link, 
                             imageUrl: image, 
-                            description: `Oferta imperdível: ${searchTerm}${isProxy ? ' (via Stealth)' : ''}` 
+                            description: `Oferta: ${searchTerm}` 
                         });
                     }
                 }

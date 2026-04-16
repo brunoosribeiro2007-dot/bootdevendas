@@ -30,22 +30,30 @@ class FormatterService {
   }
 
   // Títulos criativos que variam a cada postagem
-  getCreativeTitle() {
-    const titles = [
-      '🚨 *OFERTA RELÂMPAGO MERCADO LIVRE*',
-      '🔥 *PROMOÇÃO IMPERDÍVEL - CORRE!*',
-      '💥 *ACHADO DO DIA - MERCADO LIVRE*',
-      '⚡ *PREÇO DE LIQUIDAÇÃO!*',
-      '🏷️ *OFERTAÇO DO DIA - APROVEITE!*',
-      '🤑 *DESCONTO ABSURDO - SÓ HOJE!*',
-      '💰 *MEGA OFERTA MERCADO LIVRE*',
-      '🎯 *OFERTA ESPECIAL PRA VOCÊ!*',
-      '🛒 *CORRE QUE TÁ BARATO!*',
-      '🔔 *ALERTA DE PROMOÇÃO!*',
-      '💎 *ACHADO IMPERDÍVEL!*',
-      '🏪 *QUEIMA DE PREÇO - MERCADO LIVRE*',
-    ];
-    return titles[Math.floor(Math.random() * titles.length)];
+  getCreativeTitle(hasDiscount) {
+    if (hasDiscount) {
+      const titles = [
+        '🚨 *OFERTA RELÂMPAGO MERCADO LIVRE*',
+        '🔥 *PROMOÇÃO IMPERDÍVEL - CORRE!*',
+        '💥 *ACHADO DO DIA - MERCADO LIVRE*',
+        '⚡ *PREÇO DE LIQUIDAÇÃO!*',
+        '🤑 *DESCONTO ABSURDO - SÓ HOJE!*',
+        '💰 *MEGA OFERTA MERCADO LIVRE*',
+        '🏪 *QUEIMA DE PREÇO - MERCADO LIVRE*',
+      ];
+      return titles[Math.floor(Math.random() * titles.length)];
+    } else {
+      const titles = [
+        '🏷️ *OFERTAÇO DO DIA - APROVEITE!*',
+        '🎯 *OFERTA ESPECIAL PRA VOCÊ!*',
+        '🛒 *CORRE QUE TÁ BARATO!*',
+        '🔔 *ALERTA DE PROMOÇÃO!*',
+        '💎 *ACHADO IMPERDÍVEL!*',
+        '✨ *MELHOR PREÇO DO MERCADO LIVRE!*',
+        '🏠 *OFERTA PRA SUA CASA!*',
+      ];
+      return titles[Math.floor(Math.random() * titles.length)];
+    }
   }
 
   // Frases de urgência variadas
@@ -65,25 +73,23 @@ class FormatterService {
   async generateFormattedMessage(product) {
     const finalLink = this.formatLink(product.link);
     const currentPrice = product.price;
-    const hasOriginalPrice = product.oldPrice && product.oldPrice > currentPrice;
-    const originalPrice = hasOriginalPrice ? product.oldPrice : (currentPrice * 1.15);
+    const hasDiscount = product.hasDiscount || (product.oldPrice && product.oldPrice > currentPrice);
     
-    let discountPercent = 0;
-    if (hasOriginalPrice) {
-        discountPercent = Math.round(((product.oldPrice - currentPrice) / product.oldPrice) * 100);
+    let priceSection = '';
+
+    if (hasDiscount && product.oldPrice && product.oldPrice > currentPrice) {
+        // Produto com desconto REAL verificado
+        const discountPercent = Math.round(((product.oldPrice - currentPrice) / product.oldPrice) * 100);
+        priceSection = `✖️ De: R$ ${product.oldPrice.toFixed(2)}\n🤑 Por: R$ ${currentPrice.toFixed(2)} 😱🔥 ${discountPercent}% OFF`;
     } else {
-        discountPercent = Math.floor(Math.random() * (25 - 10 + 1)) + 10;
+        // Produto sem desconto explícito — mostra só o preço atual (honesto)
+        priceSection = `💰 Por apenas: R$ ${currentPrice.toFixed(2)}`;
     }
 
-    let priceSection = `✖️ De: R$ ${originalPrice.toFixed(2)}\n🤑 Por: R$ ${currentPrice.toFixed(2)}`;
-    if (discountPercent > 0) {
-        priceSection += ` 😱🔥 ${discountPercent}% OFF`;
-    }
-
-    const creativeTitle = this.getCreativeTitle();
+    const creativeTitle = this.getCreativeTitle(hasDiscount);
     const urgencyPhrase = this.getUrgencyPhrase();
 
-    return `${creativeTitle}\n\n*${product.title}*\n\n${priceSection}\n\n🏷️ CUPOM: *VALECUPOM*\n\n🚛 *FRETE GRÁTIS*\n\n${urgencyPhrase}\n\n🔗🛒👇\n${finalLink}`;
+    return `${creativeTitle}\n\n*${product.title}*\n\n${priceSection}\n\n🚛 *FRETE GRÁTIS*\n\n${urgencyPhrase}\n\n🔗🛒👇\n${finalLink}`;
   }
 }
 

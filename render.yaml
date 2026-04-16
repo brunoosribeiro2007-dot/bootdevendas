@@ -13,9 +13,9 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: WHATSAPP_TARGET_NUMBER
-        sync: false
+        value: "5569984520192"
       - key: WHATSAPP_TARGET_GROUP
-        sync: false
+        value: "OfertaLar #17"
       - key: ML_AFFILIATE_TAG
         sync: false
       - key: ML_SEARCH_KEYWORD
