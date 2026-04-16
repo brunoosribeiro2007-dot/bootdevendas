@@ -22,7 +22,20 @@ class FormatterService {
   }
 
   async generateFormattedMessage(product) {
-    const finalLink = this.formatLink(product.link);
+    const mlLink = this.formatLink(product.link);
+    let finalLink = mlLink;
+
+    try {
+        // Usando is.gd que gera links bem curtos e limpos (ex: is.gd/abc)
+        const response = await axios.get(`https://is.gd/create.php?format=json&url=${encodeURIComponent(mlLink)}`, {
+            timeout: 5000
+        });
+        if (response.data && response.data.shorturl) {
+            finalLink = response.data.shorturl;
+        }
+    } catch(err) {
+        logger.warn('Falha ao encurtar o link. Mantendo original.', err.message);
+    }
 
     const currentPrice = product.price;
     const hasOriginalPrice = product.oldPrice && product.oldPrice > currentPrice;
