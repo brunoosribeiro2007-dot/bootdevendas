@@ -119,36 +119,43 @@ class FormatterService {
     const finalLink = await this.formatLink(product.link);
     const currentPrice = product.price;
     const oldPrice = product.oldPrice || (currentPrice * 1.15);
-    
 
+    // Calcula desconto
+    let discountPercent = product.discountPercent || 0;
+    if (!discountPercent && oldPrice && currentPrice < oldPrice) {
+      discountPercent = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
+    }
 
-    const alerts = [
-      'Item útil e barato pra casa 👇🔥',
-      'Olha esse achado pra sua casa 🏠✨',
-      'Dica de ouro de hoje pra economizar 💸🔥',
-      'Achado do dia com preço de Black Friday 🚨',
-      'Sua casa merece esse mimo (e seu bolso agradece) 😍',
-      'Promoção boa de verdade, confere embaixo 👇🔥',
-      'Esse aqui vale cada centavo, qualidade garantida 💯',
-      'Corre que esse desconto tá surreal hoje 🏃💨',
-      'Luxo acessível para o seu lar 🏠💖',
-      'Não sei como ainda não esgotou nesse preço 😳🔥'
+    const headlines = [
+      'OFERTA IMPERDÍVEL 🔥',
+      'PROMOÇÃO RELÂMPAGO ⚡',
+      'DESCONTO ESPECIAL 💰',
+      'ACHADO DO DIA 🎯',
+      'PREÇO BAIXOU 📉',
+      'OPORTUNIDADE ÚNICA 🚀',
     ];
-    const randomAlert = alerts[Math.floor(Math.random() * alerts.length)];
+    const headline = headlines[Math.floor(Math.random() * headlines.length)];
 
-    return [
-      `🚨 *${randomAlert}*`,
+    const groupInviteLink = process.env.WHATSAPP_GROUP_INVITE || '';
+
+    const lines = [
+      `*${headline}*`,
       ``,
-      `*${product.title}*`,
+      `${product.title}`,
       ``,
-      `❌ De: ~R$ ${oldPrice.toFixed(2).replace('.', ',')}~`,
-      `✅ *POR: R$ ${currentPrice.toFixed(2).replace('.', ',')}*`,
+      `R$${oldPrice.toFixed(2).replace('.', ',')}`,
+      `R$${currentPrice.toFixed(2).replace('.', ',')}${discountPercent > 0 ? ` ${discountPercent}% OFF` : ''}`,
       ``,
-      `🔍 Cole este texto no buscador do Mercado Livre: ${product.id}`,
-      ``,
-      `🔗 Ou acesse o link:`,
-      `${finalLink}`
-    ].join('\n');
+      `🔗 ${finalLink}`,
+    ];
+
+    if (groupInviteLink) {
+      lines.push(``);
+      lines.push(`🔗 Convide um amigo para o grupo:`);
+      lines.push(`${groupInviteLink}`);
+    }
+
+    return lines.join('\n');
   }
 }
 
