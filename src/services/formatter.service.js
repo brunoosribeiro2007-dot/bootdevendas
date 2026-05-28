@@ -137,11 +137,6 @@ class FormatterService {
     const randomAlert = alerts[Math.floor(Math.random() * alerts.length)];
 
     return [
-      `🖼 Imagem: ${product.imageUrl}`,
-      `📦 ${product.description || 'Produto'}`,
-      `📝 ${product.title}`,
-      `💰 Valor: R$ ${currentPrice.toFixed(2).replace('.', ',')}`,
-      ``,
       `🚨 *${randomAlert}*`,
       ``,
       `*${product.title}*`,
@@ -149,7 +144,6 @@ class FormatterService {
       `❌ De: ~R$ ${oldPrice.toFixed(2).replace('.', ',')}~`,
       `✅ *POR: R$ ${currentPrice.toFixed(2).replace('.', ',')}*`,
       ``,
-
       `🔍 Cole este texto no buscador do Mercado Livre: ${product.id}`,
       ``,
       `🔗 Ou acesse o link:`,
