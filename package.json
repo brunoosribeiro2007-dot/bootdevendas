@@ -17,6 +17,7 @@
     "axios": "^1.6.8",
     "better-sqlite3": "^12.8.0",
     "cheerio": "^1.2.0",
+    "puppeteer": "^21.3.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

@@ -1,6 +1,10 @@
 const env = require('../config/env');
 const axios = require('axios');
 const logger = require('../config/logger');
+let meliUiService;
+if (env.useMlAffiliateUi) {
+  try { meliUiService = require('./meliUi.service'); } catch (e) { logger.debug('meliUi.service not available:', e.message); }
+}
 
 class FormatterService {
   async formatLink(link) {
@@ -12,56 +16,97 @@ class FormatterService {
 
     // Se configurado, tenta usar a API oficial de afiliados do Mercado Livre
     // Endpoint sugerido: https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink
-    // Como a especificação pode variar, tentamos alguns formatos comuns e usamos o que retornar um URL válido.
-    if (env.useMlAffiliateApi) {
+    // Tentamos vários formatos de requisição e parâmetros comuns que APIs de afiliados costumam aceitar.
+    // IMPORTANTE: evitar chamadas externas durante testes (NODE_ENV === 'test').
+    // 1) Se UI automation estiver habilitada, tentar gerar meli.la via Puppeteer wrapper
+    if (env.useMlAffiliateUi && meliUiService && process.env.NODE_ENV !== 'test') {
       try {
-        const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
-
-        // 1) Tentativa POST com JSON (campo comum: "source" ou "url")
-        try {
-          const postBody = { source: baseLink, tag };
-          const res = await axios.post(apiUrl, postBody, { timeout: 5000 });
-          const body = res.data;
-          if (body) {
-            if (typeof body === 'string' && body.includes('http')) return body;
-            if (body.link) return body.link;
-            if (body.url) return body.url;
-            if (body.created && body.created.url) return body.created.url;
-          }
-        } catch (e) {
-          logger.debug(`ML Affiliate API POST falhou: ${e.message}`);
-        }
-
-        // 2) Tentativa GET com query params comuns
-        try {
-          const getUrl = `${apiUrl}?source=${encodeURIComponent(baseLink)}&affiliate=${encodeURIComponent(tag)}`;
-          const res2 = await axios.get(getUrl, { timeout: 5000 });
-          const b2 = res2.data;
-          if (b2) {
-            if (typeof b2 === 'string' && b2.includes('http')) return b2;
-            if (b2.link) return b2.link;
-            if (b2.url) return b2.url;
-          }
-        } catch (e) {
-          logger.debug(`ML Affiliate API GET falhou: ${e.message}`);
-        }
-      } catch (err) {
-        logger.debug(`Erro ao tentar API de afiliados: ${err.message}`);
+        const short = await meliUiService.generateShortLink(baseLink, tag, 60000);
+        if (short && short.includes('meli.la')) return short;
+      } catch (e) {
+        logger.warn('ML UI shortlink generation failed:', e.message);
       }
     }
 
-    // Fallback: anexa parâmetro compatível (matt_tool) e tenta encurtar
+    if (env.useMlAffiliateApi && process.env.NODE_ENV !== 'test') {
+      const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
+      // Only accept short official affiliate links (prefer `meli.la`).
+      const isAllowed = (url) => {
+        if (!url || typeof url !== 'string') return false;
+        const u = url.toLowerCase();
+        // Prefer meli.la short links. If not present, we won't accept generic mlstatic asset links.
+        return u.includes('meli.la');
+      };
+
+      const tryExtract = (data) => {
+        if (!data) return null;
+        if (typeof data === 'string') {
+          const m = data.match(/https?:\/\/[^\s'"<>]+/);
+          if (m && isAllowed(m[0])) return m[0];
+          return null;
+        }
+        const keys = ['short_link','shortUrl','short','link','url','tracking_url','trackingLink','result','created','data'];
+        for (const k of keys) {
+          if (data[k]) {
+            if (typeof data[k] === 'string' && data[k].includes('http')) return data[k];
+            if (typeof data[k] === 'object') {
+              const nested = tryExtract(data[k]);
+              if (nested) return nested;
+            }
+          }
+        }
+        // search any string values inside object
+        const stack = [data];
+        while (stack.length) {
+          const obj = stack.pop();
+          if (typeof obj === 'string' && obj.includes('http')) {
+            const m = obj.match(/https?:\/\/[^\s'"<>]+/);
+            if (m && isAllowed(m[0])) return m[0];
+          }
+          if (typeof obj === 'object') {
+            for (const v of Object.values(obj)) stack.push(v);
+          }
+        }
+        return null;
+      };
+
+      const postVariants = [
+        { source: baseLink, tag },
+        { url: baseLink, tag },
+        { resource: baseLink, tag },
+        { link: baseLink, affiliate: tag },
+        { url: baseLink, affiliate: tag, tag },
+      ];
+
+      for (const body of postVariants) {
+        try {
+          const res = await axios.post(apiUrl, body, { timeout: 5000 });
+          const found = tryExtract(res.data);
+          if (found) return found;
+        } catch (e) {
+          logger.debug(`ML Affiliate API POST variant failed: ${e.message}`);
+        }
+      }
+
+      const getVariants = [
+        `?source=${encodeURIComponent(baseLink)}&affiliate=${encodeURIComponent(tag)}`,
+        `?url=${encodeURIComponent(baseLink)}&tag=${encodeURIComponent(tag)}`,
+        `?link=${encodeURIComponent(baseLink)}&affiliate=${encodeURIComponent(tag)}`,
+      ];
+
+      for (const q of getVariants) {
+        try {
+          const res2 = await axios.get(apiUrl + q, { timeout: 5000 });
+          const found2 = tryExtract(res2.data);
+          if (found2) return found2;
+        } catch (e) {
+          logger.debug(`ML Affiliate API GET variant failed: ${e.message}`);
+        }
+      }
+    }
+
+    // Fallback: anexa parâmetro compatível (matt_tool) e retorna o link direto sem encurtamento
     const finalLink = `${baseLink}?matt_tool=${tag}`;
-
-    try {
-      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(finalLink)}`, { timeout: 4000 });
-      if (res.data && typeof res.data === 'string' && res.data.includes('http')) {
-        return res.data;
-      }
-    } catch (e) {
-      logger.debug(`Falha ao encurtar link: ${e.message}`);
-    }
-
     return finalLink;
   }
 
