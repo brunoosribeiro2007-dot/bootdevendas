@@ -52,6 +52,25 @@ const tryClickSelectors = async (page, selectors) => {
 
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
+  // Listen to network responses to catch the createLink API response
+  let apiShortLink = null;
+  page.on('response', async (response) => {
+    const url = response.url();
+    if (url.includes('affiliate-program/api/v2/affiliates/createLink') || url.includes('createLink')) {
+      try {
+        const json = await response.json();
+        // Try to extract meli.la from response
+        const str = JSON.stringify(json);
+        const match = str.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
+        if (match) {
+          apiShortLink = match[0];
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  });
+
   // Try to load cookies first
   const hadCookies = await loadCookiesIfExists(page);
 
@@ -88,41 +107,29 @@ const tryClickSelectors = async (page, selectors) => {
     });
   }
 
+  // Wait a bit to see if API already returned the shortlink
+  await page.waitForTimeout(1500);
+
+  if (apiShortLink) {
+    console.log('SHORTLINK:', apiShortLink);
+    await browser.close();
+    process.exit(0);
+  }
+
   // Try to click "Gerar link" / affiliate button
   const genSelectors = ['button[aria-label*="Gerar link"]', 'button[data-testid="generate-affiliate-link"]', 'button.generate-link', '.affiliate-generate', 'button:contains("Gerar link")'];
-  // attempt click, but some selectors may not work; try to find input with meli.la link
-  try {
-    // Wait a bit for modal to render
-    await page.waitForTimeout(1000);
-    // Attempt to find an input containing meli.la
-    const val = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input, textarea'));
-      for (const el of inputs) {
-        const v = el.value || el.getAttribute('value') || '';
-        if (v && v.includes('meli.la')) return v;
-      }
-      const anchors = Array.from(document.querySelectorAll('a'));
-      for (const a of anchors) {
-        const href = a.href || '';
-        if (href && href.includes('meli.la')) return href;
-      }
-      return null;
-    });
-
-    if (val) {
-      console.log('SHORTLINK:', val);
+  
+  const clicked = await tryClickSelectors(page, genSelectors);
+  if (clicked) {
+    await page.waitForTimeout(2000);
+    
+    if (apiShortLink) {
+      console.log('SHORTLINK:', apiShortLink);
       await browser.close();
       process.exit(0);
     }
-  } catch (e) {
-    // ignore
-  }
-
-  // If not found, try clicking generate button selectors
-  const clicked = await tryClickSelectors(page, genSelectors);
-  if (clicked) {
-    // wait and try extract
-    await page.waitForTimeout(1200);
+    
+    // Fallback to DOM parsing
     const val2 = await page.evaluate(() => {
       const inputs = Array.from(document.querySelectorAll('input, textarea'));
       for (const el of inputs) {
@@ -134,13 +141,22 @@ const tryClickSelectors = async (page, selectors) => {
         const href = a.href || '';
         if (href && href.includes('meli.la')) return href;
       }
-      return null;
+      const t = document.body.innerText || '';
+      const m = t.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
+      return m ? m[0] : null;
     });
     if (val2) {
       console.log('SHORTLINK:', val2);
       await browser.close();
       process.exit(0);
     }
+  }
+
+  // Last resort: check if apiShortLink got set during fallback
+  if (apiShortLink) {
+    console.log('SHORTLINK:', apiShortLink);
+    await browser.close();
+    process.exit(0);
   }
 
   // Last resort: copy any meli.la present in DOM text

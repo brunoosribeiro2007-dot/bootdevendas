@@ -150,7 +150,9 @@ class FormatterService {
       `✅ *POR: R$ ${currentPrice.toFixed(2).replace('.', ',')}*`,
       ``,
 
-      `🔗 *Ou acesse o link:*`,
+      `🔍 Cole este texto no buscador do Mercado Livre: ${product.id}`,
+      ``,
+      `🔗 Ou acesse o link:`,
       `${finalLink}`
     ].join('\n');
   }
