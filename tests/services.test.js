@@ -9,8 +9,8 @@ describe('Formatter Service', () => {
     description: 'Smartphone Test',
   };
 
-  test('generateRawMessage should include all fields', () => {
-    const msg = formatterService.generateRawMessage(mockProduct);
+  test('generateRawMessage should include all fields', async () => {
+    const msg = await formatterService.generateRawMessage(mockProduct);
     expect(msg).toContain(mockProduct.imageUrl);
     expect(msg).toContain(mockProduct.title);
     expect(msg).toContain('R$ 1999.99');
@@ -18,8 +18,8 @@ describe('Formatter Service', () => {
     expect(msg).toContain(mockProduct.description);
   });
 
-  test('generateFormattedMessage should include icons and fields', () => {
-    const msg = formatterService.generateFormattedMessage(mockProduct);
+  test('generateFormattedMessage should include icons and fields', async () => {
+    const msg = await formatterService.generateFormattedMessage(mockProduct);
     expect(msg).toContain('🖼');
     expect(msg).toContain('📦');
     expect(msg).toContain('📝');
