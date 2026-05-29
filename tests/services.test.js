@@ -18,13 +18,11 @@ describe('Formatter Service', () => {
     expect(msg).toContain(mockProduct.description);
   });
 
-  test('generateFormattedMessage should include icons and fields', async () => {
+  test('generateFormattedMessage should include correct clean message fields', async () => {
     const msg = await formatterService.generateFormattedMessage(mockProduct);
-    expect(msg).toContain('🖼');
-    expect(msg).toContain('📦');
-    expect(msg).toContain('📝');
-    expect(msg).toContain('💰');
-    expect(msg).toContain('🔗');
     expect(msg).toContain(mockProduct.title);
+    expect(msg).toContain('De:');
+    expect(msg).toContain('*Por apenas: R$');
+    expect(msg).toContain('👉 *Garanta o seu aqui:*');
   });
 });
