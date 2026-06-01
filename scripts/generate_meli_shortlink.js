@@ -54,6 +54,16 @@ const tryClickSelectors = async (page, selectors) => {
 
   // Listen to network responses to catch the createLink API response
   let apiShortLink = null;
+  
+  await page.setRequestInterception(true);
+  page.on('request', (request) => {
+    const url = request.url();
+    if (url.includes('affiliate-program/api/v2/affiliates/createLink') || url.includes('createLink')) {
+      console.log('API REQUEST POST DATA:', request.postData());
+    }
+    request.continue();
+  });
+
   page.on('response', async (response) => {
     const url = response.url();
     if (url.includes('affiliate-program/api/v2/affiliates/createLink') || url.includes('createLink')) {

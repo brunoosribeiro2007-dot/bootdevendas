@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const env = require('../config/env');
 const logger = require('../config/logger');
 const mlService = require('../services/mercadoLivre.service');
+const { enrichProductDetails } = require('../services/mercadoLivre.service');
 const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 
@@ -83,10 +84,12 @@ const captureTask = async () => {
         }
 
         try {
-            const rawMessage = await formatterService.generateRawMessage(product);
-            const formattedMessage = await formatterService.generateFormattedMessage(product);
+            // Enriquecer detalhes do produto antes de formatar
+            const enrichedProduct = await enrichProductDetails(product);
+            const rawMessage = await formatterService.generateRawMessage(enrichedProduct);
+            const formattedMessage = await formatterService.generateFormattedMessage(enrichedProduct);
 
-            const added = await queueService.addToQueue(product, rawMessage, formattedMessage);
+            const added = await queueService.addToQueue(enrichedProduct, rawMessage, formattedMessage);
             if (added) {
                 totalAddedCount++;
             }

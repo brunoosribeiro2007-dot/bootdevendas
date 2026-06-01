@@ -1,6 +1,4 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const logger = require('../config/logger');
+
 
 // 🛑 FILTRO DE NICHO (CASA): Ignora ferramentas pesadas, eletrônicos gamer e itens automotivos
 const PRODUCT_BLACKLIST = [
@@ -448,7 +446,53 @@ const searchProducts = async (searchTerm, category = '') => {
     }
 };
 
+
+
+
+// Existing constants and PRODUCT_BLACKLIST remain unchanged above this insertion point.
+
+/**
+ * Enriquecimento detalhado de um produto usando scraping da página individual.
+ * Retorna um objeto aumentado contendo descrição completa, atributos técnicos e reputação do vendedor.
+ */
+async function enrichProductDetails(product) {
+  if (!product || !product.link) return product;
+  try {
+    // Utiliza um proxy stealth (AllOrigins) para contornar bloqueios de IP
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(product.link)}`;
+    const { data } = await axios.get(proxyUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      },
+      timeout: 10000
+    });
+    const html = data && data.contents ? data.contents : data;
+    const $ = cheerio.load(html);
+
+    // Descrição completa
+    const description = $('.ui-pdp-description__content').text().trim();
+    // Atributos técnicos (tabela de especificações)
+    const attributes = {};
+    $('.ui-pdp-specs__table tr').each((_, row) => {
+      const key = $(row).find('th').text().trim();
+      const value = $(row).find('td').text().trim();
+      if (key && value) attributes[key] = value;
+    });
+    // Reputação do vendedor
+    const sellerInfo = $('.ui-seller-info').text().trim();
+
+    // Anexar ao objeto original
+    product.fullDescription = description || product.description;
+    product.attributes = attributes;
+    product.sellerInfo = sellerInfo;
+  } catch (e) {
+    logger.warn(`⚠️ Falha ao enriquecer produto ${product.id}: ${e.message}`);
+  }
+  return product;
+}
+
 module.exports = {
   searchProducts,
-  searchDailyDeals
+  searchDailyDeals,
+  enrichProductDetails
 };
