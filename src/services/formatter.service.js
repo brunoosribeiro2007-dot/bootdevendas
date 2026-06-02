@@ -11,19 +11,30 @@ class FormatterService {
    * Fallback: encurta qualquer URL usando serviço gratuito (is.gd)
    */
   async shortenUrl(longUrl) {
+    // Tentativa 1: TinyURL (mais confiável)
     try {
-      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 5000 });
-      if (res.data && res.data.startsWith('http')) {
+      const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
+      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
+        logger.info(`✅ URL encurtada via TinyURL: ${res.data}`);
+        return res.data.trim();
+      }
+    } catch (e) {
+      logger.debug(`TinyURL shortener failed: ${e.message}`);
+    }
+    // Tentativa 2: is.gd
+    try {
+      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
+      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
         logger.info(`✅ URL encurtada via is.gd: ${res.data}`);
         return res.data.trim();
       }
     } catch (e) {
       logger.debug(`is.gd shortener failed: ${e.message}`);
     }
-    // Fallback 2: v.gd
+    // Tentativa 3: v.gd
     try {
-      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 5000 });
-      if (res.data && res.data.startsWith('http')) {
+      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
+      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
         logger.info(`✅ URL encurtada via v.gd: ${res.data}`);
         return res.data.trim();
       }
@@ -56,6 +67,10 @@ class FormatterService {
       logger.debug('No cookies found for direct affiliate API.');
       return null;
     }
+
+    // Sanitiza o cookie removendo caracteres inválidos para headers HTTP
+    // Node.js rejeita caracteres fora do range ASCII imprimível (0x20-0x7E)
+    cookieHeader = cookieHeader.replace(/[^\x20-\x7E]/g, '').trim();
 
     try {
 
