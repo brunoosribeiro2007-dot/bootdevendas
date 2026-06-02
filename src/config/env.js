@@ -17,6 +17,7 @@ module.exports = {
   mlAffiliateApiUrl: process.env.ML_AFFILIATE_API_URL || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink',
   useMlAffiliateUi: (process.env.ML_USE_MELI_UI || 'false').toLowerCase() === 'true',
   mlCookiesPath: process.env.ML_COOKIES_PATH || './.ml_cookies.json',
+  mlCookieString: process.env.ML_COOKIE_STRING || '',
   initialCaptureDelay: 60000,
   publishStartTime: process.env.PUBLISH_START_TIME || '08:00',
   publishEndTime: process.env.PUBLISH_END_TIME || '22:00',

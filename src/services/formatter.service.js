@@ -12,15 +12,26 @@ class FormatterService {
     const path = require('path');
     const cheerio = require('cheerio');
     
-    const cookiesPath = env.mlCookiesPath || path.resolve(process.cwd(), '.ml_cookies.json');
-    if (!fs.existsSync(cookiesPath)) {
-      logger.debug('No cookies file found for direct affiliate API.');
+    let cookieHeader = env.mlCookieString;
+
+    if (!cookieHeader) {
+      const cookiesPath = env.mlCookiesPath || path.resolve(process.cwd(), '.ml_cookies.json');
+      if (fs.existsSync(cookiesPath)) {
+        try {
+          const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+          cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        } catch (e) {
+          logger.warn('Failed to parse .ml_cookies.json');
+        }
+      }
+    }
+
+    if (!cookieHeader) {
+      logger.debug('No cookies found for direct affiliate API.');
       return null;
     }
 
     try {
-      const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
-      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
       // 1. Get CSRF token by doing a GET to the affiliate portal
       logger.info('Fetching CSRF token from affiliate program page...');

@@ -41,17 +41,7 @@ const captureTask = async () => {
     
     const allProductsInCycle = [];
     
-    // 🔥 SOFISTICAÇÃO: Sempre tenta buscar "Ofertas do Dia" no início do ciclo
-    try {
-        logger.info('🔥 Buscando Ofertas do Dia (Produtos Premium)...');
-        const dailyDeals = await mlService.searchDailyDeals();
-        if (dailyDeals.length > 0) {
-            allProductsInCycle.push(...dailyDeals);
-            logger.info(`✅ ${dailyDeals.length} Ofertas do Dia adicionadas ao ciclo.`);
-        }
-    } catch (dealsErr) {
-        logger.warn('⚠️ Erro ao buscar ofertas do dia:', dealsErr.message);
-    }
+    // ❌ Ofertas do Dia (Produtos Premium) desativado para respeitar rigorosamente o nicho (CASA) configurado.
     
     for (const keyword of selectedKeywords) {
         try {
