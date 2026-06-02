@@ -90,13 +90,14 @@ class WhatsappPublisher {
         const { Boom } = await import('@hapi/boom');
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
-        const { version } = await fetchLatestBaileysVersion();
+        // Usando versão fixa conhecida e estável para evitar o erro "Verifique sua conexão à internet" no celular
+        const version = [2, 3000, 1015901307];
 
         this.sock = makeWASocket({
           version,
           auth: state,
           logger: pino({ level: 'silent' }),
-          browser: Browsers.macOS('Desktop'),
+          browser: Browsers.ubuntu('Chrome'),
           connectTimeoutMs: 60000,
           printQRInTerminal: true
         });
@@ -143,9 +144,9 @@ class WhatsappPublisher {
                 this.initStatus = 'Reconectando (timeout)...';
                 setTimeout(() => this.initialize(), 15000);
             } else if (statusCode === 515 || statusCode === 503) {
-                this.addLog(`⏳ Servidor WhatsApp indisponível (${statusCode}). Reconectando em 60s...`);
-                this.initStatus = 'Servidor indisponível...';
-                setTimeout(() => this.initialize(), 60000);
+                this.addLog(`⏳ Servidor WhatsApp indisponível/Restart (${statusCode}). Reconectando em 5s...`);
+                this.initStatus = 'Reconectando (515)...';
+                setTimeout(() => this.initialize(), 5000);
             } else if (shouldReconnect) {
                 this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando em 20s...`);
                 this.initStatus = 'Reconectando...';

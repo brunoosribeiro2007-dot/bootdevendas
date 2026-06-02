@@ -24,7 +24,7 @@ app.get('/qr', async (req, res) => {
     let qrImageHtml = '<p style="text-align:center;">Iniciando motor...</p>';
     if (whatsappPublisher.latestQr) {
         try {
-            const qrDataUrl = await QRCode.toDataURL(whatsappPublisher.latestQr, { width: 250, margin: 1 });
+            const qrDataUrl = await QRCode.toDataURL(whatsappPublisher.latestQr, { width: 400, margin: 2 });
             qrImageHtml = `
                 <div class="qr-box">
                     <img src="${qrDataUrl}" alt="Baileys QR Code" style="width: 100%; height: auto; border-radius: 10px;" />
@@ -105,7 +105,8 @@ app.get('/qr', async (req, res) => {
                     background: white; 
                     padding: 16px; 
                     border-radius: 20px; 
-                    width: 250px; 
+                    width: 400px; 
+                    max-width: 100%;
                     margin: 20px auto;
                     box-shadow: 0 0 40px rgba(255, 255, 255, 0.1);
                 }
@@ -168,6 +169,19 @@ app.get('/qr', async (req, res) => {
                 .log-entry span { color: var(--primary); font-weight: bold; }
 
                 .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: var(--primary); color: white; margin-left: auto; }
+
+                .pairing-code {
+                    font-size: 2.5rem;
+                    letter-spacing: 5px;
+                    font-weight: 800;
+                    color: var(--accent);
+                    background: rgba(14, 165, 233, 0.1);
+                    padding: 20px;
+                    border-radius: 12px;
+                    margin: 15px 0;
+                    display: inline-block;
+                    border: 2px dashed var(--accent);
+                }
             </style>
         </head>
         <body>
@@ -247,9 +261,14 @@ app.get('/qr', async (req, res) => {
 app.post('/qr', async (req, res) => {
     const { phone } = req.body;
     const whatsappPublisher = require('./publishers/whatsapp.publisher');
+    const logger = require('./config/logger');
+    
+    logger.info(`🔍 Recebido pedido de pareamento. Body: ${JSON.stringify(req.body)}`);
     
     if (phone) {
         await whatsappPublisher.triggerPairing(phone);
+    } else {
+        logger.warn('⚠️ Telefone não recebido no formulário de pareamento.');
     }
     res.redirect('/qr');
 });
