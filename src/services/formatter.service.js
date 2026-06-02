@@ -7,6 +7,32 @@ if (env.useMlAffiliateUi) {
 }
 
 class FormatterService {
+  /**
+   * Fallback: encurta qualquer URL usando serviço gratuito (is.gd)
+   */
+  async shortenUrl(longUrl) {
+    try {
+      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 5000 });
+      if (res.data && res.data.startsWith('http')) {
+        logger.info(`✅ URL encurtada via is.gd: ${res.data}`);
+        return res.data.trim();
+      }
+    } catch (e) {
+      logger.debug(`is.gd shortener failed: ${e.message}`);
+    }
+    // Fallback 2: v.gd
+    try {
+      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 5000 });
+      if (res.data && res.data.startsWith('http')) {
+        logger.info(`✅ URL encurtada via v.gd: ${res.data}`);
+        return res.data.trim();
+      }
+    } catch (e) {
+      logger.debug(`v.gd shortener failed: ${e.message}`);
+    }
+    return null;
+  }
+
   async formatLinkViaDirectApi(baseLink, tag) {
     const fs = require('fs');
     const path = require('path');
@@ -32,6 +58,14 @@ class FormatterService {
     }
 
     try {
+
+      // 0. Tenta extrair CSRF direto do cookie string (evita GET extra)
+      let csrfFromCookie = null;
+      const csrfCookieMatch = cookieHeader.match(/_csrf=([^;\s]+)/);
+      if (csrfCookieMatch) {
+        csrfFromCookie = csrfCookieMatch[1];
+        logger.info(`CSRF extraído do cookie: ${csrfFromCookie.substring(0, 10)}...`);
+      }
 
       // 1. Get CSRF token by doing a GET to the affiliate portal
       logger.info('Fetching CSRF token from affiliate program page...');
@@ -80,8 +114,10 @@ class FormatterService {
         'Referer': 'https://www.mercadolivre.com.br/l/afiliados-home'
       };
 
-      if (csrfToken) {
-        headers['x-csrf-token'] = csrfToken;
+      // Usa CSRF encontrado no HTML, ou fallback para o do cookie
+      const finalCsrf = csrfToken || csrfFromCookie;
+      if (finalCsrf) {
+        headers['x-csrf-token'] = finalCsrf;
       }
 
       logger.info(`Sending POST to affiliate API createLink...`);
@@ -208,9 +244,21 @@ class FormatterService {
       }
     }
 
-    // Fallback: anexa parâmetro compatível (matt_tool) e retorna o link direto sem encurtamento
-    const finalLink = `${baseLink}?matt_tool=${tag}`;
-    return finalLink;
+    // Fallback: anexa parâmetro compatível (matt_tool)
+    const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
+    
+    // Tenta encurtar o link longo usando serviço genérico para não enviar URL gigante
+    if (process.env.NODE_ENV !== 'test') {
+      logger.warn('⚠️ Nenhum método meli.la funcionou. Tentando encurtador genérico...');
+      const shortened = await this.shortenUrl(longAffiliateLink);
+      if (shortened) {
+        logger.info(`✅ Link encurtado via serviço genérico: ${shortened}`);
+        return shortened;
+      }
+    }
+    
+    logger.warn('⚠️ FALLBACK FINAL: Retornando link longo sem encurtamento.');
+    return longAffiliateLink;
   }
 
   async generateRawMessage(product) {
