@@ -90,14 +90,12 @@ class WhatsappPublisher {
         const { Boom } = await import('@hapi/boom');
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
-        // Usando versão fixa conhecida e estável para evitar o erro "Verifique sua conexão à internet" no celular
-        const version = [2, 3000, 1015901307];
+        const { version } = await fetchLatestBaileysVersion();
 
         this.sock = makeWASocket({
           version,
           auth: state,
           logger: pino({ level: 'silent' }),
-          browser: Browsers.ubuntu('Chrome'),
           connectTimeoutMs: 60000,
           printQRInTerminal: true
         });
