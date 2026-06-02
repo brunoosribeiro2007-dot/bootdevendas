@@ -8,40 +8,11 @@ if (env.useMlAffiliateUi) {
 
 class FormatterService {
   /**
-   * Fallback: encurta qualquer URL usando serviço gratuito (is.gd)
+   * Remove caracteres inválidos de headers HTTP (Node.js rejeita fora do range 0x20-0x7E)
    */
-  async shortenUrl(longUrl) {
-    // Tentativa 1: TinyURL (mais confiável)
-    try {
-      const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via TinyURL: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`TinyURL shortener failed: ${e.message}`);
-    }
-    // Tentativa 2: is.gd
-    try {
-      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via is.gd: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`is.gd shortener failed: ${e.message}`);
-    }
-    // Tentativa 3: v.gd
-    try {
-      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via v.gd: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`v.gd shortener failed: ${e.message}`);
-    }
-    return null;
+  sanitizeCookies(cookieStr) {
+    if (!cookieStr) return '';
+    return cookieStr.replace(/[^\x20-\x7E]/g, '').replace(/\s{2,}/g, ' ').trim();
   }
 
   async formatLinkViaDirectApi(baseLink, tag) {
@@ -69,8 +40,8 @@ class FormatterService {
     }
 
     // Sanitiza o cookie removendo caracteres inválidos para headers HTTP
-    // Node.js rejeita caracteres fora do range ASCII imprimível (0x20-0x7E)
-    cookieHeader = cookieHeader.replace(/[^\x20-\x7E]/g, '').trim();
+    cookieHeader = this.sanitizeCookies(cookieHeader);
+    logger.info(`Cookie header length: ${cookieHeader.length} chars`);
 
     try {
 
@@ -111,49 +82,78 @@ class FormatterService {
       let currentCookieHeader = cookieHeader;
       if (portalRes.headers['set-cookie']) {
         const newCookies = portalRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
-        currentCookieHeader = `${cookieHeader}; ${newCookies}`;
+        currentCookieHeader = this.sanitizeCookies(`${cookieHeader}; ${newCookies}`);
+        logger.info(`Merged cookie header length: ${currentCookieHeader.length} chars`);
       }
 
       logger.info(`CSRF Token found: ${csrfToken ? 'YES' : 'NO'}`);
 
-      // 2. Call the POST createLink API
-      const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
-      
-      const payload = { url: baseLink, tag };
-      const headers = {
-        'Cookie': currentCookieHeader,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'Origin': 'https://www.mercadolivre.com.br',
-        'Referer': 'https://www.mercadolivre.com.br/l/afiliados-home'
-      };
-
       // Usa CSRF encontrado no HTML, ou fallback para o do cookie
       const finalCsrf = csrfToken || csrfFromCookie;
-      if (finalCsrf) {
-        headers['x-csrf-token'] = finalCsrf;
+
+      // Função auxiliar para tentar o POST com um cookie header específico
+      const tryCreateLink = async (cookieToUse, label) => {
+        const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
+        const payload = { url: baseLink, tag };
+        const headers = {
+          'Cookie': cookieToUse,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/plain, */*',
+          'Origin': 'https://www.mercadolivre.com.br',
+          'Referer': 'https://www.mercadolivre.com.br/l/afiliados-home'
+        };
+        if (finalCsrf) {
+          headers['x-csrf-token'] = finalCsrf;
+        }
+
+        logger.info(`[${label}] Sending POST to affiliate API createLink...`);
+        const apiRes = await axios.post(apiUrl, payload, { headers, timeout: 10000 });
+        
+        if (apiRes.data) {
+          logger.info(`[${label}] API response status: ${apiRes.status}, data keys: ${Object.keys(apiRes.data).join(', ')}`);
+          const dataStr = JSON.stringify(apiRes.data);
+          const match = dataStr.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
+          if (match) {
+            logger.info(`✅ [${label}] Generated shortlink: ${match[0]}`);
+            return match[0];
+          }
+          if (apiRes.data.short_link) return apiRes.data.short_link;
+          if (apiRes.data.shortUrl) return apiRes.data.shortUrl;
+          // Log full response for debugging
+          logger.warn(`[${label}] Resposta da API sem meli.la: ${dataStr.substring(0, 500)}`);
+        }
+        return null;
+      };
+
+      // Tentativa 1: Com cookies mesclados (originais + set-cookie)
+      try {
+        const result = await tryCreateLink(currentCookieHeader, 'merged');
+        if (result) return result;
+      } catch (e) {
+        logger.warn(`⚠️ [merged] POST falhou: ${e.message}`);
+        if (e.response && e.response.data) {
+          logger.warn(`[merged] API error: ${JSON.stringify(e.response.data).substring(0, 300)}`);
+        }
       }
 
-      logger.info(`Sending POST to affiliate API createLink...`);
-      const apiRes = await axios.post(apiUrl, payload, { headers, timeout: 8000 });
-      
-      // Extract link
-      if (apiRes.data) {
-        const dataStr = JSON.stringify(apiRes.data);
-        const match = dataStr.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
-        if (match) {
-          logger.info(`✅ Direct API success! Generated shortlink: ${match[0]}`);
-          return match[0];
+      // Tentativa 2: Com cookies originais (sem mesclar set-cookie)
+      if (currentCookieHeader !== cookieHeader) {
+        try {
+          const result = await tryCreateLink(cookieHeader, 'original');
+          if (result) return result;
+        } catch (e) {
+          logger.warn(`⚠️ [original] POST falhou: ${e.message}`);
+          if (e.response && e.response.data) {
+            logger.warn(`[original] API error: ${JSON.stringify(e.response.data).substring(0, 300)}`);
+          }
         }
-        
-        if (apiRes.data.short_link) return apiRes.data.short_link;
-        if (apiRes.data.shortUrl) return apiRes.data.shortUrl;
       }
+
     } catch (e) {
       logger.warn(`⚠️ Direct API affiliate link generation failed: ${e.message}`);
       if (e.response && e.response.data) {
-        logger.warn(`API Response error details: ${JSON.stringify(e.response.data)}`);
+        logger.warn(`API Response error details: ${JSON.stringify(e.response.data).substring(0, 300)}`);
       }
     }
     return null;
@@ -259,20 +259,9 @@ class FormatterService {
       }
     }
 
-    // Fallback: anexa parâmetro compatível (matt_tool)
+    // Fallback final: link longo com tag de afiliado (preserva comissão)
     const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
-    
-    // Tenta encurtar o link longo usando serviço genérico para não enviar URL gigante
-    if (process.env.NODE_ENV !== 'test') {
-      logger.warn('⚠️ Nenhum método meli.la funcionou. Tentando encurtador genérico...');
-      const shortened = await this.shortenUrl(longAffiliateLink);
-      if (shortened) {
-        logger.info(`✅ Link encurtado via serviço genérico: ${shortened}`);
-        return shortened;
-      }
-    }
-    
-    logger.warn('⚠️ FALLBACK FINAL: Retornando link longo sem encurtamento.');
+    logger.warn(`⚠️ FALLBACK: Retornando link com tag de afiliado (longo): ${longAffiliateLink.substring(0, 80)}...`);
     return longAffiliateLink;
   }
 
