@@ -72,6 +72,7 @@ class WhatsappPublisher {
   async initialize() {
     this.latestQr = null;
     this.latestPairingCode = null;
+    this._cachedGroupId = null; // Reset cache do grupo no reconnect
 
     // Evita múltiplas instâncias rodando juntas (Causa erro 405)
     if (this.sock) {
@@ -120,8 +121,17 @@ class WhatsappPublisher {
           }
 
           if (connection === 'close') {
-            const statusCode = (lastDisconnect.error instanceof Boom) ? 
-                lastDisconnect.error.output?.statusCode : 0;
+            // Extração segura do statusCode (previne crash se lastDisconnect/error for null)
+            let statusCode = 0;
+            try {
+                if (lastDisconnect && lastDisconnect.error) {
+                    statusCode = (lastDisconnect.error instanceof Boom) 
+                        ? lastDisconnect.error.output?.statusCode 
+                        : (lastDisconnect.error.output?.statusCode || 0);
+                }
+            } catch (e) {
+                logger.warn('Erro ao extrair statusCode:', e.message);
+            }
             
             const isLoggedOut = statusCode === DisconnectReason.loggedOut;
             const shouldReconnect = !isLoggedOut;
@@ -129,15 +139,17 @@ class WhatsappPublisher {
             this.isReady = false;
             
             if (statusCode === 408) {
-                this.addLog(`⏳ Timeout de conexão (408). Aguardando rede para tentar novamente...`);
-            } else {
-                this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando: ${shouldReconnect}`);
-            }
-            
-            if (shouldReconnect) {
+                this.addLog(`⏳ Timeout de conexão (408). Reconectando em 15s...`);
+                this.initStatus = 'Reconectando (timeout)...';
+                setTimeout(() => this.initialize(), 15000);
+            } else if (statusCode === 515 || statusCode === 503) {
+                this.addLog(`⏳ Servidor WhatsApp indisponível (${statusCode}). Reconectando em 60s...`);
+                this.initStatus = 'Servidor indisponível...';
+                setTimeout(() => this.initialize(), 60000);
+            } else if (shouldReconnect) {
+                this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando em 20s...`);
                 this.initStatus = 'Reconectando...';
-                // Aumentado para 30 segundos para evitar loops rápidos no Render
-                setTimeout(() => this.initialize(), 30000);
+                setTimeout(() => this.initialize(), 20000);
             } else {
                 this.initStatus = 'Sessão Inválida (Limpando...)';
                 // Se foi deslogado, precisamos limpar tudo para gerar novo QR
@@ -155,7 +167,11 @@ class WhatsappPublisher {
             this.initStatus = '✅ Conectado!';
             this.isReady = true;
             this.latestQr = null;
-            this.addLog('✅ Conexão realizada com sucesso!');
+            this.latestPairingCode = null;
+            this.addLog('✅ Conexão realizada com sucesso! Bot pronto para publicações.');
+            
+            // Sincroniza a sessão após conectar com sucesso
+            this.syncSessionToNeon().catch(err => logger.warn('Erro ao sincronizar sessão após conexão:', err.message));
           }
         });
     } catch (err) {
@@ -179,7 +195,7 @@ class WhatsappPublisher {
 
   async publish(item) {
     if (!this.isReady || !this.sock) {
-        logger.warn(`Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
+        logger.warn(`⚠️ Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
         return false;
     }
     
@@ -188,24 +204,30 @@ class WhatsappPublisher {
       const targetGroup = env.whatsappTargetGroup;
       let chatId = null;
 
+      // Cache do grupo para evitar buscar toda vez (resetado no reconnect)
       if (targetGroup) {
-          try {
-              const groups = await this.sock.groupFetchAllParticipating();
-              const groupName = targetGroup.toLowerCase().trim();
-              // Tenta match exato primeiro, depois parcial para ser mais resiliente
-              let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
-              if (!group) {
-                  group = Object.values(groups).find(g => g.subject.toLowerCase().includes(groupName) || groupName.includes(g.subject.toLowerCase()));
+          if (this._cachedGroupId) {
+              chatId = this._cachedGroupId;
+          } else {
+              try {
+                  const groups = await this.sock.groupFetchAllParticipating();
+                  const groupName = targetGroup.toLowerCase().trim();
+                  // Tenta match exato primeiro, depois parcial para ser mais resiliente
+                  let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
+                  if (!group) {
+                      group = Object.values(groups).find(g => g.subject.toLowerCase().includes(groupName) || groupName.includes(g.subject.toLowerCase()));
+                  }
+                  if (group) {
+                      chatId = group.id;
+                      this._cachedGroupId = chatId; // Cache para próximas publicações
+                      logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
+                  } else {
+                      const availableGroups = Object.values(groups).map(g => g.subject).join(', ');
+                      logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
+                  }
+              } catch (gErr) {
+                  logger.error('Erro ao buscar grupos:', gErr.message);
               }
-              if (group) {
-                  chatId = group.id;
-                  logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
-              } else {
-                  const availableGroups = Object.values(groups).map(g => g.subject).join(', ');
-                  logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
-              }
-          } catch (gErr) {
-              logger.error('Erro ao buscar grupos:', gErr.message);
           }
       }
 
@@ -214,21 +236,40 @@ class WhatsappPublisher {
       }
 
       if (!chatId) {
-          logger.error('Não foi possível determinar o destino (Grupo ou Número).');
+          logger.error('❌ Não foi possível determinar o destino (Grupo ou Número).');
           return false;
       }
 
       const displayTitle = item.title || 'Sem título';
-      this.addLog(`📤 Publicando produto: ${displayTitle.substring(0, 30)}...`);
+      this.addLog(`📤 Publicando produto: ${displayTitle.substring(0, 40)}...`);
       
-      await this.sock.sendMessage(chatId, {
-          image: { url: item.image_url },
-          caption: item.formatted_message
-      });
-      
-      return true;
+      // Tenta enviar com imagem primeiro
+      try {
+          await this.sock.sendMessage(chatId, {
+              image: { url: item.image_url },
+              caption: item.formatted_message
+          });
+          return true;
+      } catch (imgErr) {
+          // Se a imagem falhar (URL inválida, timeout), envia somente texto como fallback
+          logger.warn(`⚠️ Falha ao enviar imagem (${imgErr.message}). Enviando somente texto...`);
+          try {
+              await this.sock.sendMessage(chatId, {
+                  text: item.formatted_message
+              });
+              return true;
+          } catch (textErr) {
+              logger.error('❌ Falha total ao enviar mensagem:', textErr.message);
+              // Se falha no texto também, provavelmente a conexão caiu
+              if (textErr.message?.includes('Connection Closed') || textErr.message?.includes('not open')) {
+                  this.isReady = false;
+                  this._cachedGroupId = null;
+              }
+              return false;
+          }
+      }
     } catch (error) {
-      logger.error('Erro ao publicar mensagem no WhatsApp:', error);
+      logger.error('❌ Erro ao publicar mensagem no WhatsApp:', error);
       return false;
     }
   }

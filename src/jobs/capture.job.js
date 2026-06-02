@@ -84,8 +84,18 @@ const captureTask = async () => {
         }
 
         try {
-            // Enriquecer detalhes do produto antes de formatar
-            const enrichedProduct = await enrichProductDetails(product);
+            // Enriquecer detalhes do produto (com timeout de 5s para não travar o ciclo)
+            let enrichedProduct = product;
+            try {
+                const enrichPromise = enrichProductDetails(product);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout enriquecimento')), 5000));
+                enrichedProduct = await Promise.race([enrichPromise, timeoutPromise]);
+            } catch (enrichErr) {
+                // Se enriquecimento falhar ou demorar, usa o produto básico mesmo
+                logger.debug(`⏩ Enriquecimento pulado para "${product.title}": ${enrichErr.message}`);
+                enrichedProduct = product;
+            }
+
             const rawMessage = await formatterService.generateRawMessage(enrichedProduct);
             const formattedMessage = await formatterService.generateFormattedMessage(enrichedProduct);
 
@@ -99,10 +109,6 @@ const captureTask = async () => {
     }
 
     logger.info(`✅ Job de captura finalizado. ${totalAddedCount} novos produtos adicionados à fila.`);
-
-    // Disparar publicação após terminar todas as capturas
-    const { publishTask } = require('./publisher.job');
-    publishTask().catch(err => logger.error('Erro ao disparar publisher após captura:', err));
 
   } catch (error) {
     logger.error('❌ Erro crítico no job de captura multi-item:', error);

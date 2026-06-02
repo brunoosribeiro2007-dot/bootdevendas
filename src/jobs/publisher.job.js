@@ -34,45 +34,66 @@ const publishTaskContinuo = async () => {
     
     try {
         while (true) {
+            // ✅ VERIFICAÇÃO 1: Horário de publicação
             if (!isWithinPublishTime()) {
                 logger.info(`⏳ Fora do horário de publicação definido (${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}). Pausando o bot de publicação.`);
-                await new Promise(r => setTimeout(r, 60000)); // Espera 1 minuto antes de avaliar novamente
+                await new Promise(r => setTimeout(r, 60000)); // Espera 1 minuto
                 continue;
             }
 
+            // ✅ VERIFICAÇÃO 2: WhatsApp DEVE estar conectado ANTES de puxar da fila
+            // Isso evita consumir itens da fila enquanto o WhatsApp não está pronto
+            if (!publisher.isReady) {
+                logger.info('⏳ WhatsApp não está conectado. Aguardando reconexão (30s)...');
+                await new Promise(r => setTimeout(r, 30000));
+                continue;
+            }
+
+            // ✅ VERIFICAÇÃO 3: Buscar próximo item SOMENTE quando tudo está OK
             const item = await repository.getNextApprovedItem();
             if (!item) {
-                // Fila vazia
-                await new Promise(r => setTimeout(r, 10000)); // Espera 10 segundos
+                // Fila vazia — espera mais tempo para não sobrecarregar o banco
+                await new Promise(r => setTimeout(r, 30000)); // 30 segundos
                 continue;
             }
 
-            logger.info(`Tentando publicar item com ID da fila: ${item.id}`);
+            logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
+            
+            // Verifica novamente antes de enviar (pode ter desconectado no intervalo)
+            if (!publisher.isReady) {
+                logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
+                await new Promise(r => setTimeout(r, 15000));
+                continue;
+            }
+
             const success = await publisher.publish(item);
 
             if (success) {
                 await repository.updateQueueStatus(item.id, 'published');
                 logger.info(`✅ Item ${item.id} publicado com sucesso.`);
             } else {
-                logger.error(`Falha ao publicar item ${item.id}.`);
-                // Se falhou porque o WhatsApp não estava pronto, esperamos menos tempo (10s) para tentar o próximo
+                logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
+                // Se falhou porque o WhatsApp caiu, espera mais
                 if (!publisher.isReady) {
-                    await new Promise(r => setTimeout(r, 10000));
+                    await new Promise(r => setTimeout(r, 30000));
                     continue;
                 }
+                // Falha por outro motivo (ex: imagem inválida) — espera e tenta próximo
+                await new Promise(r => setTimeout(r, 10000));
+                continue;
             }
             
-            // Pausa de 3 minutos fixos entre pubicações (solicitado pelo usuário) para evitar bloqueios do WhatsApp
+            // Pausa de 3 minutos fixos entre publicações para evitar bloqueios do WhatsApp
             const delayMs = 180000; // 3 minutos
             logger.info(`⏳ Intervalo seguro: Aguardando 3 minutos antes do próximo envio...`);
             await new Promise(r => setTimeout(r, delayMs));
         }
     } catch (error) {
-        logger.error('Erro no ciclo de publicação:', error);
+        logger.error('❌ Erro no ciclo de publicação:', error);
     } finally {
         isPublishing = false;
         // Reinicia se der erro severo que quebre o loop
-        setTimeout(publishTaskContinuo, 10000);
+        setTimeout(publishTaskContinuo, 30000);
     }
 };
 
