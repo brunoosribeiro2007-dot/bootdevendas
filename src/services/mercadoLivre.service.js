@@ -1,4 +1,7 @@
-
+const axios = require('axios');
+const cheerio = require('cheerio');
+const logger = require('../config/logger');
+const env = require('../config/env');
 
 // 🛑 FILTRO DE NICHO (CASA): Ignora ferramentas pesadas, eletrônicos gamer e itens automotivos
 const PRODUCT_BLACKLIST = [
