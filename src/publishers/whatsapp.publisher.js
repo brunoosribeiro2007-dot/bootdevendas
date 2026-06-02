@@ -86,7 +86,7 @@ class WhatsappPublisher {
     this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
     try {
         const baileys = await import('@whiskeysockets/baileys');
-        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = baileys;
+        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, Browsers } = baileys;
         const { Boom } = await import('@hapi/boom');
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
@@ -96,7 +96,7 @@ class WhatsappPublisher {
           version,
           auth: state,
           logger: pino({ level: 'silent' }),
-          browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
+          browser: Browsers.macOS('Desktop'),
           connectTimeoutMs: 60000,
           printQRInTerminal: true
         });
