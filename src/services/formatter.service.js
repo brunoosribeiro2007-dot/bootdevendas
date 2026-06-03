@@ -291,41 +291,34 @@ class FormatterService {
   async generateFormattedMessage(product, finalLink = null) {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
-    const oldPrice = product.oldPrice || (currentPrice * 1.15);
-    const discount = product.discountPercent || Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
 
-    // Formata preços no padrão brasileiro (vírgula como separador decimal)
+    // Formata preço no padrão brasileiro (remove centavos se for número inteiro)
     const formatPrice = (value) => {
+      if (value % 1 === 0) {
+        return value.toFixed(0);
+      }
       return value.toFixed(2).replace('.', ',');
     };
 
-    const lines = [];
-    lines.push(`🔥 *ACHADO IMPERDÍVEL!* 🔥`);
-    lines.push(``);
-    lines.push(`*${product.title}*`);
-    lines.push(``);
-
-    // Badges / Highlights
-    let highlights = [];
-    if (product.isOfficialStore) {
-      highlights.push(`🏪 *Loja Oficial*`);
+    // Extrai o termo de busca para usar como cabeçalho
+    let header = 'OFERTA';
+    if (product.description) {
+      header = product.description.replace(/^Oferta:\s*/i, '').trim().toUpperCase();
     }
-    if (product.isFull) {
-      highlights.push(`⚡ *Frete FULL*`);
-    }
-    if (highlights.length > 0) {
-      lines.push(highlights.join('  |  '));
-      lines.push(``);
+    if (!header) {
+      header = 'PROMOÇÃO';
     }
 
-    lines.push(`❌ De: ~~R$ ${formatPrice(oldPrice)}~~`);
-    lines.push(`✅ Por apenas: *R$ ${formatPrice(currentPrice)}*`);
-    if (discount > 0) {
-      lines.push(`📉 *${discount}% de Desconto*`);
-    }
-    lines.push(``);
-    lines.push(`👉 *Garanta o seu aqui:*`);
-    lines.push(link);
+    const lines = [
+      `${header} 🇧🇷`,
+      ``,
+      `🧙 ${product.title}`,
+      ``,
+      `💸 por R$ ${formatPrice(currentPrice)}`,
+      ``,
+      `🛒 Compre aqui:`,
+      link,
+    ];
 
     return lines.join('\n');
   }
