@@ -1,5 +1,8 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
 
@@ -132,7 +135,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 }
                 
                 // 💰 CAPTURA DE PREÇO
-                const currentMoneyEl = $(element).find('.andes-money-amount--current').filter(function() {
+                let currentMoneyEl = $(element).find('.poly-price__current .andes-money-amount, .ui-search-price__second-line .andes-money-amount, .andes-money-amount--current').filter(function() {
                     return $(this).closest('.poly-price__installments, .ui-search-item__group__element--installments').length === 0;
                 }).first();
                 
@@ -256,13 +259,19 @@ const fetchFromBackupAPI = async (searchTerm) => {
             // 🏷️ Adicionando filtros de "melhores resultados" (limitado a produtos novos e com boa reputação)
             const apiUrl = `https://${domain}/sites/MLB/search?q=${encodeURIComponent(searchTerm)}&limit=50&sort=relevance&condition=new`;
             
+            const headers = {
+                'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
+                'X-Forwarded-For': fakeIP,
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
+                'Accept': 'application/json'
+            };
+
+            if (env.mlCookieString) {
+                headers['Cookie'] = env.mlCookieString;
+            }
+            
             const { data } = await axios.get(apiUrl, {
-                headers: {
-                    'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
-                    'X-Forwarded-For': fakeIP,
-                    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8',
-                    'Accept': 'application/json'
-                },
+                headers,
                 timeout: 8000
             });
             
@@ -385,8 +394,88 @@ const searchDailyDeals = async () => {
 };
 
 /**
+ * Identifica a categoria do Mercado Livre ideal com base na palavra-chave
+ */
+const getCategoryForKeyword = (keyword) => {
+    const kw = keyword.toLowerCase();
+    
+    // Palavras-chave associadas a Eletrodomésticos
+    const applianceKeywords = [
+        'air fryer', 'fryer', 'liquidificador', 'cafeteira', 'aspirador', 
+        'ventilador', 'micro-ondas', 'microondas', 'batedeira', 'geladeira', 
+        'fogão', 'fogao', 'máquina de lavar', 'lavadora', 'ferro de passar',
+        'eletro', 'secador', 'climatizador'
+    ];
+    
+    if (applianceKeywords.some(ak => kw.includes(ak))) {
+        return 'MLB5726'; // Eletrodomésticos
+    }
+    
+    return 'MLB1574'; // Casa, Móveis e Decoração (Default do nicho)
+};
+
+/**
+ * Fallback de busca usando a página oficial de Ofertas do Dia filtrada por categoria
+ */
+const searchCategoryDealsFallback = async (searchTerm) => {
+    const categoryId = getCategoryForKeyword(searchTerm);
+    logger.info(`⚠️ Ativando Fallback de Ofertas por Categoria (${categoryId}) para: "${searchTerm}"...`);
+    
+    try {
+        const url = `https://www.mercadolivre.com.br/ofertas?category=${categoryId}`;
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        };
+
+        const response = await axios.get(url, {
+            headers,
+            timeout: 10000,
+            validateStatus: () => true
+        });
+
+        if (response.status !== 200 || !response.data) {
+            logger.warn(`⚠️ Fallback: Erro ao obter página de ofertas (Status ${response.status})`);
+            return [];
+        }
+
+        const allDeals = parseProducts(response.data, searchTerm);
+        logger.info(`📦 Fallback: Encontradas ${allDeals.length} ofertas gerais na categoria ${categoryId}`);
+
+        if (allDeals.length === 0) return [];
+
+        // Filtragem em memória pela palavra-chave (ignora palavras muito curtas)
+        const searchWords = searchTerm.toLowerCase()
+            .split(/\s+/)
+            .filter(w => w.length > 2);
+
+        const matchedProducts = allDeals.filter(p => {
+            const titleLower = p.title.toLowerCase();
+            return searchWords.some(word => titleLower.includes(word));
+        });
+
+        if (matchedProducts.length > 0) {
+            logger.info(`🎯 Fallback: ${matchedProducts.length} produtos correspondentes a "${searchTerm}" encontrados em ofertas.`);
+            return matchedProducts;
+        }
+
+        // Se nenhum corresponder especificamente, retorna as 6 principais ofertas gerais da categoria
+        // Isso garante que o bot nunca fique sem produtos do nicho de Casa para postar
+        logger.info(`ℹ️ Fallback: Nenhuma oferta direta de "${searchTerm}". Retornando as 6 melhores ofertas gerais do nicho Casa.`);
+        return allDeals.slice(0, 6);
+
+    } catch (err) {
+        logger.error(`❌ Erro no Fallback de Ofertas por Categoria:`, err.message);
+    }
+    return [];
+};
+
+/**
  * Busca produtos no Mercado Livre.
- * Tenta Scraper Direto -> Scraper via Proxy (Stealth) -> API Fallback.
+ * Tenta Scraper Direto -> Scraper via Proxy (Stealth) -> API Fallback -> Fallback de Ofertas por Categoria.
  */
 const searchProducts = async (searchTerm, category = '') => {
     // Se o termo for "ofertas", usamos o buscador de ofertas dedicado
@@ -406,8 +495,6 @@ const searchProducts = async (searchTerm, category = '') => {
     ];
 
     try {
-        // 🔥 OTIMIZAÇÃO: Busca apenas itens com DESCONTO (mínimo 10%) para garantir promoções reais
-        // E adiciona um buster de cache para evitar resultados repetidos
         const cacheBuster = Math.floor(Math.random() * 100);
         const url = `https://lista.mercadolivre.com.br/${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
         
@@ -415,29 +502,40 @@ const searchProducts = async (searchTerm, category = '') => {
 
         logger.info(`🔌 Tentativa Direta (Simples) para: ${searchTerm}...`);
         
+        const headers = {
+            'User-Agent': selectedUA,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+        };
+
+        if (env.mlCookieString) {
+            headers['Cookie'] = env.mlCookieString;
+        }
+        
         const { data: html, status } = await axios.get(url, {
-            headers: {
-                'User-Agent': selectedUA,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'pt-BR,pt;q=0.9',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            },
+            headers,
             timeout: 10000,
             validateStatus: () => true
         });
 
         if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden')) {
             logger.warn(`⚠️ Bloqueio direto detectado (Status ${status}). Ativando Modo Stealth...`);
-            return await searchViaStealthProxy(searchTerm, category);
+            const stealthResult = await searchViaStealthProxy(searchTerm, category);
+            if (stealthResult && stealthResult.length > 0) return stealthResult;
+            
+            return await searchCategoryDealsFallback(searchTerm);
         }
 
         const products = parseProducts(html, searchTerm);
         
         if (products.length === 0) {
-            // Se o scraper direto falhar (pode ser seletor ou bloqueio silencioso)
             logger.info(`ℹ️ 0 produtos no scraper direto para "${searchTerm}". Tentando Modo Stealth...`);
-            return await searchViaStealthProxy(searchTerm, category);
+            const stealthResult = await searchViaStealthProxy(searchTerm, category);
+            if (stealthResult && stealthResult.length > 0) return stealthResult;
+            
+            return await searchCategoryDealsFallback(searchTerm);
         }
 
         logger.info(`✅ Sucesso no Scraper Direto para "${searchTerm}" (${products.length} itens).`);
@@ -445,7 +543,10 @@ const searchProducts = async (searchTerm, category = '') => {
         
     } catch (error) {
         logger.warn(`⚠️ Erro no Scraper Direto (${error.message}). Tentando Modo Stealth...`);
-        return await searchViaStealthProxy(searchTerm, category);
+        const stealthResult = await searchViaStealthProxy(searchTerm, category);
+        if (stealthResult && stealthResult.length > 0) return stealthResult;
+        
+        return await searchCategoryDealsFallback(searchTerm);
     }
 };
 

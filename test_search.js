@@ -4,7 +4,7 @@ const logger = require('./src/config/logger');
 async function test() {
     console.log('--- TESTE DE BUSCA ---');
     try {
-        const keyword = 'Xiaomi';
+        const keyword = 'jogo de panelas';
         console.log(`Buscando por: ${keyword}`);
         const products = await searchProducts(keyword);
         console.log(`Total de produtos encontrados: ${products.length}`);
