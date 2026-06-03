@@ -119,7 +119,7 @@ class FormatterService {
       // 2. Call the POST createLink API
       const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
       
-      const payload = { url: baseLink, tag };
+      const payload = { urls: [baseLink], tag };
       const headers = {
         'Cookie': currentCookieHeader,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -135,20 +135,26 @@ class FormatterService {
         headers['x-csrf-token'] = finalCsrf;
       }
 
-      logger.info(`Sending POST to affiliate API createLink...`);
+      logger.info(`Sending POST to affiliate API createLink with new array payload...`);
       const apiRes = await axios.post(apiUrl, payload, { headers, timeout: 8000 });
       
       // Extract link
       if (apiRes.data) {
+        // Tenta buscar no novo formato urls[0].short_url ou via regex na resposta completa
+        if (apiRes.data.urls && apiRes.data.urls[0]) {
+          const itemRes = apiRes.data.urls[0];
+          if (itemRes.short_url) {
+            logger.info(`✅ Direct API success! Generated shortlink: ${itemRes.short_url}`);
+            return itemRes.short_url;
+          }
+        }
+        
         const dataStr = JSON.stringify(apiRes.data);
         const match = dataStr.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
         if (match) {
-          logger.info(`✅ Direct API success! Generated shortlink: ${match[0]}`);
+          logger.info(`✅ Direct API success! Generated shortlink via Regex: ${match[0]}`);
           return match[0];
         }
-        
-        if (apiRes.data.short_link) return apiRes.data.short_link;
-        if (apiRes.data.shortUrl) return apiRes.data.shortUrl;
       }
     } catch (e) {
       logger.warn(`⚠️ Direct API affiliate link generation failed: ${e.message}`);
