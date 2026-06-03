@@ -1,7 +1,7 @@
 const env = require('../config/env');
 const axios = require('axios');
 const logger = require('../config/logger');
-const couponService = require('./coupon.service');
+// couponService removed
 let meliUiService;
 if (env.useMlAffiliateUi) {
   try { meliUiService = require('./meliUi.service'); } catch (e) { logger.debug('meliUi.service not available:', e.message); }
@@ -315,18 +315,24 @@ class FormatterService {
     const lines = [];
     lines.push(headline);
     lines.push(``);
-    lines.push(`🧙‍♂️ ${product.title}`);
+    lines.push(`🛍️ ${product.title}`);
     lines.push(``);
-    lines.push(`💸 por R$ ${formatPrice(currentPrice)}`);
+    lines.push(`🤑 por R$ ${formatPrice(currentPrice)} no pix`);
+
+    // Adiciona cupom disponível (antes do link)
+    if (product.coupon) {
+      let cleanCoupon = product.coupon.trim();
+      if (cleanCoupon.toLowerCase().startsWith('cupom ')) {
+        cleanCoupon = cleanCoupon.substring(6).trim();
+      }
+      if (cleanCoupon) {
+        lines.push(`🏷️Use o cupom: ${cleanCoupon}`);
+      }
+    }
+
     lines.push(``);
     lines.push(`🛒 Compre aqui:`);
     lines.push(link);
-
-    // Adiciona cupons disponíveis
-    const couponsText = couponService.formatCouponsForMessage();
-    if (couponsText) {
-      lines.push(couponsText);
-    }
 
     return lines.join('\n');
   }

@@ -5,11 +5,11 @@ const logger = require('../config/logger');
 const saveProduct = async (product) => {
     try {
         const query = `
-            INSERT INTO products (id, title, price, link, image_url, description)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO products (id, title, price, link, image_url, description, coupon)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO NOTHING
         `;
-        const res = await db.run(query, [product.id, product.title, product.price, product.link, product.imageUrl, product.description]);
+        const res = await db.run(query, [product.id, product.title, product.price, product.link, product.imageUrl, product.description, product.coupon || '']);
         return res.rowCount;
     } catch (err) {
         logger.error('Erro ao salvar produto no Banco:', err);
@@ -38,7 +38,7 @@ const enqueueProduct = async (queueItem) => {
 };
 
 const getQueue = async (status) => {
-    let query = 'SELECT q.*, p.title, p.price, p.link FROM queue q JOIN products p ON q.product_id = p.id';
+    let query = 'SELECT q.*, p.title, p.price, p.link, p.coupon FROM queue q JOIN products p ON q.product_id = p.id';
     let params = [];
     if (status) {
         query += ' WHERE q.status = ?';
@@ -68,7 +68,7 @@ const getNextApprovedItem = async () => {
 
         // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
         let query = `
-            SELECT q.*, p.title, p.image_url, p.description 
+            SELECT q.*, p.title, p.image_url, p.description, p.coupon 
             FROM queue q 
             JOIN products p ON q.product_id = p.id 
             WHERE q.status = 'approved' 
@@ -81,7 +81,7 @@ const getNextApprovedItem = async () => {
         // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
         if (!item) {
             query = `
-                SELECT q.*, p.title, p.image_url, p.description 
+                SELECT q.*, p.title, p.image_url, p.description, p.coupon 
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 

@@ -185,6 +185,13 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                     image = image.replace('-I.jpg', '-W.jpg');
                 }
 
+                // 🏷️ CAPTURA DE CUPOM (SE HOUVER)
+                const couponEl = $(element).find('.poly-coupons__pill, [class*="coupons__pill"], [class*="coupon-pill"]').first();
+                let couponText = '';
+                if (couponEl.length > 0) {
+                    couponText = couponEl.text().replace(/\s+/g, ' ').trim();
+                }
+
                 if (title && price && link) {
                     const id = getStableId(link, title);
                     if (!products.find(p => p.id === id)) {
@@ -202,7 +209,8 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                             qualityScore,
                             link, 
                             imageUrl: image, 
-                            description: `Oferta: ${searchTerm}` 
+                            description: `Oferta: ${searchTerm}`,
+                            coupon: couponText
                         });
                     }
                 }

@@ -92,6 +92,7 @@ const DDL = {
             link TEXT NOT NULL,
             image_url TEXT,
             description TEXT,
+            coupon TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
     queue: USE_NEON
@@ -128,10 +129,22 @@ const initializeDB = async () => {
         if (USE_NEON) {
             logger.info('Conectando ao Neon (PostgreSQL)...');
             await pool.query(DDL.products);
+            try {
+                await pool.query('ALTER TABLE products ADD COLUMN coupon TEXT');
+                logger.info('🐘 Postgres: Coluna "coupon" adicionada à tabela products.');
+            } catch (e) {
+                // Ignora se a coluna já existe
+            }
             await pool.query(DDL.queue);
             await pool.query(DDL.sessions);
         } else {
             sqliteDb.exec(DDL.products);
+            try {
+                sqliteDb.exec('ALTER TABLE products ADD COLUMN coupon TEXT');
+                logger.info('🗃️ SQLite: Coluna "coupon" adicionada à tabela products.');
+            } catch (e) {
+                // Ignora se a coluna já existe
+            }
             sqliteDb.exec(DDL.queue);
             sqliteDb.exec(DDL.sessions);
         }
