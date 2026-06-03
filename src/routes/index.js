@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const repository = require('../database/repository');
 const logger = require('../config/logger');
+const { db } = require('../database/init');
 const { captureTask } = require('../jobs/capture.job');
 const { publishTask } = require('../jobs/publisher.job');
 
@@ -66,7 +67,7 @@ router.get('/database/clear', async (req, res) => {
 router.get('/coupons', async (req, res) => {
     try {
         const query = "SELECT DISTINCT coupon FROM products WHERE coupon IS NOT NULL AND coupon != ''";
-        const rows = await repository.db.all(query);
+        const rows = await db.all(query);
         const coupons = rows.map(r => r.coupon);
         res.json({ coupons });
     } catch (err) {
