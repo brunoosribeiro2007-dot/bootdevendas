@@ -205,7 +205,9 @@ class WhatsappPublisher {
 
       // Cache do grupo para evitar buscar toda vez (resetado no reconnect)
       if (targetGroup) {
-          if (this._cachedGroupId) {
+          if (targetGroup.endsWith('@g.us')) {
+              chatId = targetGroup;
+          } else if (this._cachedGroupId) {
               chatId = this._cachedGroupId;
           } else {
               try {
@@ -221,11 +223,11 @@ class WhatsappPublisher {
                       this._cachedGroupId = chatId; // Cache para próximas publicações
                       logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
                   } else {
-                      const availableGroups = Object.values(groups).map(g => g.subject).join(', ');
+                      const availableGroups = Object.values(groups).map(g => `"${g.subject}" (ID: ${g.id})`).join(', ');
                       logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
                   }
               } catch (gErr) {
-                  logger.error('Erro ao buscar grupos:', gErr.message);
+                  logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
               }
           }
       }
