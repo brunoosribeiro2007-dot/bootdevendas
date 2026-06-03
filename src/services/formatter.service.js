@@ -292,23 +292,40 @@ class FormatterService {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
     const oldPrice = product.oldPrice || (currentPrice * 1.15);
+    const discount = product.discountPercent || Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
 
     // Formata preços no padrão brasileiro (vírgula como separador decimal)
     const formatPrice = (value) => {
       return value.toFixed(2).replace('.', ',');
     };
 
-    const lines = [
-      `*PROMO NO MELI*`,
-      ``,
-      `💖 ${product.title}`,
-      ``,
-      `De: R$ ${formatPrice(oldPrice)} ❌`,
-      `AGORA por apenas: *R$ ${formatPrice(currentPrice)}* ✅`,
-      ``,
-      `Compre aqui:`,
-      link,
-    ];
+    const lines = [];
+    lines.push(`🔥 *ACHADO IMPERDÍVEL!* 🔥`);
+    lines.push(``);
+    lines.push(`*${product.title}*`);
+    lines.push(``);
+
+    // Badges / Highlights
+    let highlights = [];
+    if (product.isOfficialStore) {
+      highlights.push(`🏪 *Loja Oficial*`);
+    }
+    if (product.isFull) {
+      highlights.push(`⚡ *Frete FULL*`);
+    }
+    if (highlights.length > 0) {
+      lines.push(highlights.join('  |  '));
+      lines.push(``);
+    }
+
+    lines.push(`❌ De: ~~R$ ${formatPrice(oldPrice)}~~`);
+    lines.push(`✅ Por apenas: *R$ ${formatPrice(currentPrice)}*`);
+    if (discount > 0) {
+      lines.push(`📉 *${discount}% de Desconto*`);
+    }
+    lines.push(``);
+    lines.push(`👉 *Garanta o seu aqui:*`);
+    lines.push(link);
 
     return lines.join('\n');
   }
