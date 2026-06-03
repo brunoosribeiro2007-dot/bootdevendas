@@ -182,34 +182,72 @@ app.get('/qr', async (req, res) => {
                     display: inline-block;
                     border: 2px dashed var(--accent);
                 }
-                .day-checkbox {
-                    cursor: pointer;
+                .coupon-card {
+                    background: rgba(15, 23, 42, 0.4);
+                    border: 1px solid var(--border);
+                    border-radius: 16px;
+                    padding: 16px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                }
+                .coupon-badge-large {
+                    font-size: 0.95rem;
+                    font-weight: 800;
+                    color: var(--primary);
+                    background: rgba(14, 165, 233, 0.15);
+                    border: 1px solid rgba(14, 165, 233, 0.3);
+                    padding: 6px 14px;
+                    border-radius: 20px;
                     display: inline-flex;
                     align-items: center;
-                    justify-content: center;
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 50%;
+                    gap: 6px;
+                    width: fit-content;
+                }
+                .coupon-product-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    background: rgba(0, 0, 0, 0.25);
+                    padding: 8px 12px;
+                    border-radius: 12px;
+                    border: 1px solid rgba(255, 255, 255, 0.02);
+                }
+                .coupon-product-img {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 6px;
+                    object-fit: cover;
+                }
+                .coupon-product-title {
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    color: #cbd5e1;
+                    flex: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .coupon-product-price {
+                    font-size: 0.85rem;
+                    font-weight: 700;
+                    color: var(--accent);
+                }
+                .coupon-product-btn {
+                    background: rgba(255,255,255,0.05);
                     border: 1px solid var(--border);
-                    background: rgba(15, 23, 42, 0.5);
-                    user-select: none;
-                    font-size: 0.8rem;
+                    color: var(--text);
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 0.75rem;
+                    cursor: pointer;
+                    text-decoration: none;
                     font-weight: 600;
                 }
-                .day-checkbox input {
-                    display: none;
-                }
-                .day-checkbox span {
-                    color: var(--text-muted);
-                }
-                .day-checkbox input:checked + span {
-                    color: var(--accent);
-                    font-weight: bold;
-                }
-                .day-checkbox:has(input:checked) {
-                    border-color: var(--accent);
-                    background: rgba(34, 197, 94, 0.15);
-                    box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+                .coupon-product-btn:hover {
+                    background: var(--primary);
+                    border-color: var(--primary);
+                    color: white;
                 }
             </style>
         </head>
@@ -279,11 +317,11 @@ app.get('/qr', async (req, res) => {
 
                 <!-- Seção de Cupons -->
                 <div class="card" style="margin-top: 24px;">
-                    <h3>🎟️ Cupons Disponíveis no Mercado Livre <span class="badge" id="coupon-count">0</span></h3>
-                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: -8px; margin-bottom: 16px;">
-                        Estes são os cupons capturados automaticamente dos produtos em oferta ativos.
+                    <h3>🎟️ Cupons & Produtos Vinculados <span class="badge" id="coupon-count">0</span></h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -8px; margin-bottom: 20px;">
+                        Estes são os cupons capturados automaticamente com os respectivos produtos em oferta.
                     </p>
-                    <div id="coupons-list" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div id="coupons-list" style="display: flex; flex-direction: column; gap: 16px;">
                         <!-- Carregado via JS -->
                     </div>
                 </div>
@@ -308,14 +346,24 @@ app.get('/qr', async (req, res) => {
                         if (data.coupons.length === 0) {
                             list.innerHTML = '<p style="text-align:center; color: var(--text-muted); font-size: 0.9rem; margin: 10px 0; width: 100%;">Nenhum cupom capturado nas ofertas atuais.</p>';
                         } else {
-                            list.innerHTML = data.coupons.map(coupon => {
-                                let clean = coupon;
+                            list.innerHTML = data.coupons.map(group => {
+                                let clean = group.coupon;
                                 if (clean.toLowerCase().startsWith('cupom ')) {
                                     clean = clean.substring(6).trim();
                                 }
-                                return '<div style="display:flex; align-items:center; gap:8px; padding:10px 16px; background:rgba(14, 165, 233, 0.1); border-radius:12px; border:1px solid rgba(14, 165, 233, 0.2);">' +
-                                    '<div style="font-size: 1.1rem;">🏷️</div>' +
-                                    '<div style="font-weight:700; color: var(--primary); font-size: 0.95rem;">' + clean + '</div>' +
+                                
+                                const productsHtml = group.products.map(p => {
+                                    return '<div class="coupon-product-item">' +
+                                        '<img src="' + (p.imageUrl || 'https://www.mercadolivre.com.br/menu/img/logo__large_plus.png') + '" class="coupon-product-img" />' +
+                                        '<div class="coupon-product-title" title="' + p.title + '">' + p.title + '</div>' +
+                                        '<div class="coupon-product-price">R$ ' + p.price.toFixed(2).replace('.', ',') + '</div>' +
+                                        '<a href="' + p.link + '" target="_blank" class="coupon-product-btn">🔗 Abrir Link</a>' +
+                                    '</div>';
+                                }).join('');
+                                
+                                return '<div class="coupon-card">' +
+                                    '<div class="coupon-badge-large">🎟️ ' + clean + '</div>' +
+                                    '<div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">' + productsHtml + '</div>' +
                                 '</div>';
                             }).join('');
                         }
