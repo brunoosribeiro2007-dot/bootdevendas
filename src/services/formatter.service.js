@@ -1,6 +1,7 @@
 const env = require('../config/env');
 const axios = require('axios');
 const logger = require('../config/logger');
+const couponService = require('./coupon.service');
 let meliUiService;
 if (env.useMlAffiliateUi) {
   try { meliUiService = require('./meliUi.service'); } catch (e) { logger.debug('meliUi.service not available:', e.message); }
@@ -320,6 +321,12 @@ class FormatterService {
     lines.push(``);
     lines.push(`🛒 Compre aqui:`);
     lines.push(link);
+
+    // Adiciona cupons disponíveis
+    const couponsText = couponService.formatCouponsForMessage();
+    if (couponsText) {
+      lines.push(couponsText);
+    }
 
     return lines.join('\n');
   }

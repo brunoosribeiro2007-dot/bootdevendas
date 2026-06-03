@@ -247,11 +247,108 @@ app.get('/qr', async (req, res) => {
                         </div>
                     </aside>
                 </div>
+
+                <!-- Seção de Cupons -->
+                <div class="card" style="margin-top: 24px;">
+                    <h3>🎟️ Cupons Disponíveis <span class="badge" id="coupon-count">0</span></h3>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                        <input type="text" id="coupon-code" placeholder="Código (ex: CASA15)">
+                        <input type="text" id="coupon-discount" placeholder="Desconto (ex: 15% ou R$10)">
+                        <input type="text" id="coupon-desc" placeholder="Descrição" style="grid-column: 1 / -1;">
+                        <input type="number" id="coupon-min" placeholder="Compra mínima (R$)" value="0">
+                        <input type="date" id="coupon-expires" placeholder="Validade">
+                    </div>
+                    <button class="btn btn-primary" onclick="addCoupon()" style="margin-bottom: 16px;">➕ Adicionar Cupom</button>
+
+                    <div id="coupons-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                    
+                    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+                        <h3 style="font-size: 0.9rem;">👁️ Preview da mensagem</h3>
+                        <pre id="coupon-preview" style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 12px; font-size: 0.85rem; white-space: pre-wrap; color: #cbd5e1; border: 1px solid var(--border);"></pre>
+                    </div>
+                </div>
                 
                 <footer style="margin-top: 40px; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
                     ML Affiliate Bot v2.0 &bull; Powered by Antigravity
                 </footer>
             </div>
+
+            <script>
+                async function loadCoupons() {
+                    try {
+                        const res = await fetch('/api/coupons');
+                        const data = await res.json();
+                        document.getElementById('coupon-count').textContent = data.active;
+                        
+                        const list = document.getElementById('coupons-list');
+                        if (data.coupons.length === 0) {
+                            list.innerHTML = '<p style="text-align:center; color: var(--text-muted); font-size: 0.9rem;">Nenhum cupom cadastrado.</p>';
+                        } else {
+                            list.innerHTML = data.coupons.map(c => {
+                                const isExpired = c.expiresAt && c.expiresAt < new Date().toISOString().split('T')[0];
+                                const statusColor = !c.active ? '#ef4444' : isExpired ? '#f59e0b' : '#22c55e';
+                                const statusText = !c.active ? 'Inativo' : isExpired ? 'Expirado' : 'Ativo';
+                                return '<div style="display:flex; align-items:center; gap:12px; padding:12px; background:rgba(0,0,0,0.3); border-radius:12px; border:1px solid var(--border);">' +
+                                    '<div style="width:10px;height:10px;border-radius:50%;background:' + statusColor + ';flex-shrink:0;box-shadow:0 0 8px ' + statusColor + ';"></div>' +
+                                    '<div style="flex:1;">' +
+                                        '<div style="font-weight:600;font-size:0.95rem;">' + c.code + ' <span style="font-weight:400;color:var(--text-muted);font-size:0.8rem;">(' + statusText + ')</span></div>' +
+                                        '<div style="font-size:0.8rem;color:var(--text-muted);">' + (c.description || '') + '</div>' +
+                                        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Desconto: ' + (c.discount || '-') + (c.minPurchase ? ' | Min: R$' + c.minPurchase : '') + (c.expiresAt ? ' | Até: ' + c.expiresAt : '') + '</div>' +
+                                    '</div>' +
+                                    '<button onclick="toggleCoupon(\\''+c.code+'\\')\" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem;" title="Ativar/Desativar">' + (c.active ? '⏸️' : '▶️') + '</button>' +
+                                    '<button onclick="removeCoupon(\\''+c.code+'\\')\" style="background:none;border:1px solid rgba(239,68,68,0.3);color:#ef4444;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.8rem;" title="Remover">🗑️</button>' +
+                                '</div>';
+                            }).join('');
+                        }
+
+                        // Preview
+                        const prevRes = await fetch('/api/coupons/preview');
+                        const prevData = await prevRes.json();
+                        document.getElementById('coupon-preview').textContent = prevData.preview;
+                    } catch(e) {
+                        console.error('Erro ao carregar cupons:', e);
+                    }
+                }
+
+                async function addCoupon() {
+                    const code = document.getElementById('coupon-code').value.trim().toUpperCase();
+                    if (!code) return alert('Informe o código do cupom!');
+                    
+                    const body = {
+                        code,
+                        description: document.getElementById('coupon-desc').value.trim(),
+                        discount: document.getElementById('coupon-discount').value.trim(),
+                        minPurchase: Number(document.getElementById('coupon-min').value) || 0,
+                        expiresAt: document.getElementById('coupon-expires').value || '',
+                        active: true
+                    };
+                    
+                    const res = await fetch('/api/coupons', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                    const data = await res.json();
+                    if (!data.success) return alert(data.error || 'Erro ao adicionar cupom.');
+                    
+                    document.getElementById('coupon-code').value = '';
+                    document.getElementById('coupon-desc').value = '';
+                    document.getElementById('coupon-discount').value = '';
+                    document.getElementById('coupon-min').value = '0';
+                    document.getElementById('coupon-expires').value = '';
+                    loadCoupons();
+                }
+
+                async function toggleCoupon(code) {
+                    await fetch('/api/coupons/' + encodeURIComponent(code) + '/toggle', { method: 'PATCH' });
+                    loadCoupons();
+                }
+
+                async function removeCoupon(code) {
+                    if (!confirm('Remover cupom ' + code + '?')) return;
+                    await fetch('/api/coupons/' + encodeURIComponent(code), { method: 'DELETE' });
+                    loadCoupons();
+                }
+
+                loadCoupons();
+            </script>
         </body>
         </html>
     `);

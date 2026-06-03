@@ -62,4 +62,51 @@ router.get('/database/clear', async (req, res) => {
     }
 });
 
+// ========== CUPONS ==========
+const couponService = require('../services/coupon.service');
+
+// Listar todos os cupons
+router.get('/coupons', (req, res) => {
+    const all = couponService.getAllCoupons();
+    const active = couponService.getActiveCoupons();
+    res.json({ total: all.length, active: active.length, coupons: all });
+});
+
+// Adicionar cupom
+router.post('/coupons', (req, res) => {
+    const result = couponService.addCoupon(req.body);
+    if (result.success) {
+        res.json({ success: true, coupons: couponService.getAllCoupons() });
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+// Remover cupom
+router.delete('/coupons/:code', (req, res) => {
+    const result = couponService.removeCoupon(req.params.code);
+    if (result.success) {
+        res.json({ success: true, coupons: couponService.getAllCoupons() });
+    } else {
+        res.status(404).json(result);
+    }
+});
+
+// Alternar ativo/inativo
+router.patch('/coupons/:code/toggle', (req, res) => {
+    const result = couponService.toggleCoupon(req.params.code);
+    if (result.success) {
+        res.json({ success: true, active: result.active, coupons: couponService.getAllCoupons() });
+    } else {
+        res.status(404).json(result);
+    }
+});
+
+// Preview da mensagem com cupons
+router.get('/coupons/preview', (req, res) => {
+    const couponsText = couponService.formatCouponsForMessage();
+    res.json({ preview: couponsText || '(Nenhum cupom ativo)' });
+});
+
 module.exports = router;
+
