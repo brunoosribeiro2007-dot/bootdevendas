@@ -74,6 +74,13 @@ const captureTask = async () => {
         }
 
         try {
+            // 1. Gerar o link oficial de afiliado e validar
+            const finalLink = await formatterService.formatLink(product.link);
+            if (!finalLink || !finalLink.includes('meli.la')) {
+                logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar um link oficial meli.la.`);
+                continue;
+            }
+
             // Enriquecer detalhes do produto (com timeout de 5s para não travar o ciclo)
             let enrichedProduct = product;
             try {
@@ -86,8 +93,8 @@ const captureTask = async () => {
                 enrichedProduct = product;
             }
 
-            const rawMessage = await formatterService.generateRawMessage(enrichedProduct);
-            const formattedMessage = await formatterService.generateFormattedMessage(enrichedProduct);
+            const rawMessage = await formatterService.generateRawMessage(enrichedProduct, finalLink);
+            const formattedMessage = await formatterService.generateFormattedMessage(enrichedProduct, finalLink);
 
             const added = await queueService.addToQueue(enrichedProduct, rawMessage, formattedMessage);
             if (added) {

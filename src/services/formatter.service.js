@@ -282,13 +282,13 @@ class FormatterService {
     return longAffiliateLink;
   }
 
-  async generateRawMessage(product) {
-    const link = await this.formatLink(product.link);
+  async generateRawMessage(product, finalLink = null) {
+    const link = finalLink || await this.formatLink(product.link);
     return `Imagem: ${product.imageUrl}\nTítulo: ${product.title}\nValor: R$ ${product.price.toFixed(2)}\nLink: ${link}`;
   }
 
-  async generateFormattedMessage(product) {
-    const finalLink = await this.formatLink(product.link);
+  async generateFormattedMessage(product, finalLink = null) {
+    const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
     const oldPrice = product.oldPrice || (currentPrice * 1.15);
 
@@ -306,7 +306,7 @@ class FormatterService {
       `AGORA por apenas: *R$ ${formatPrice(currentPrice)}* ✅`,
       ``,
       `Compre aqui:`,
-      finalLink,
+      link,
     ];
 
     return lines.join('\n');
