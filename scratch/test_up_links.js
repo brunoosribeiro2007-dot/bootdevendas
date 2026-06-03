@@ -3,11 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 
-let cookieHeader = process.env.ML_COOKIE_STRING || '';
+let cookieHeader = null;
 const cookiesFile = path.resolve(process.cwd(), '.ml_cookies.json');
-if (!cookieHeader && fs.existsSync(cookiesFile)) {
+if (fs.existsSync(cookiesFile)) {
   const cookies = JSON.parse(fs.readFileSync(cookiesFile, 'utf8'));
   cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+}
+if (!cookieHeader) {
+  cookieHeader = process.env.ML_COOKIE_STRING || '';
 }
 cookieHeader = cookieHeader.replace(/[^\x20-\x7E]/g, '').trim();
 

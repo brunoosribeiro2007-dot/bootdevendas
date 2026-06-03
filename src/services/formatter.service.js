@@ -49,18 +49,19 @@ class FormatterService {
     const path = require('path');
     const cheerio = require('cheerio');
     
-    let cookieHeader = env.mlCookieString;
+    let cookieHeader = null;
+    const cookiesPath = env.mlCookiesPath || path.resolve(process.cwd(), '.ml_cookies.json');
+    if (fs.existsSync(cookiesPath)) {
+      try {
+        const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
+        cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      } catch (e) {
+        logger.warn('Failed to parse .ml_cookies.json');
+      }
+    }
 
     if (!cookieHeader) {
-      const cookiesPath = env.mlCookiesPath || path.resolve(process.cwd(), '.ml_cookies.json');
-      if (fs.existsSync(cookiesPath)) {
-        try {
-          const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
-          cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        } catch (e) {
-          logger.warn('Failed to parse .ml_cookies.json');
-        }
-      }
+      cookieHeader = env.mlCookieString;
     }
 
     if (!cookieHeader) {
