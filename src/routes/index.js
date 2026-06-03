@@ -60,6 +60,17 @@ router.get('/database/clear', async (req, res) => {
         logger.error('Erro ao limpar banco via API:', err);
         res.status(500).json({ error: err.message });
     }
+// Listar cupons capturados do Mercado Livre
+router.get('/coupons', async (req, res) => {
+    try {
+        const query = "SELECT DISTINCT coupon FROM products WHERE coupon IS NOT NULL AND coupon != ''";
+        const rows = await repository.db.all(query);
+        const coupons = rows.map(r => r.coupon);
+        res.json({ coupons });
+    } catch (err) {
+        logger.error('Erro ao buscar cupons do banco:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

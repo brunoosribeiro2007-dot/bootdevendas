@@ -277,10 +277,54 @@ app.get('/qr', async (req, res) => {
                     </aside>
                 </div>
 
+                <!-- Seção de Cupons -->
+                <div class="card" style="margin-top: 24px;">
+                    <h3>🎟️ Cupons Disponíveis no Mercado Livre <span class="badge" id="coupon-count">0</span></h3>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: -8px; margin-bottom: 16px;">
+                        Estes são os cupons capturados automaticamente dos produtos em oferta ativos.
+                    </p>
+                    <div id="coupons-list" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <!-- Carregado via JS -->
+                    </div>
+                </div>
+
                 <footer style="margin-top: 40px; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
                     ML Affiliate Bot v2.0 &bull; Powered by Antigravity
                 </footer>
             </div>
+
+            <script>
+                async function loadCoupons() {
+                    try {
+                        const res = await fetch('/api/coupons');
+                        const data = await res.json();
+                        
+                        const countEl = document.getElementById('coupon-count');
+                        if (countEl) countEl.textContent = data.coupons.length;
+                        
+                        const list = document.getElementById('coupons-list');
+                        if (!list) return;
+                        
+                        if (data.coupons.length === 0) {
+                            list.innerHTML = '<p style="text-align:center; color: var(--text-muted); font-size: 0.9rem; margin: 10px 0; width: 100%;">Nenhum cupom capturado nas ofertas atuais.</p>';
+                        } else {
+                            list.innerHTML = data.coupons.map(coupon => {
+                                let clean = coupon;
+                                if (clean.toLowerCase().startsWith('cupom ')) {
+                                    clean = clean.substring(6).trim();
+                                }
+                                return '<div style="display:flex; align-items:center; gap:8px; padding:10px 16px; background:rgba(14, 165, 233, 0.1); border-radius:12px; border:1px solid rgba(14, 165, 233, 0.2);">' +
+                                    '<div style="font-size: 1.1rem;">🏷️</div>' +
+                                    '<div style="font-weight:700; color: var(--primary); font-size: 0.95rem;">' + clean + '</div>' +
+                                '</div>';
+                            }).join('');
+                        }
+                    } catch(e) {
+                        console.error('Erro ao carregar cupons:', e);
+                    }
+                }
+                loadCoupons();
+            </script>
         </body>
         </html>
     `);
