@@ -292,33 +292,34 @@ class FormatterService {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
 
-    // Formata preço no padrão brasileiro (remove centavos se for número inteiro)
+    // Formata preços no padrão brasileiro (omite decimais se for número inteiro)
     const formatPrice = (value) => {
-      if (value % 1 === 0) {
-        return value.toFixed(0);
+      if (Number.isInteger(value)) {
+        return value.toString();
       }
       return value.toFixed(2).replace('.', ',');
     };
 
-    // Extrai o termo de busca para usar como cabeçalho
-    let header = 'OFERTA';
+    let headline = '';
     if (product.description) {
-      header = product.description.replace(/^Oferta:\s*/i, '').trim().toUpperCase();
-    }
-    if (!header) {
-      header = 'PROMOÇÃO';
+      const cleanDesc = product.description.replace(/^Oferta:\s*/i, '').trim();
+      headline = cleanDesc.toUpperCase();
+      if (!headline.includes('🇧🇷')) {
+        headline += ' 🇧🇷';
+      }
+    } else {
+      headline = 'ACHADO DO DIA 🎯';
     }
 
-    const lines = [
-      `${header} 🇧🇷`,
-      ``,
-      `🧙 ${product.title}`,
-      ``,
-      `💸 por R$ ${formatPrice(currentPrice)}`,
-      ``,
-      `🛒 Compre aqui:`,
-      link,
-    ];
+    const lines = [];
+    lines.push(headline);
+    lines.push(``);
+    lines.push(`🧙‍♂️ ${product.title}`);
+    lines.push(``);
+    lines.push(`💸 por R$ ${formatPrice(currentPrice)}`);
+    lines.push(``);
+    lines.push(`🛒 Compre aqui:`);
+    lines.push(link);
 
     return lines.join('\n');
   }
