@@ -4,10 +4,20 @@ const repository = require('../database/repository');
 const publisher = require('../publishers/whatsapp.publisher');
 
 const isWithinPublishTime = () => {
-  const now = new Date();
-  
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
+  const getPortoVelhoTime = () => {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Porto_Velho',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(new Date());
+    const h = Number(parts.find(p => p.type === 'hour').value);
+    const m = Number(parts.find(p => p.type === 'minute').value);
+    return { hour: h % 24, minute: m };
+  };
+
+  const { hour: currentHour, minute: currentMinute } = getPortoVelhoTime();
   const currentTotal = currentHour * 60 + currentMinute;
 
   const parseTime = (timeStr) => {
@@ -27,6 +37,7 @@ const isWithinPublishTime = () => {
 };
 
 let isPublishing = false;
+let sentGoodNightMessage = false;
 
 const publishTaskContinuo = async () => {
     if (isPublishing) return;
@@ -36,9 +47,28 @@ const publishTaskContinuo = async () => {
         while (true) {
             // ✅ VERIFICAÇÃO 1: Horário de publicação
             if (!isWithinPublishTime()) {
+                if (!sentGoodNightMessage) {
+                    try {
+                        logger.info('Tentando enviar mensagem de boa noite...');
+                        const goodNightMsg = `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Fiquem com Deus e tenham uma excelente noite! ✨💤`;
+                        const sent = await publisher.sendTextMessage(goodNightMsg);
+                        if (sent) {
+                            sentGoodNightMessage = true;
+                            logger.info('✅ Mensagem de boa noite enviada com sucesso!');
+                        }
+                    } catch (err) {
+                        logger.error('Erro ao enviar mensagem de boa noite:', err);
+                    }
+                }
+
                 logger.info(`⏳ Fora do horário de publicação definido (${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}). Pausando o bot de publicação.`);
                 await new Promise(r => setTimeout(r, 60000)); // Espera 1 minuto
                 continue;
+            }
+
+            // Reseta a flag para que o boa noite possa ser enviado no final do próximo dia
+            if (sentGoodNightMessage) {
+                sentGoodNightMessage = false;
             }
 
             // ✅ VERIFICAÇÃO 2: WhatsApp DEVE estar conectado ANTES de puxar da fila
@@ -66,11 +96,16 @@ const publishTaskContinuo = async () => {
                 continue;
             }
 
+            // Gera a mensagem formatada dinamicamente na hora do envio
+            const formatterService = require('../services/formatter.service');
+            item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+
             const success = await publisher.publish(item);
 
             if (success) {
-                await repository.updateQueueStatus(item.id, 'published');
-                logger.info(`✅ Item ${item.id} publicado com sucesso.`);
+                // Remove o produto e item da fila do banco para não ocupar espaço
+                await repository.deleteProductAndQueueItem(item.product_id, item.description);
+                logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
             } else {
                 logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
                 // Se falhou porque o WhatsApp caiu, espera mais
@@ -105,10 +140,16 @@ const forcePublish = async () => {
             return;
         }
         logger.info(`Publicação forçada manual solicitada: publicando item ${item.id}`);
+
+        // Gera a mensagem formatada dinamicamente na hora do envio
+        const formatterService = require('../services/formatter.service');
+        item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+
         const success = await publisher.publish(item);
         if (success) {
-            await repository.updateQueueStatus(item.id, 'published');
-            logger.info(`✅ Item ${item.id} publicado forçadamente.`);
+            // Remove o produto e item da fila do banco para não ocupar espaço
+            await repository.deleteProductAndQueueItem(item.product_id, item.description);
+            logger.info(`✅ Item ${item.id} publicado forçadamente e removido do banco.`);
         }
     } catch (err) {
         logger.error('Erro na publicação forçada manual:', err);

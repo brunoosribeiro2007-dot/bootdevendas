@@ -192,6 +192,64 @@ class WhatsappPublisher {
     }
   }
 
+  async getChatId() {
+    const targetNumber = env.whatsappTargetNumber;
+    const targetGroup = env.whatsappTargetGroup;
+    let chatId = null;
+
+    if (targetGroup) {
+        if (targetGroup.endsWith('@g.us')) {
+            chatId = targetGroup;
+        } else if (this._cachedGroupId) {
+            chatId = this._cachedGroupId;
+        } else {
+            try {
+                const groups = await this.sock.groupFetchAllParticipating();
+                const groupName = targetGroup.toLowerCase().trim();
+                let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
+                if (!group) {
+                    group = Object.values(groups).find(g => g.subject.toLowerCase().includes(groupName) || groupName.includes(g.subject.toLowerCase()));
+                }
+                if (group) {
+                    chatId = group.id;
+                    this._cachedGroupId = chatId;
+                    logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
+                } else {
+                    const availableGroups = Object.values(groups).map(g => `"${g.subject}" (ID: ${g.id})`).join(', ');
+                    logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
+                }
+            } catch (gErr) {
+                logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
+            }
+        }
+    }
+
+    if (!chatId && targetNumber) {
+        chatId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
+    }
+
+    return chatId;
+  }
+
+  async sendTextMessage(text) {
+    if (!this.isReady || !this.sock) {
+        logger.warn('⚠️ Envio de mensagem abortado: WhatsApp não está pronto');
+        return false;
+    }
+    try {
+      const chatId = await this.getChatId();
+      if (!chatId) {
+          logger.error('❌ Não foi possível determinar o destino para envio de texto.');
+          return false;
+      }
+      await this.sock.sendMessage(chatId, { text });
+      return true;
+    } catch (error) {
+      logger.error('❌ Erro ao enviar mensagem de texto no WhatsApp:', error);
+      return false;
+    }
+  }
+
   async publish(item) {
     if (!this.isReady || !this.sock) {
         logger.warn(`⚠️ Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
@@ -199,43 +257,7 @@ class WhatsappPublisher {
     }
     
     try {
-      const targetNumber = env.whatsappTargetNumber;
-      const targetGroup = env.whatsappTargetGroup;
-      let chatId = null;
-
-      // Cache do grupo para evitar buscar toda vez (resetado no reconnect)
-      if (targetGroup) {
-          if (targetGroup.endsWith('@g.us')) {
-              chatId = targetGroup;
-          } else if (this._cachedGroupId) {
-              chatId = this._cachedGroupId;
-          } else {
-              try {
-                  const groups = await this.sock.groupFetchAllParticipating();
-                  const groupName = targetGroup.toLowerCase().trim();
-                  // Tenta match exato primeiro, depois parcial para ser mais resiliente
-                  let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
-                  if (!group) {
-                      group = Object.values(groups).find(g => g.subject.toLowerCase().includes(groupName) || groupName.includes(g.subject.toLowerCase()));
-                  }
-                  if (group) {
-                      chatId = group.id;
-                      this._cachedGroupId = chatId; // Cache para próximas publicações
-                      logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
-                  } else {
-                      const availableGroups = Object.values(groups).map(g => `"${g.subject}" (ID: ${g.id})`).join(', ');
-                      logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
-                  }
-              } catch (gErr) {
-                  logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
-              }
-          }
-      }
-
-      if (!chatId && targetNumber) {
-          chatId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
-      }
-
+      const chatId = await this.getChatId();
       if (!chatId) {
           logger.error('❌ Não foi possível determinar o destino (Grupo ou Número).');
           return false;

@@ -93,10 +93,11 @@ const captureTask = async () => {
                 enrichedProduct = product;
             }
 
-            const rawMessage = await formatterService.generateRawMessage(enrichedProduct, finalLink);
-            const formattedMessage = await formatterService.generateFormattedMessage(enrichedProduct, finalLink);
+            // Salva o link de afiliado oficial diretamente no link do produto
+            enrichedProduct.link = finalLink;
 
-            const added = await queueService.addToQueue(enrichedProduct, rawMessage, formattedMessage);
+            // Não armazena as mensagens no banco para economizar espaço
+            const added = await queueService.addToQueue(enrichedProduct, '', '');
             if (added) {
                 totalAddedCount++;
             }

@@ -13,10 +13,12 @@ const cleanupTask = async () => {
     }
 };
 
-// Agenda para rodar todo dia às 22:00 Horário de Brasília (01:00 UTC no Render)
+// Agenda para rodar todo dia às 00:05 no fuso horário de Porto Velho (America/Porto_Velho)
 const startCleanupJob = () => {
-    cron.schedule('0 1 * * *', cleanupTask);
-    logger.info('Job de limpeza diária agendado para 22:00 BRT (01:00 UTC).');
+    cron.schedule('5 0 * * *', cleanupTask, {
+        timezone: "America/Porto_Velho"
+    });
+    logger.info('Job de limpeza diária agendado para 00:05 no fuso horário de Porto Velho (America/Porto_Velho).');
 };
 
 module.exports = {

@@ -40,6 +40,16 @@ class QueueService {
   }
 
   async setStatus(queueId, status) {
+    if (status === 'published') {
+      const queue = await repository.getQueue(null);
+      const item = queue.find(q => q.id === Number(queueId) || q.id === queueId);
+      if (item) {
+        await repository.deleteProductAndQueueItem(item.product_id, item.description);
+        logger.info(`Item da fila ${queueId} foi publicado e removido do banco.`);
+        return true;
+      }
+      return false;
+    }
     const changes = await repository.updateQueueStatus(queueId, status);
     if (changes > 0) {
       logger.info(`Item da fila ${queueId} alterado para ${status}.`);

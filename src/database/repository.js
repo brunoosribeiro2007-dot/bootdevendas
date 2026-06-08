@@ -1,6 +1,8 @@
 const { db } = require('./init');
 const logger = require('../config/logger');
 
+let lastSentNiche = '';
+
 // Salva Produto com Bypass de Conflito (Postgres style)
 const saveProduct = async (product) => {
     try {
@@ -56,19 +58,12 @@ const updateQueueStatus = async (id, status) => {
 
 const getNextApprovedItem = async () => {
     try {
-        // 1. Descobrir qual o nicho do último item postado (para evitar repetição de nicho)
-        const lastSentQuery = `
-            SELECT p.description FROM queue q 
-            JOIN products p ON q.product_id = p.id 
-            WHERE q.status = 'published' 
-            ORDER BY q.updated_at DESC LIMIT 1
-        `;
-        const lastSent = await db.get(lastSentQuery, []);
-        const lastNiche = lastSent ? lastSent.description : '';
+        // Usa a variável em memória para o último nicho enviado
+        const lastNiche = lastSentNiche;
 
         // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
         let query = `
-            SELECT q.*, p.title, p.image_url, p.description, p.coupon 
+            SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon 
             FROM queue q 
             JOIN products p ON q.product_id = p.id 
             WHERE q.status = 'approved' 
@@ -81,7 +76,7 @@ const getNextApprovedItem = async () => {
         // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
         if (!item) {
             query = `
-                SELECT q.*, p.title, p.image_url, p.description, p.coupon 
+                SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon 
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 
@@ -95,6 +90,19 @@ const getNextApprovedItem = async () => {
     } catch (err) {
         logger.error('Erro ao buscar próximo item da fila:', err);
         return null;
+    }
+};
+
+const deleteProductAndQueueItem = async (productId, niche) => {
+    try {
+        if (niche) {
+            lastSentNiche = niche;
+        }
+        const res = await db.run('DELETE FROM products WHERE id = ?', [productId]);
+        return res.rowCount;
+    } catch (err) {
+        logger.error(`Erro ao deletar produto ${productId}:`, err);
+        throw err;
     }
 };
 
@@ -116,5 +124,6 @@ module.exports = {
   getQueue,
   updateQueueStatus,
   getNextApprovedItem,
+  deleteProductAndQueueItem,
   clearQueue
 };

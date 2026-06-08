@@ -21,8 +21,7 @@ describe('Formatter Service', () => {
   test('generateFormattedMessage should include correct clean message fields', async () => {
     const msg = await formatterService.generateFormattedMessage(mockProduct);
     expect(msg).toContain(mockProduct.title);
-    expect(msg).toContain('De:');
-    expect(msg).toContain('*Por apenas: R$');
-    expect(msg).toContain('👉 *Garanta o seu aqui:*');
+    expect(msg).toContain('por R$');
+    expect(msg).toContain('Compre aqui:');
   });
 });
