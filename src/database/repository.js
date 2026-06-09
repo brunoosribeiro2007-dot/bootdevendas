@@ -7,11 +7,21 @@ let lastSentNiche = '';
 const saveProduct = async (product) => {
     try {
         const query = `
-            INSERT INTO products (id, title, price, link, image_url, description, coupon)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO products (id, title, price, link, image_url, description, coupon, old_price, discount_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO NOTHING
         `;
-        const res = await db.run(query, [product.id, product.title, product.price, product.link, product.imageUrl, product.description, product.coupon || '']);
+        const res = await db.run(query, [
+            product.id,
+            product.title,
+            product.price,
+            product.link,
+            product.imageUrl,
+            product.description,
+            product.coupon || '',
+            product.oldPrice !== undefined ? product.oldPrice : null,
+            product.discountPercent !== undefined ? product.discountPercent : null
+        ]);
         return res.rowCount;
     } catch (err) {
         logger.error('Erro ao salvar produto no Banco:', err);
@@ -40,7 +50,7 @@ const enqueueProduct = async (queueItem) => {
 };
 
 const getQueue = async (status) => {
-    let query = 'SELECT q.*, p.title, p.price, p.link, p.coupon FROM queue q JOIN products p ON q.product_id = p.id';
+    let query = 'SELECT q.*, p.title, p.price, p.link, p.coupon, p.old_price, p.discount_percent FROM queue q JOIN products p ON q.product_id = p.id';
     let params = [];
     if (status) {
         query += ' WHERE q.status = ?';
@@ -63,7 +73,7 @@ const getNextApprovedItem = async () => {
 
         // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
         let query = `
-            SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon 
+            SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
             FROM queue q 
             JOIN products p ON q.product_id = p.id 
             WHERE q.status = 'approved' 
@@ -76,7 +86,7 @@ const getNextApprovedItem = async () => {
         // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
         if (!item) {
             query = `
-                SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon 
+                SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 

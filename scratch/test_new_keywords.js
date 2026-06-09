@@ -9,16 +9,24 @@ async function run() {
     console.log("--- TESTANDO BUSCA DE GUARDA-ROUPA ---");
     const productsGuardaRoupa = await mlService.searchProducts('Guarda-roupa');
     console.log(`Guarda-roupa: Encontrou ${productsGuardaRoupa.length} produtos.`);
-    if (productsGuardaRoupa.length > 0) {
-      console.log("Exemplo de produto:", productsGuardaRoupa[0].title, "Preço:", productsGuardaRoupa[0].price);
-    }
+    
+    // Log details of up to 3 products
+    productsGuardaRoupa.slice(0, 3).forEach((p, idx) => {
+      console.log(`Produto #${idx + 1}:`, p.title);
+      console.log(`  Preço: R$ ${p.price} | Preço Antigo: R$ ${p.oldPrice}`);
+      console.log(`  Avaliação (Scraped/API): ${p.rating || 'N/A'}`);
+      console.log(`  Mapeado para categoria: ${mlService.getCategoryForKeyword(p.title)}`);
+    });
 
     console.log("\n--- TESTANDO BUSCA DE CAIXA DE FERRAMENTAS ---");
     const productsFerramentas = await mlService.searchProducts('Caixa de ferramentas');
     console.log(`Caixa de ferramentas: Encontrou ${productsFerramentas.length} produtos.`);
-    if (productsFerramentas.length > 0) {
-      console.log("Exemplo de produto:", productsFerramentas[0].title, "Preço:", productsFerramentas[0].price);
-    }
+    
+    productsFerramentas.slice(0, 3).forEach((p, idx) => {
+      console.log(`Produto #${idx + 1}:`, p.title);
+      console.log(`  Preço: R$ ${p.price} | Preço Antigo: R$ ${p.oldPrice}`);
+      console.log(`  Avaliação (Scraped/API): ${p.rating || 'N/A'}`);
+    });
   } catch (e) {
     console.error("Erro no teste:", e.message);
   }

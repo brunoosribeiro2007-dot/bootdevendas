@@ -293,31 +293,33 @@ class FormatterService {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
 
-    // Formata preços no padrão brasileiro (omite decimais se for número inteiro)
+    // Formata preços no padrão brasileiro
     const formatPrice = (value) => {
-      if (Number.isInteger(value)) {
-        return value.toString();
-      }
+      if (value === null || value === undefined) return '';
       return value.toFixed(2).replace('.', ',');
     };
 
-    let headline = '';
-    if (product.description) {
-      const cleanDesc = product.description.replace(/^Oferta:\s*/i, '').trim();
-      headline = cleanDesc.toUpperCase();
-      if (!headline.includes('🇧🇷')) {
-        headline += ' 🇧🇷';
-      }
-    } else {
-      headline = 'ACHADO DO DIA 🎯';
-    }
-
     const lines = [];
-    lines.push(headline);
+    lines.push(`MERCADO LIVRE ARRASA 💛`);
     lines.push(``);
     lines.push(`🛍️ ${product.title}`);
     lines.push(``);
-    lines.push(`🤑 por R$ ${formatPrice(currentPrice)} no pix`);
+
+    const oldPrice = product.oldPrice !== undefined ? product.oldPrice : product.old_price;
+    if (oldPrice && oldPrice > currentPrice) {
+      lines.push(`De R$ ${formatPrice(oldPrice)}`);
+    }
+
+    lines.push(`💵 Por R$ ${formatPrice(currentPrice)}`);
+
+    let discountPercent = product.discountPercent !== undefined ? product.discountPercent : product.discount_percent;
+    if (!discountPercent && oldPrice && oldPrice > currentPrice) {
+      discountPercent = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
+    }
+
+    if (discountPercent && discountPercent > 0) {
+      lines.push(`😱 ${discountPercent}% OFF`);
+    }
 
     // Adiciona cupom disponível (antes do link)
     if (product.coupon) {
@@ -326,7 +328,7 @@ class FormatterService {
         cleanCoupon = cleanCoupon.substring(6).trim();
       }
       if (cleanCoupon) {
-        lines.push(`🏷️Use o cupom: ${cleanCoupon}`);
+        lines.push(`🏷️ Use o cupom: ${cleanCoupon}`);
       }
     }
 

@@ -93,6 +93,8 @@ const DDL = {
             image_url TEXT,
             description TEXT,
             coupon TEXT,
+            old_price REAL,
+            discount_percent INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
     queue: USE_NEON
@@ -132,9 +134,15 @@ const initializeDB = async () => {
             try {
                 await pool.query('ALTER TABLE products ADD COLUMN coupon TEXT');
                 logger.info('🐘 Postgres: Coluna "coupon" adicionada à tabela products.');
-            } catch (e) {
-                // Ignora se a coluna já existe
-            }
+            } catch (e) {}
+            try {
+                await pool.query('ALTER TABLE products ADD COLUMN old_price REAL');
+                logger.info('🐘 Postgres: Coluna "old_price" adicionada à tabela products.');
+            } catch (e) {}
+            try {
+                await pool.query('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
+                logger.info('🐘 Postgres: Coluna "discount_percent" adicionada à tabela products.');
+            } catch (e) {}
             await pool.query(DDL.queue);
             await pool.query(DDL.sessions);
         } else {
@@ -142,9 +150,15 @@ const initializeDB = async () => {
             try {
                 sqliteDb.exec('ALTER TABLE products ADD COLUMN coupon TEXT');
                 logger.info('🗃️ SQLite: Coluna "coupon" adicionada à tabela products.');
-            } catch (e) {
-                // Ignora se a coluna já existe
-            }
+            } catch (e) {}
+            try {
+                sqliteDb.exec('ALTER TABLE products ADD COLUMN old_price REAL');
+                logger.info('🗃️ SQLite: Coluna "old_price" adicionada à tabela products.');
+            } catch (e) {}
+            try {
+                sqliteDb.exec('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
+                logger.info('🗃️ SQLite: Coluna "discount_percent" adicionada à tabela products.');
+            } catch (e) {}
             sqliteDb.exec(DDL.queue);
             sqliteDb.exec(DDL.sessions);
         }

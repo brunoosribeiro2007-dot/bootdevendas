@@ -140,6 +140,18 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const ratingText = ratingElement.text();
                 const rating = parseFloat(ratingText.replace(',', '.'));
                 
+                // 💬 CAPTURA DA QUANTIDADE DE AVALIAÇÕES
+                let reviewsCount = 0;
+                const reviewsElement = $(element).find('.poly-reviews__total, .ui-search-reviews__amount').first();
+                if (reviewsElement.length > 0) {
+                    reviewsCount = parseInt(reviewsElement.text().replace(/\D/g, ''), 10) || 0;
+                } else if (ratingElement.length > 0) {
+                    const parentheticalMatch = ratingElement.text().match(/\(([^)]+)\)/);
+                    if (parentheticalMatch) {
+                        reviewsCount = parseInt(parentheticalMatch[1].replace(/\D/g, ''), 10) || 0;
+                    }
+                }
+
                 const salesElement = $(element).find('.poly-component__sales, .ui-search-item__group__element--shipping, .ui-search-item__quantity-sold').first();
                 const salesText = salesElement.text().toLowerCase();
                 
@@ -147,9 +159,14 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const isOfficialStore = $(element).text().toLowerCase().includes('loja oficial') || $(element).find('.ui-search-official-store-label').length > 0;
                 const isFull = salesText.includes('full') || $(element).find('.ui-search-item__shipping--full').length > 0;
 
-                // 🛑 FILTRO DE QUALIDADE RIGOROSO
-                if (rating && rating < 4.5) {
-                    logger.debug(`⏩ Ignorando "${title}" por baixa avaliação: ${rating}`);
+                // 🛑 FILTRO DE QUALIDADE RIGOROSO (Mapeamento de 4.5 estrelas e 100 avaliações)
+                if (!rating || rating < 4.5) {
+                    logger.debug(`⏩ Ignorando "${title}" por avaliação insuficiente ou inexistente: ${rating || 'N/A'}`);
+                    return;
+                }
+
+                if (reviewsCount < 100) {
+                    logger.debug(`⏩ Ignorando "${title}" por quantidade de avaliações insuficiente: ${reviewsCount}`);
                     return;
                 }
                 
@@ -229,7 +246,9 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                             link, 
                             imageUrl: image, 
                             description: `Oferta: ${searchTerm}`,
-                            coupon: couponText
+                            coupon: couponText,
+                            rating,
+                            reviewsCount
                         });
                     }
                 }
@@ -307,15 +326,28 @@ const fetchFromBackupAPI = async (searchTerm) => {
                     const results = data.results
                         .filter(p => !p.title.toLowerCase().includes('usado')) // Garante novos
                         .filter(p => !isProductBlacklisted(p.title)) // Filtro de nicho
-                        .map(p => ({
-                        id: p.id,
-                        title: p.title,
-                        price: p.price,
-                        oldPrice: p.original_price || (p.price * 1.2), // Fallback de preço antigo se não houver
-                        link: p.permalink,
-                        imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'), // -W é maior
-                        description: 'Oferta Especial'
-                    }));
+                        .filter(p => {
+                            const apiRating = p.reviews?.rating_average || p.rating_average || null;
+                            const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
+                            // Exige mais de 4.5 estrelas e pelo menos 100 avaliações
+                            return apiRating && apiRating >= 4.5 && apiReviewsCount >= 100;
+                        })
+                        .map(p => {
+                            const apiRating = p.reviews?.rating_average || p.rating_average || null;
+                            const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
+                            return {
+                                id: p.id,
+                                title: p.title,
+                                price: p.price,
+                                oldPrice: p.original_price || null,
+                                discountPercent: p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : null,
+                                link: p.permalink,
+                                imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'), // -W é maior
+                                description: 'Oferta Especial',
+                                rating: apiRating,
+                                reviewsCount: apiReviewsCount
+                            };
+                        });
                 
                 logger.info(`✅ API Fallback (${domain}) funcionou para "${searchTerm}"! (${results.length} itens)`);
                 return results;
