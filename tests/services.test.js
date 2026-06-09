@@ -29,7 +29,7 @@ describe('Formatter Service', () => {
     const msg = await formatterService.generateFormattedMessage(productWithPromo);
     expect(msg).toContain('MERCADO LIVRE ARRASA 💛');
     expect(msg).toContain(productWithPromo.title);
-    expect(msg).toContain('De R$ 2499,99');
+    expect(msg).toContain('De ~R$ 2499,99~');
     expect(msg).toContain('💵 Por R$ 1999,99');
     expect(msg).toContain('😱 20% OFF');
     expect(msg).toContain('🏷️ Use o cupom: CUPOM50');

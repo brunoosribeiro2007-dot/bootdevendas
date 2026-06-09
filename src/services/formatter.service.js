@@ -307,7 +307,7 @@ class FormatterService {
 
     const oldPrice = product.oldPrice !== undefined ? product.oldPrice : product.old_price;
     if (oldPrice && oldPrice > currentPrice) {
-      lines.push(`De R$ ${formatPrice(oldPrice)}`);
+      lines.push(`De ~R$ ${formatPrice(oldPrice)}~`);
     }
 
     lines.push(`💵 Por R$ ${formatPrice(currentPrice)}`);
