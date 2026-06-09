@@ -22,6 +22,25 @@ const PRODUCT_BLACKLIST = [
 ];
 
 /**
+ * Checa se o título do produto corresponde a algum termo da blacklist,
+ * permitindo exceções específicas do nicho casa (como guarda-roupa, cesto de roupas, etc.)
+ */
+const isProductBlacklisted = (title) => {
+    if (!title) return false;
+    const titleLower = title.toLowerCase();
+    return PRODUCT_BLACKLIST.some(word => {
+        // Exceções para itens do nicho de casa/organização/limpeza que contêm termos genéricos banidos
+        if (word === 'roupa' && (titleLower.includes('guarda-roupa') || titleLower.includes('cesto') || titleLower.includes('varal') || titleLower.includes('cabide') || titleLower.includes('lavar'))) {
+            return false;
+        }
+        if (word === 'ferramenta' && titleLower.includes('caixa de ferramentas')) {
+            return false;
+        }
+        return titleLower.includes(word);
+    });
+};
+
+/**
  * Parser unificado para as páginas do Mercado Livre
  */
 const parseProducts = (html, searchTerm, isProxy = false) => {
@@ -95,7 +114,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 if (!title) return;
 
                 // 🛑 FILTRO DE NICHO (CASA)
-                if (PRODUCT_BLACKLIST.some(word => title.toLowerCase().includes(word))) {
+                if (isProductBlacklisted(title)) {
                     logger.debug(`⏩ Ignorando "${title}" por não ser do nicho Casa.`);
                     return;
                 }
@@ -287,7 +306,7 @@ const fetchFromBackupAPI = async (searchTerm) => {
                     // Filtrar apenas produtos com rating decente se disponível na API
                     const results = data.results
                         .filter(p => !p.title.toLowerCase().includes('usado')) // Garante novos
-                        .filter(p => !PRODUCT_BLACKLIST.some(word => p.title.toLowerCase().includes(word))) // Filtro de nicho
+                        .filter(p => !isProductBlacklisted(p.title)) // Filtro de nicho
                         .map(p => ({
                         id: p.id,
                         title: p.title,
@@ -411,8 +430,11 @@ const getCategoryForKeyword = (keyword) => {
     const applianceKeywords = [
         'air fryer', 'fryer', 'liquidificador', 'cafeteira', 'aspirador', 
         'ventilador', 'micro-ondas', 'microondas', 'batedeira', 'geladeira', 
-        'fogão', 'fogao', 'máquina de lavar', 'lavadora', 'ferro de passar',
-        'eletro', 'secador', 'climatizador'
+        'refrigerador', 'fogão', 'fogao', 'cooktop', 'forno elétrico', 'forno eletrico',
+        'forno', 'sanduicheira', 'chaleira elétrica', 'chaleira eletrica', 'chaleira',
+        'purificador de água', 'purificador de agua', 'purificador', 'ar-condicionado',
+        'ar condicionado', 'climatizador', 'máquina de lavar', 'lavadora', 'tanquinho',
+        'ferro de passar', 'ferro', 'soundbar', 'smart tv', 'tv'
     ];
     
     if (applianceKeywords.some(ak => kw.includes(ak))) {
@@ -606,5 +628,7 @@ async function enrichProductDetails(product) {
 module.exports = {
   searchProducts,
   searchDailyDeals,
-  enrichProductDetails
+  enrichProductDetails,
+  isProductBlacklisted,
+  getCategoryForKeyword
 };

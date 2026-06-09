@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const routes = require('./routes');
 const env = require('./config/env');
+const logger = require('./config/logger');
 
 const app = express();
 
@@ -18,371 +21,19 @@ app.get('/', (req, res) => res.redirect('/qr'));
 
 // Rota de visualização do dashboard premium
 app.get('/qr', async (req, res) => {
-    const whatsappPublisher = require('./publishers/whatsapp.publisher');
-    const QRCode = require('qrcode');
-    
-    let qrImageHtml = '<p style="text-align:center;">Iniciando motor...</p>';
-    if (whatsappPublisher.latestQr) {
-        try {
-            const qrDataUrl = await QRCode.toDataURL(whatsappPublisher.latestQr, { width: 400, margin: 2 });
-            qrImageHtml = `
-                <div class="qr-box">
-                    <img src="${qrDataUrl}" alt="Baileys QR Code" style="width: 100%; height: auto; border-radius: 10px;" />
-                    <p style="text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-top: 10px;">Escaneie para conectar</p>
-                </div>
-            `;
-        } catch (e) {
-            qrImageHtml = '<p style="text-align:center; color: red;">Erro ao gerar imagem do QR Code.</p>';
-        }
+    try {
+        const html = fs.readFileSync(path.join(__dirname, 'views/dashboard.html'), 'utf8');
+        res.send(html);
+    } catch (e) {
+        logger.error('Erro ao carregar o dashboard:', e);
+        res.status(500).send('Erro ao carregar o dashboard.');
     }
-    
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="pt-br">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>ML Affiliate Bot | Dashboard</title>
-            <meta http-equiv="refresh" content="30">
-            <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-            <style>
-                :root {
-                    --bg: #030712;
-                    --card-bg: rgba(30, 41, 59, 0.7);
-                    --primary: #0ea5e9;
-                    --primary-glow: rgba(14, 165, 233, 0.3);
-                    --secondary: #6366f1;
-                    --accent: #22c55e;
-                    --text: #f8fafc;
-                    --text-muted: #94a3b8;
-                    --border: rgba(51, 65, 85, 0.5);
-                }
-                * { box-sizing: border-box; transition: all 0.2s ease; }
-                body { 
-                    font-family: 'Outfit', sans-serif; 
-                    background: var(--bg); 
-                    color: var(--text); 
-                    margin: 0; 
-                    padding: 0;
-                    display: flex;
-                    flex-direction: column;
-                    min-height: 100vh;
-                    background-image: 
-                        radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
-                        radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 40%);
-                }
-                .container { max-width: 1000px; margin: 40px auto; padding: 20px; width: 100%; }
-                header { 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    margin-bottom: 40px;
-                    border-bottom: 1px solid var(--border);
-                    padding-bottom: 20px;
-                }
-                h1 { margin: 0; font-weight: 800; font-size: 2rem; letter-spacing: -1px; }
-                h1 span { color: var(--primary); }
-                
-                .status-container { display: flex; align-items: center; gap: 10px; }
-                .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; }
-                .status-dot.online { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-                .status-text { font-weight: 600; font-size: 0.9rem; }
-
-                .grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; }
-                @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-                
-                .card { 
-                    background: var(--card-bg); 
-                    backdrop-filter: blur(12px);
-                    border: 1px solid var(--border);
-                    border-radius: 24px; 
-                    padding: 24px; 
-                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-                }
-                .card h3 { margin-top: 0; font-size: 1.2rem; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
-                
-                .qr-box { 
-                    background: white; 
-                    padding: 16px; 
-                    border-radius: 20px; 
-                    width: 400px; 
-                    max-width: 100%;
-                    margin: 20px auto;
-                    box-shadow: 0 0 40px rgba(255, 255, 255, 0.1);
-                }
-                
-                .pairing-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
-                .pairing-code { 
-                    font-family: monospace; 
-                    font-size: 2.5rem; 
-                    color: var(--accent); 
-                    background: rgba(0,0,0,0.3); 
-                    padding: 10px 20px; 
-                    border-radius: 12px; 
-                    letter-spacing: 4px;
-                }
-
-                input { 
-                    width: 100%; 
-                    padding: 12px 16px; 
-                    border-radius: 12px; 
-                    border: 1px solid var(--border); 
-                    background: rgba(15, 23, 42, 0.5); 
-                    color: white; 
-                    margin-bottom: 12px;
-                    font-family: inherit;
-                }
-                input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
-
-                .btn { 
-                    width: 100%; 
-                    padding: 12px; 
-                    border-radius: 12px; 
-                    border: none; 
-                    font-weight: 600; 
-                    cursor: pointer; 
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    text-decoration: none;
-                    font-family: inherit;
-                }
-                .btn-primary { background: var(--primary); color: white; }
-                .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--primary-glow); }
-                .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); margin-bottom: 8px; }
-                .btn-outline:hover { background: rgba(255,255,255,0.05); }
-                .btn-danger { color: #ef4444; font-size: 0.8rem; margin-top: 20px; opacity: 0.7; }
-                .btn-danger:hover { opacity: 1; }
-
-                .logs { 
-                    background: rgba(0, 0, 0, 0.4); 
-                    border-radius: 16px; 
-                    padding: 16px; 
-                    height: 300px; 
-                    overflow-y: auto; 
-                    font-family: 'Consolas', monospace; 
-                    font-size: 0.85rem;
-                    border: 1px solid var(--border);
-                }
-                .log-entry { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.03); color: #cbd5e1; }
-                .log-entry span { color: var(--primary); font-weight: bold; }
-
-                .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: var(--primary); color: white; margin-left: auto; }
-
-                .pairing-code {
-                    font-size: 2.5rem;
-                    letter-spacing: 5px;
-                    font-weight: 800;
-                    color: var(--accent);
-                    background: rgba(14, 165, 233, 0.1);
-                    padding: 20px;
-                    border-radius: 12px;
-                    margin: 15px 0;
-                    display: inline-block;
-                    border: 2px dashed var(--accent);
-                }
-                .coupon-card {
-                    background: rgba(15, 23, 42, 0.4);
-                    border: 1px solid var(--border);
-                    border-radius: 16px;
-                    padding: 16px;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 12px;
-                }
-                .coupon-badge-large {
-                    font-size: 0.95rem;
-                    font-weight: 800;
-                    color: var(--primary);
-                    background: rgba(14, 165, 233, 0.15);
-                    border: 1px solid rgba(14, 165, 233, 0.3);
-                    padding: 6px 14px;
-                    border-radius: 20px;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    width: fit-content;
-                }
-                .coupon-product-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    background: rgba(0, 0, 0, 0.25);
-                    padding: 8px 12px;
-                    border-radius: 12px;
-                    border: 1px solid rgba(255, 255, 255, 0.02);
-                }
-                .coupon-product-img {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 6px;
-                    object-fit: cover;
-                }
-                .coupon-product-title {
-                    font-size: 0.85rem;
-                    font-weight: 600;
-                    color: #cbd5e1;
-                    flex: 1;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .coupon-product-price {
-                    font-size: 0.85rem;
-                    font-weight: 700;
-                    color: var(--accent);
-                }
-                .coupon-product-btn {
-                    background: rgba(255,255,255,0.05);
-                    border: 1px solid var(--border);
-                    color: var(--text);
-                    padding: 6px 12px;
-                    border-radius: 8px;
-                    font-size: 0.75rem;
-                    cursor: pointer;
-                    text-decoration: none;
-                    font-weight: 600;
-                }
-                .coupon-product-btn:hover {
-                    background: var(--primary);
-                    border-color: var(--primary);
-                    color: white;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <header>
-                    <h1>ML Affiliate <span>Bot</span></h1>
-                    <div class="status-container">
-                        <div class="status-dot ${whatsappPublisher.isReady ? 'online' : ''}"></div>
-                        <div class="status-text">${whatsappPublisher.initStatus}</div>
-                    </div>
-                </header>
-
-                <div class="grid">
-                    <section>
-                        <div class="card" style="height: 100%;">
-                            <h3>📋 Logs de Atividade</h3>
-                            <div class="logs">
-                                ${whatsappPublisher.logs.map(log => {
-                                    const parts = log.match(/\[(.*?)\] (.*)/);
-                                    if (!parts) return `<div class="log-entry">${log}</div>`;
-                                    return `<div class="log-entry"><span>[${parts[1]}]</span> ${parts[2]}</div>`;
-                                }).join('')}
-                                ${whatsappPublisher.logs.length === 0 ? '<div class="log-entry">Aguardando atividades...</div>' : ''}
-                            </div>
-                        </div>
-                    </section>
-
-                    <aside>
-                        <div class="card" style="margin-bottom: 24px;">
-                            <h3>📱 Conexão WhatsApp</h3>
-                            ${whatsappPublisher.isReady ? `
-                                <div style="text-align: center; padding: 20px 0;">
-                                    <div style="font-size: 3rem; margin-bottom: 10px;">✅</div>
-                                    <p style="font-weight: 600; color: var(--accent);">Bot Ativo e Conectado</p>
-                                    <p style="font-size: 0.8rem; color: var(--text-muted);">Pronto para publicar ofertas.</p>
-                                </div>
-                            ` : `
-                                ${whatsappPublisher.latestPairingCode ? `
-                                    <div style="text-align: center;">
-                                        <p style="font-size: 0.9rem; color: var(--text-muted);">Insira este código no WhatsApp:</p>
-                                        <div class="pairing-code">${whatsappPublisher.latestPairingCode}</div>
-                                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 15px;">Configurações > Dispositivos Conectados > Conectar com número</p>
-                                    </div>
-                                ` : qrImageHtml}
-                                
-                                <div class="pairing-section">
-                                    <form method="POST" action="/qr">
-                                        <input type="text" name="phone" placeholder="5511999998888" required>
-                                        <button type="submit" class="btn btn-primary">Gerar Código de Pareamento</button>
-                                    </form>
-                                </div>
-                            `}
-                        </div>
-
-                        <div class="card">
-                            <h3>⚙️ Ações Rápidas</h3>
-                            <a href="/api/capture/force" target="_blank" class="btn btn-outline">🔍 Forçar Captura</a>
-                            <a href="/api/publish/force" target="_blank" class="btn btn-outline">📤 Forçar Publicação</a>
-                            <a href="/api/queue?status=approved" target="_blank" class="btn btn-outline">📦 Ver Fila Aprovada</a>
-                            <a href="/api/database/clear" class="btn btn-outline" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.3);" onclick="return confirm('Isso apagará TODA a fila e histórico de produtos. O bot começará do zero com o novo nicho. Continuar?')">🧹 Limpar Banco e Fila</a>
-                            
-                            <a href="/logout" class="btn btn-danger" onclick="return confirm('Isso irá desconectar o WhatsApp e limpar a sessão. Continuar?')">🛑 Logout e Reset de Sessão</a>
-                        </div>
-                    </aside>
-                </div>
-
-                <!-- Seção de Cupons -->
-                <div class="card" style="margin-top: 24px;">
-                    <h3>🎟️ Cupons & Produtos Vinculados <span class="badge" id="coupon-count">0</span></h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -8px; margin-bottom: 20px;">
-                        Estes são os cupons capturados automaticamente com os respectivos produtos em oferta.
-                    </p>
-                    <div id="coupons-list" style="display: flex; flex-direction: column; gap: 16px;">
-                        <!-- Carregado via JS -->
-                    </div>
-                </div>
-
-                <footer style="margin-top: 40px; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
-                    ML Affiliate Bot v2.0 &bull; Powered by Antigravity
-                </footer>
-            </div>
-
-            <script>
-                async function loadCoupons() {
-                    try {
-                        const res = await fetch('/api/coupons');
-                        const data = await res.json();
-                        
-                        const countEl = document.getElementById('coupon-count');
-                        if (countEl) countEl.textContent = data.coupons.length;
-                        
-                        const list = document.getElementById('coupons-list');
-                        if (!list) return;
-                        
-                        if (data.coupons.length === 0) {
-                            list.innerHTML = '<p style="text-align:center; color: var(--text-muted); font-size: 0.9rem; margin: 10px 0; width: 100%;">Nenhum cupom capturado nas ofertas atuais.</p>';
-                        } else {
-                            list.innerHTML = data.coupons.map(group => {
-                                let clean = group.coupon;
-                                if (clean.toLowerCase().startsWith('cupom ')) {
-                                    clean = clean.substring(6).trim();
-                                }
-                                
-                                const productsHtml = group.products.map(p => {
-                                    return '<div class="coupon-product-item">' +
-                                        '<img src="' + (p.imageUrl || 'https://www.mercadolivre.com.br/menu/img/logo__large_plus.png') + '" class="coupon-product-img" />' +
-                                        '<div class="coupon-product-title" title="' + p.title + '">' + p.title + '</div>' +
-                                        '<div class="coupon-product-price">R$ ' + p.price.toFixed(2).replace('.', ',') + '</div>' +
-                                        '<a href="' + p.link + '" target="_blank" class="coupon-product-btn">🔗 Abrir Link</a>' +
-                                    '</div>';
-                                }).join('');
-                                
-                                return '<div class="coupon-card">' +
-                                    '<div class="coupon-badge-large">🎟️ ' + clean + '</div>' +
-                                    '<div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">' + productsHtml + '</div>' +
-                                '</div>';
-                            }).join('');
-                        }
-                    } catch(e) {
-                        console.error('Erro ao carregar cupons:', e);
-                    }
-                }
-                loadCoupons();
-            </script>
-        </body>
-        </html>
-    `);
 });
 
 // Endpoint POST para processar o pedido do Pairing Code
 app.post('/qr', async (req, res) => {
     const { phone } = req.body;
     const whatsappPublisher = require('./publishers/whatsapp.publisher');
-    const logger = require('./config/logger');
     
     logger.info(`🔍 Recebido pedido de pareamento. Body: ${JSON.stringify(req.body)}`);
     
@@ -398,7 +49,6 @@ app.post('/qr', async (req, res) => {
 app.get('/logout', async (req, res) => {
     const whatsappPublisher = require('./publishers/whatsapp.publisher');
     const { db } = require('./database/init');
-    const fs = require('fs');
     
     try {
         // Limpa banco (unificado)
@@ -424,6 +74,30 @@ app.get('/logout', async (req, res) => {
     }
 });
 
+// API Status Route para atualização em tempo real via AJAX
+app.get('/api/status', async (req, res) => {
+    const whatsappPublisher = require('./publishers/whatsapp.publisher');
+    const QRCode = require('qrcode');
+    
+    let qrDataUrl = null;
+    if (whatsappPublisher.latestQr) {
+        try {
+            qrDataUrl = await QRCode.toDataURL(whatsappPublisher.latestQr, { width: 400, margin: 2 });
+        } catch (e) {
+            // Ignore QR gen errors
+        }
+    }
+    
+    res.json({
+        isReady: whatsappPublisher.isReady,
+        initStatus: whatsappPublisher.initStatus,
+        logs: whatsappPublisher.logs || [],
+        latestPairingCode: whatsappPublisher.latestPairingCode,
+        qrDataUrl: qrDataUrl,
+        publishStartTime: env.publishStartTime || '08:00',
+        publishEndTime: env.publishEndTime || '22:00',
+    });
+});
 
 app.use('/api', routes);
 
