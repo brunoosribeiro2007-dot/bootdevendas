@@ -27,7 +27,20 @@ describe('Formatter Service', () => {
     };
     
     const msg = await formatterService.generateFormattedMessage(productWithPromo);
-    expect(msg).toContain('MERCADO LIVRE ARRASA 💛');
+    const headers = [
+      'MERCADO LIVRE ARRASA 💛',
+      'OFERTA IMPERDÍVEL 🔥',
+      'ACHADO DO DIA 🎯',
+      'PREÇO BAIXO DE VERDADE 💸',
+      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
+      'PROMOÇÃO EXCLUSIVA 🌟',
+      'DESCONTO ARRASADOR 💥',
+      'SÓ HOJE NO MERCADO LIVRE ⚡',
+      'OLHA ESSE PRECINHO! 👀',
+      'ACHADO IMPERDÍVEL 💎'
+    ];
+    const hasHeader = headers.some(h => msg.includes(h));
+    expect(hasHeader).toBe(true);
     expect(msg).toContain(productWithPromo.title);
     expect(msg).toContain('De ~R$ 2499,99~');
     expect(msg).toContain('💵 Por R$ 1999,99');

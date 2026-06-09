@@ -299,8 +299,22 @@ class FormatterService {
       return value.toFixed(2).replace('.', ',');
     };
 
+    const headers = [
+      'MERCADO LIVRE ARRASA 💛',
+      'OFERTA IMPERDÍVEL 🔥',
+      'ACHADO DO DIA 🎯',
+      'PREÇO BAIXO DE VERDADE 💸',
+      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
+      'PROMOÇÃO EXCLUSIVA 🌟',
+      'DESCONTO ARRASADOR 💥',
+      'SÓ HOJE NO MERCADO LIVRE ⚡',
+      'OLHA ESSE PRECINHO! 👀',
+      'ACHADO IMPERDÍVEL 💎'
+    ];
+    const headline = headers[Math.floor(Math.random() * headers.length)];
+
     const lines = [];
-    lines.push(`MERCADO LIVRE ARRASA 💛`);
+    lines.push(headline);
     lines.push(``);
     lines.push(`🛍️ ${product.title}`);
     lines.push(``);

@@ -108,11 +108,31 @@ const deleteProductAndQueueItem = async (productId, niche) => {
         if (niche) {
             lastSentNiche = niche;
         }
-        const res = await db.run('DELETE FROM products WHERE id = ?', [productId]);
+        // Remove apenas o item da fila de envio (queue) para marcar como publicado,
+        // mas mantém o registro em 'products' para evitar que o produto seja recapturado pelo crawler.
+        const res = await db.run('DELETE FROM queue WHERE product_id = ?', [productId]);
         return res.rowCount;
     } catch (err) {
-        logger.error(`Erro ao deletar produto ${productId}:`, err);
+        logger.error(`Erro ao deletar item da fila ${productId}:`, err);
         throw err;
+    }
+};
+
+const pruneOldProducts = async () => {
+    try {
+        const USE_NEON = !!process.env.DATABASE_URL;
+        let query;
+        if (USE_NEON) {
+            query = "DELETE FROM products WHERE created_at < NOW() - INTERVAL '3 days'";
+        } else {
+            query = "DELETE FROM products WHERE created_at < datetime('now', '-3 days')";
+        }
+        const res = await db.run(query, []);
+        if (res.rowCount > 0) {
+            logger.info(`🧹 Limpeza: ${res.rowCount} produtos antigos com mais de 3 dias foram removidos do banco.`);
+        }
+    } catch (err) {
+        logger.warn('Erro ao limpar produtos antigos:', err.message);
     }
 };
 
@@ -135,5 +155,6 @@ module.exports = {
   updateQueueStatus,
   getNextApprovedItem,
   deleteProductAndQueueItem,
-  clearQueue
+  clearQueue,
+  pruneOldProducts
 };

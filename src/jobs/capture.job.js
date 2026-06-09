@@ -12,6 +12,9 @@ let keywordRotationIndex = 0;
 const captureTask = async () => {
   logger.info('🚀 Iniciando job de captura multi-item do ML...');
   try {
+    const repository = require('../database/repository');
+    await repository.pruneOldProducts();
+
     let keywordsString = env.mlSearchKeyword || '';
     const allKeywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
     
