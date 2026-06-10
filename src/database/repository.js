@@ -3,22 +3,51 @@ const logger = require('../config/logger');
 
 let lastSentNiche = '';
 
+const extractMlbId = (link) => {
+    if (!link || typeof link !== 'string') return null;
+    const match = link.match(/MLB-?(\d+)/i);
+    return match ? match[1] : null;
+};
+
+const normalizeTitle = (title) => {
+    if (!title || typeof title !== 'string') return '';
+    return title
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+        .replace(/[^a-z0-9]/g, ' ') // Substitui símbolos por espaço
+        .replace(/\b(110v|220v|127v|bivolt|volts|volt)\b/g, '') // Remove voltagem/volt
+        .replace(/\s+/g, ' ') // Colapsa múltiplos espaços
+        .trim();
+};
+
 // Salva Produto com Bypass de Conflito (Postgres style)
 const saveProduct = async (product) => {
     try {
         const originalLink = product.originalLink || product.link || '';
-        // Verifica duplicados por original_link, link ou título no histórico dos últimos 3 dias
-        if (originalLink || product.title) {
-            const existingQuery = `
-                SELECT id, title, link, original_link FROM products 
-                WHERE (original_link = ? AND original_link != '') 
-                OR (link = ? AND link != '') 
-                OR (UPPER(title) = UPPER(?) AND title != '') 
-                LIMIT 1
-            `;
-            const existing = await db.get(existingQuery, [originalLink, product.link || '', product.title || '']);
-            if (existing) {
-                logger.info(`[SaveProduct] Produto duplicado ignorado (link ou título idêntico no histórico de 3 dias). ID novo: ${product.id}, ID existente: ${existing.id}, Link existente: ${existing.link}`);
+        
+        // Busca o histórico de produtos recentes para checagem robusta em JS
+        const existingProducts = await db.all("SELECT id, title, link, original_link FROM products");
+        
+        const normNewTitle = normalizeTitle(product.title);
+        const newMlbId = extractMlbId(originalLink);
+        
+        for (const p of existingProducts) {
+            // 1. Checagem por MLB ID
+            if (newMlbId && (extractMlbId(p.original_link) === newMlbId || extractMlbId(p.link) === newMlbId)) {
+                logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo MLB ID no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
+                return 0;
+            }
+            
+            // 2. Checagem por título normalizado
+            if (normNewTitle && normalizeTitle(p.title) === normNewTitle) {
+                logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo título normalizado no histórico). ID novo: ${product.id}, ID existente: ${p.id}, Título: ${product.title}`);
+                return 0;
+            }
+            
+            // 3. Checagem por links brutos
+            if (originalLink && (p.original_link === originalLink || p.link === originalLink)) {
+                logger.info(`[SaveProduct] Produto duplicado ignorado (link idêntico no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
                 return 0;
             }
         }
@@ -133,18 +162,37 @@ const getNextApprovedItem = async () => {
             // Checagem retroativa de duplicados:
             // Se o produto selecionado já foi publicado (está em products mas não está mais em queue),
             // removemos esse item duplicado da fila e continuamos o loop para pegar outro.
-            const duplicateQuery = `
-                SELECT p.id FROM products p
+            const publishedProducts = await db.all(`
+                SELECT p.id, p.title, p.link, p.original_link 
+                FROM products p
                 LEFT JOIN queue q ON p.id = q.product_id
-                WHERE ((p.original_link = ? AND p.original_link != '') 
-                   OR (p.link = ? AND p.link != '') 
-                   OR (UPPER(p.title) = UPPER(?) AND p.title != ''))
-                AND p.id != ?
-                AND q.product_id IS NULL
-                LIMIT 1
-            `;
-            const dup = await db.get(duplicateQuery, [item.original_link || item.link || '', item.link || '', item.title || '', item.product_id]);
-            if (dup) {
+                WHERE q.product_id IS NULL AND p.id != ?
+            `, [item.product_id]);
+
+            const itemMlbId = extractMlbId(item.original_link || item.link);
+            const itemNormTitle = normalizeTitle(item.title);
+
+            let isDup = false;
+            for (const p of publishedProducts) {
+                if (itemMlbId && (extractMlbId(p.original_link) === itemMlbId || extractMlbId(p.link) === itemMlbId)) {
+                    isDup = true;
+                    break;
+                }
+                if (itemNormTitle && normalizeTitle(p.title) === itemNormTitle) {
+                    isDup = true;
+                    break;
+                }
+                if (item.link && (p.original_link === item.link || p.link === item.link)) {
+                    isDup = true;
+                    break;
+                }
+                if (item.original_link && (p.original_link === item.original_link || p.link === item.original_link)) {
+                    isDup = true;
+                    break;
+                }
+            }
+
+            if (isDup) {
                 logger.info(`[GetNextApprovedItem] Pulando e limpando item duplicado retroativo da fila. ID: ${item.product_id}, Título: ${item.title}`);
                 await db.run('DELETE FROM queue WHERE id = ?', [item.id]);
                 continue;
