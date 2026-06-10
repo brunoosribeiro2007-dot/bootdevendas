@@ -15,7 +15,8 @@ async function runTest() {
             id: 'ML-TEST-A',
             title: 'Câmera IP Wifi E27',
             price: 52.99,
-            link: 'https://meli.la/2nZe7vc',
+            link: 'https://meli.la/short-a-1',
+            originalLink: 'https://produto.mercadolivre.com.br/MLB-12345-camera',
             imageUrl: 'https://test.com/camera.jpg',
             description: 'Casa'
         };
@@ -24,7 +25,8 @@ async function runTest() {
             id: 'ML-TEST-B', // ID diferente
             title: 'Câmera IP Wifi E27 Versão Especial',
             price: 52.99,
-            link: 'https://meli.la/2nZe7vc', // Link idêntico!
+            link: 'https://meli.la/short-b-2', // Link curto diferente!
+            originalLink: 'https://produto.mercadolivre.com.br/MLB-12345-camera', // Original idêntico!
             imageUrl: 'https://test.com/camera.jpg',
             description: 'Casa'
         };
@@ -104,6 +106,10 @@ async function runTest() {
         console.log('\n--- 10. Executando getNextApprovedItem (deve pular F por ter mesmo título que D, e trazer E) ---');
         const nextItem = await repository.getNextApprovedItem();
         console.log(`Próximo item retornado: ${nextItem ? nextItem.product_id : 'null'} (Esperado: ML-TEST-E)`);
+
+        // Chama novamente para garantir que F seja avaliado caso E tenha sido sorteado primeiro
+        const nextItem2 = await repository.getNextApprovedItem();
+        console.log(`Segundo item retornado: ${nextItem2 ? nextItem2.product_id : 'null'} (Esperado: null)`);
 
         // Verifica se F foi realmente removido da fila
         const queueCheck = await db.all("SELECT id FROM queue WHERE product_id = ?", ['ML-TEST-F']);

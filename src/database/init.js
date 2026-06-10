@@ -90,6 +90,7 @@ const DDL = {
             title TEXT NOT NULL,
             price REAL NOT NULL,
             link TEXT NOT NULL,
+            original_link TEXT,
             image_url TEXT,
             description TEXT,
             coupon TEXT,
@@ -132,6 +133,10 @@ const initializeDB = async () => {
             logger.info('Conectando ao Neon (PostgreSQL)...');
             await pool.query(DDL.products);
             try {
+                await pool.query('ALTER TABLE products ADD COLUMN original_link TEXT');
+                logger.info('🐘 Postgres: Coluna "original_link" adicionada à tabela products.');
+            } catch (e) {}
+            try {
                 await pool.query('ALTER TABLE products ADD COLUMN coupon TEXT');
                 logger.info('🐘 Postgres: Coluna "coupon" adicionada à tabela products.');
             } catch (e) {}
@@ -147,6 +152,10 @@ const initializeDB = async () => {
             await pool.query(DDL.sessions);
         } else {
             sqliteDb.exec(DDL.products);
+            try {
+                sqliteDb.exec('ALTER TABLE products ADD COLUMN original_link TEXT');
+                logger.info('🗃️ SQLite: Coluna "original_link" adicionada à tabela products.');
+            } catch (e) {}
             try {
                 sqliteDb.exec('ALTER TABLE products ADD COLUMN coupon TEXT');
                 logger.info('🗃️ SQLite: Coluna "coupon" adicionada à tabela products.');

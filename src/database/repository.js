@@ -6,15 +6,17 @@ let lastSentNiche = '';
 // Salva Produto com Bypass de Conflito (Postgres style)
 const saveProduct = async (product) => {
     try {
-        // Verifica duplicados por link ou título no histórico dos últimos 3 dias
-        if (product.link || product.title) {
+        const originalLink = product.originalLink || product.link || '';
+        // Verifica duplicados por original_link, link ou título no histórico dos últimos 3 dias
+        if (originalLink || product.title) {
             const existingQuery = `
-                SELECT id, title, link FROM products 
-                WHERE (link = ? AND link != '') 
+                SELECT id, title, link, original_link FROM products 
+                WHERE (original_link = ? AND original_link != '') 
+                OR (link = ? AND link != '') 
                 OR (UPPER(title) = UPPER(?) AND title != '') 
                 LIMIT 1
             `;
-            const existing = await db.get(existingQuery, [product.link || '', product.title || '']);
+            const existing = await db.get(existingQuery, [originalLink, product.link || '', product.title || '']);
             if (existing) {
                 logger.info(`[SaveProduct] Produto duplicado ignorado (link ou título idêntico no histórico de 3 dias). ID novo: ${product.id}, ID existente: ${existing.id}, Link existente: ${existing.link}`);
                 return 0;
@@ -22,8 +24,8 @@ const saveProduct = async (product) => {
         }
 
         const query = `
-            INSERT INTO products (id, title, price, link, image_url, description, coupon, old_price, discount_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO products (id, title, price, link, original_link, image_url, description, coupon, old_price, discount_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO NOTHING
         `;
         const res = await db.run(query, [
@@ -31,6 +33,7 @@ const saveProduct = async (product) => {
             product.title,
             product.price,
             product.link,
+            originalLink || null,
             product.imageUrl,
             product.description,
             product.coupon || '',
@@ -88,7 +91,7 @@ const getNextApprovedItem = async () => {
         while (true) {
             // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
             let query = `
-                SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
+                SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 
@@ -101,7 +104,7 @@ const getNextApprovedItem = async () => {
             // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
             if (!item) {
                 query = `
-                    SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
+                    SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
                     FROM queue q 
                     JOIN products p ON q.product_id = p.id 
                     WHERE q.status = 'approved' 
@@ -133,12 +136,14 @@ const getNextApprovedItem = async () => {
             const duplicateQuery = `
                 SELECT p.id FROM products p
                 LEFT JOIN queue q ON p.id = q.product_id
-                WHERE ((p.link = ? AND p.link != '') OR (UPPER(p.title) = UPPER(?) AND p.title != ''))
+                WHERE ((p.original_link = ? AND p.original_link != '') 
+                   OR (p.link = ? AND p.link != '') 
+                   OR (UPPER(p.title) = UPPER(?) AND p.title != ''))
                 AND p.id != ?
                 AND q.product_id IS NULL
                 LIMIT 1
             `;
-            const dup = await db.get(duplicateQuery, [item.link || '', item.title || '', item.product_id]);
+            const dup = await db.get(duplicateQuery, [item.original_link || item.link || '', item.link || '', item.title || '', item.product_id]);
             if (dup) {
                 logger.info(`[GetNextApprovedItem] Pulando e limpando item duplicado retroativo da fila. ID: ${item.product_id}, Título: ${item.title}`);
                 await db.run('DELETE FROM queue WHERE id = ?', [item.id]);

@@ -96,7 +96,8 @@ const captureTask = async () => {
                 enrichedProduct = product;
             }
 
-            // Salva o link de afiliado oficial diretamente no link do produto
+            // Salva o link original e o de afiliado oficial no produto
+            enrichedProduct.originalLink = product.link;
             enrichedProduct.link = finalLink;
 
             // Não armazena as mensagens no banco para economizar espaço
