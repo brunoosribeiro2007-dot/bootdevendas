@@ -1,4 +1,4 @@
-const { initializeDB } = require('../src/database/init');
+const { initializeDB, db } = require('../src/database/init');
 const repository = require('../src/database/repository');
 const queueService = require('../src/services/queue.service');
 
@@ -74,6 +74,40 @@ async function runTest() {
         console.log('\n--- 7. Tentando reinserir Produto A após limpeza (deve ser bloqueado pelo histórico) ---');
         const addedA2 = await queueService.addToQueue(productA, 'rawMsgA2', 'formattedMsgA2');
         console.log(`Produto A adicionado novamente? ${addedA2} (Esperado: false)`);
+
+        console.log('\n--- 8. Inserindo novo Produto E ---');
+        const productE = {
+            id: 'ML-TEST-E',
+            title: 'Produto E Inédito',
+            price: 79.99,
+            link: 'https://meli.la/link-e',
+            imageUrl: 'https://test.com/e.jpg',
+            description: 'Casa'
+        };
+        await queueService.addToQueue(productE, 'rawMsgE', 'formattedMsgE');
+
+        console.log('\n--- 9. Inserindo manualmente na fila um duplicado de D (que já foi limpo/publicado) ---');
+        // Para simular um duplicado que já existia na fila:
+        // Nós inserimos na tabela products o produto F (com mesmo link de D) e na fila o correspondente
+        const productF = {
+            id: 'ML-TEST-F',
+            title: 'Outro Produto Diferente', // Mesmo título que D!
+            price: 99.99,
+            link: 'https://meli.la/different-link-f', 
+            imageUrl: 'https://test.com/f.jpg',
+            description: 'Casa'
+        };
+        // Salvamos ignorando a validação chamando a query do DB diretamente
+        await db.run("INSERT INTO products (id, title, price, link, image_url, description) VALUES (?, ?, ?, ?, ?, ?)", [productF.id, productF.title, productF.price, productF.link, productF.imageUrl, productF.description]);
+        await db.run("INSERT INTO queue (product_id, raw_message, formatted_message, status) VALUES (?, ?, ?, 'approved')", [productF.id, 'rawF', 'formattedF']);
+
+        console.log('\n--- 10. Executando getNextApprovedItem (deve pular F por ter mesmo título que D, e trazer E) ---');
+        const nextItem = await repository.getNextApprovedItem();
+        console.log(`Próximo item retornado: ${nextItem ? nextItem.product_id : 'null'} (Esperado: ML-TEST-E)`);
+
+        // Verifica se F foi realmente removido da fila
+        const queueCheck = await db.all("SELECT id FROM queue WHERE product_id = ?", ['ML-TEST-F']);
+        console.log(`Produto F ainda na fila? ${queueCheck.length > 0} (Esperado: false)`);
 
     } catch (err) {
         console.error('ERRO NO TESTE:', err);

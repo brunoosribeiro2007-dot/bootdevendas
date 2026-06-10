@@ -83,35 +83,58 @@ const updateQueueStatus = async (id, status) => {
 
 const getNextApprovedItem = async () => {
     try {
-        // Usa a variável em memória para o último nicho enviado
         const lastNiche = lastSentNiche;
 
-        // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
-        let query = `
-            SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
-            FROM queue q 
-            JOIN products p ON q.product_id = p.id 
-            WHERE q.status = 'approved' 
-            AND p.description != ?
-            ORDER BY RANDOM()
-            LIMIT 1
-        `;
-        let item = await db.get(query, [lastNiche]);
-
-        // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
-        if (!item) {
-            query = `
+        while (true) {
+            // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
+            let query = `
                 SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 
+                AND p.description != ?
                 ORDER BY RANDOM()
                 LIMIT 1
             `;
-            item = await db.get(query, []);
-        }
+            let item = await db.get(query, [lastNiche]);
 
-        return item;
+            // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
+            if (!item) {
+                query = `
+                    SELECT q.*, p.title, p.price, p.link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
+                    FROM queue q 
+                    JOIN products p ON q.product_id = p.id 
+                    WHERE q.status = 'approved' 
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                `;
+                item = await db.get(query, []);
+            }
+
+            if (!item) {
+                return null;
+            }
+
+            // Checagem retroativa de duplicados:
+            // Se o produto selecionado já foi publicado (está em products mas não está mais em queue),
+            // removemos esse item duplicado da fila e continuamos o loop para pegar outro.
+            const duplicateQuery = `
+                SELECT p.id FROM products p
+                LEFT JOIN queue q ON p.id = q.product_id
+                WHERE ((p.link = ? AND p.link != '') OR (UPPER(p.title) = UPPER(?) AND p.title != ''))
+                AND p.id != ?
+                AND q.product_id IS NULL
+                LIMIT 1
+            `;
+            const dup = await db.get(duplicateQuery, [item.link || '', item.title || '', item.product_id]);
+            if (dup) {
+                logger.info(`[GetNextApprovedItem] Pulando e limpando item duplicado retroativo da fila. ID: ${item.product_id}, Título: ${item.title}`);
+                await db.run('DELETE FROM queue WHERE id = ?', [item.id]);
+                continue;
+            }
+
+            return item;
+        }
     } catch (err) {
         logger.error('Erro ao buscar próximo item da fila:', err);
         return null;
