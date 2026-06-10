@@ -289,30 +289,48 @@ class WhatsappPublisher {
       const displayTitle = item.title || 'Sem título';
       this.addLog(`📤 Publicando produto: ${displayTitle.substring(0, 40)}...`);
       
-      // Tenta enviar com imagem primeiro
-      try {
-          await this.sock.sendMessage(chatId, {
-              image: { url: item.image_url },
-              caption: item.formatted_message
-          });
-          return true;
-      } catch (imgErr) {
-          // Se a imagem falhar (URL inválida, timeout), envia somente texto como fallback
-          logger.warn(`⚠️ Falha ao enviar imagem (${imgErr.message}). Enviando somente texto...`);
+      // Tenta baixar a imagem previamente com timeout estrito de 8 segundos
+      let imageBuffer = null;
+      if (item.image_url && item.image_url.startsWith('http')) {
+          try {
+              const axios = require('axios');
+              const imgRes = await axios.get(item.image_url, { 
+                  responseType: 'arraybuffer', 
+                  timeout: 8000 
+              });
+              if (imgRes.data) {
+                  imageBuffer = Buffer.from(imgRes.data);
+              }
+          } catch (imgDownloadErr) {
+              logger.warn(`⚠️ Falha ao baixar imagem do produto (${imgDownloadErr.message}). Prosseguindo com fallback de texto.`);
+          }
+      }
+
+      if (imageBuffer) {
           try {
               await this.sock.sendMessage(chatId, {
-                  text: item.formatted_message
+                  image: imageBuffer,
+                  caption: item.formatted_message
               });
               return true;
-          } catch (textErr) {
-              logger.error('❌ Falha total ao enviar mensagem:', textErr.message);
-              // Se falha no texto também, provavelmente a conexão caiu
-              if (textErr.message?.includes('Connection Closed') || textErr.message?.includes('not open')) {
-                  this.isReady = false;
-                  this._cachedGroupId = null;
-              }
-              return false;
+          } catch (sendImgErr) {
+              logger.warn(`⚠️ Falha ao enviar mensagem com imagem (${sendImgErr.message}). Tentando enviar apenas texto...`);
           }
+      }
+
+      // Envia somente texto como fallback
+      try {
+          await this.sock.sendMessage(chatId, {
+              text: item.formatted_message
+          });
+          return true;
+      } catch (textErr) {
+          logger.error('❌ Falha total ao enviar mensagem:', textErr.message);
+          if (textErr.message?.includes('Connection Closed') || textErr.message?.includes('not open')) {
+              this.isReady = false;
+              this._cachedGroupId = null;
+          }
+          return false;
       }
     } catch (error) {
       logger.error('❌ Erro ao publicar mensagem no WhatsApp:', error);

@@ -50,6 +50,7 @@ const shouldSendGoodNight = () => {
 
 let isPublishing = false;
 let sentGoodNightMessage = false;
+let wasQueueEmptyLogged = false;
 
 const publishTaskContinuo = async () => {
     if (isPublishing) return;
@@ -94,11 +95,16 @@ const publishTaskContinuo = async () => {
             // ✅ VERIFICAÇÃO 3: Buscar próximo item SOMENTE quando tudo está OK
             const item = await repository.getNextApprovedItem();
             if (!item) {
+                if (!wasQueueEmptyLogged) {
+                    logger.info('ℹ️ Fila de publicações aprovadas está vazia. Aguardando novos produtos...');
+                    wasQueueEmptyLogged = true;
+                }
                 // Fila vazia — espera mais tempo para não sobrecarregar o banco
                 await new Promise(r => setTimeout(r, 30000)); // 30 segundos
                 continue;
             }
 
+            wasQueueEmptyLogged = false; // Reseta flag para a próxima vez que a fila esvaziar
             logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
             
             // Verifica novamente antes de enviar (pode ter desconectado no intervalo)
