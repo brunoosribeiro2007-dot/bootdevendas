@@ -126,6 +126,8 @@ const publishTaskContinuo = async () => {
                 logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
             } else {
                 logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
+                // Reseta o status de volta para 'approved' para nova tentativa
+                await repository.updateQueueStatus(item.id, 'approved');
                 // Se falhou porque o WhatsApp caiu, espera mais
                 if (!publisher.isReady) {
                     await new Promise(r => setTimeout(r, 30000));
@@ -168,6 +170,9 @@ const forcePublish = async () => {
             // Remove o produto e item da fila do banco para não ocupar espaço
             await repository.deleteProductAndQueueItem(item.product_id, item.description);
             logger.info(`✅ Item ${item.id} publicado forçadamente e removido do banco.`);
+        } else {
+            // Se falhou, reverte o status para 'approved'
+            await repository.updateQueueStatus(item.id, 'approved');
         }
     } catch (err) {
         logger.error('Erro na publicação forçada manual:', err);

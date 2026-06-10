@@ -115,6 +115,18 @@ const getNextApprovedItem = async () => {
                 return null;
             }
 
+            // Tentar lockar o item alterando o status de 'approved' para 'sending'
+            const updateQuery = `
+                UPDATE queue 
+                SET status = 'sending', updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ? AND status = 'approved'
+            `;
+            const lockRes = await db.run(updateQuery, [item.id]);
+            if (lockRes.rowCount === 0) {
+                logger.warn(`[GetNextApprovedItem] Concorrência detectada: item ${item.id} já foi lockado ou modificado por outra instância. Tentando outro.`);
+                continue;
+            }
+
             // Checagem retroativa de duplicados:
             // Se o produto selecionado já foi publicado (está em products mas não está mais em queue),
             // removemos esse item duplicado da fila e continuamos o loop para pegar outro.
@@ -133,6 +145,7 @@ const getNextApprovedItem = async () => {
                 continue;
             }
 
+            item.status = 'sending';
             return item;
         }
     } catch (err) {
@@ -193,6 +206,19 @@ const clearQueueOnly = async () => {
     }
 };
 
+const resetSendingStatus = async () => {
+    try {
+        const res = await db.run("UPDATE queue SET status = 'approved' WHERE status = 'sending'", []);
+        if (res.rowCount > 0) {
+            logger.info(`🔄 Recuperação: ${res.rowCount} itens travados em envio foram reativados na fila.`);
+        }
+        return res.rowCount;
+    } catch (err) {
+        logger.error('Erro ao resetar status de envio:', err);
+        throw err;
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -203,5 +229,6 @@ module.exports = {
   deleteProductAndQueueItem,
   clearQueue,
   clearQueueOnly,
+  resetSendingStatus,
   pruneOldProducts
 };

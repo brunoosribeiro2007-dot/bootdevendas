@@ -160,6 +160,23 @@ const initializeDB = async () => {
                 logger.info('🗃️ SQLite: Coluna "discount_percent" adicionada à tabela products.');
             } catch (e) {}
             sqliteDb.exec(DDL.queue);
+            // Auto-migração para remover CHECK constraint antigo no SQLite
+            try {
+                const schema = sqliteDb.prepare("SELECT sql FROM sqlite_master WHERE name = 'queue'").get();
+                if (schema && schema.sql && schema.sql.includes('CHECK')) {
+                    logger.info('🗃️ SQLite: Detectada restrição CHECK antiga na tabela "queue". Iniciando migração...');
+                    sqliteDb.exec('ALTER TABLE queue RENAME TO queue_old');
+                    sqliteDb.exec(DDL.queue);
+                    sqliteDb.exec(`
+                        INSERT INTO queue (id, product_id, raw_message, formatted_message, status, created_at, updated_at)
+                        SELECT id, product_id, raw_message, formatted_message, status, created_at, updated_at FROM queue_old
+                    `);
+                    sqliteDb.exec('DROP TABLE queue_old');
+                    logger.info('🗃️ SQLite: Migração da tabela "queue" concluída com sucesso (restrição CHECK removida).');
+                }
+            } catch (migErr) {
+                logger.error('🗃️ SQLite: Erro ao migrar tabela "queue": ' + migErr.message);
+            }
             sqliteDb.exec(DDL.sessions);
         }
         logger.info('✅ Banco de dados inicializado com sucesso.');
