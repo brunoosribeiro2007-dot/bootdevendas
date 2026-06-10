@@ -6,6 +6,21 @@ let lastSentNiche = '';
 // Salva Produto com Bypass de Conflito (Postgres style)
 const saveProduct = async (product) => {
     try {
+        // Verifica duplicados por link ou título no histórico dos últimos 3 dias
+        if (product.link || product.title) {
+            const existingQuery = `
+                SELECT id, title, link FROM products 
+                WHERE (link = ? AND link != '') 
+                OR (UPPER(title) = UPPER(?) AND title != '') 
+                LIMIT 1
+            `;
+            const existing = await db.get(existingQuery, [product.link || '', product.title || '']);
+            if (existing) {
+                logger.info(`[SaveProduct] Produto duplicado ignorado (link ou título idêntico no histórico de 3 dias). ID novo: ${product.id}, ID existente: ${existing.id}, Link existente: ${existing.link}`);
+                return 0;
+            }
+        }
+
         const query = `
             INSERT INTO products (id, title, price, link, image_url, description, coupon, old_price, discount_percent)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -146,6 +161,14 @@ const clearQueue = async () => {
     }
 };
 
+const clearQueueOnly = async () => {
+    try {
+        const res = await db.run('DELETE FROM queue', []);
+        return res.rowCount;
+    } catch (err) {
+        logger.error('Erro ao limpar apenas a fila:', err);
+    }
+};
 
 module.exports = {
   saveProduct,
@@ -156,5 +179,6 @@ module.exports = {
   getNextApprovedItem,
   deleteProductAndQueueItem,
   clearQueue,
+  clearQueueOnly,
   pruneOldProducts
 };

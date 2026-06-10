@@ -14,70 +14,109 @@ class WhatsappPublisher {
     this.logs = [];
     this.authPath = path.resolve(process.cwd(), '.baileys_auth');
     this.sessionFilesMtime = new Map(); // Cache local dos tempos de modificação dos arquivos
+    this.isInitializing = false; // Controle de concorrência na inicialização
+    this.reconnectTimeout = null; // Referência para evitar agendamentos paralelos
     
     if (!fs.existsSync(this.authPath)) {
         try { fs.mkdirSync(this.authPath, { recursive: true }); } catch (e) {}
     }
   }
 
-  // 🔄 CARREGAR SESSÃO DO NEON PARA O DISCO
+  // 🔄 CARREGAR SESSÃO DO NEON PARA O DISCO (Bundle atômico com fallback legado)
   async restoreSessionFromNeon() {
-      const { getAllSessionFiles } = require('../database/init');
+      const { db } = require('../database/init');
       this.addLog('📥 Recuperando login salvo no Neon.tech...');
+      try {
+          const row = await db.get('SELECT data FROM sessions WHERE id = ?', ['session_bundle']);
+          if (!row || !row.data) {
+              this.addLog('ℹ️ Bundle de sessão não encontrado no banco. Tentando carregamento legado...');
+              return await this.restoreSessionLegacy();
+          }
+
+          let buffer = row.data;
+          if (!Buffer.isBuffer(buffer)) {
+              buffer = Buffer.from(buffer);
+          }
+
+          const bundle = JSON.parse(buffer.toString('utf-8'));
+
+          // Limpa a pasta local para evitar arquivos órfãos antigos
+          if (fs.existsSync(this.authPath)) {
+              const localFiles = fs.readdirSync(this.authPath);
+              for (const localFile of localFiles) {
+                  try { fs.unlinkSync(path.join(this.authPath, localFile)); } catch (e) {}
+              }
+          } else {
+              fs.mkdirSync(this.authPath, { recursive: true });
+          }
+
+          // Escreve os arquivos do bundle
+          for (const [file, base64Data] of Object.entries(bundle)) {
+              const filePath = path.join(this.authPath, file);
+              fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+          }
+
+          this.addLog('✅ Login (Bundle) recuperado com sucesso do banco externo!');
+          return true;
+      } catch (e) {
+          this.addLog(`⚠️ Falha ao carregar bundle de sessão: ${e.message}. Tentando carregamento legado...`);
+          return await this.restoreSessionLegacy();
+      }
+  }
+
+  // Fallback para ler sessões armazenadas no formato antigo
+  async restoreSessionLegacy() {
+      const { getAllSessionFiles } = require('../database/init');
       try {
           const files = await getAllSessionFiles();
           if (files.length === 0) {
               this.addLog('⚠️ Nenhuma sessão anterior encontrada no Neon.');
               return false;
           }
-          
-          this.sessionFilesMtime.clear();
-          for (const file of files) {
+
+          // Ignora o próprio id de bundle se ele aparecer
+          const individualFiles = files.filter(f => f.id !== 'session_bundle');
+          if (individualFiles.length === 0) return false;
+
+          for (const file of individualFiles) {
               const filePath = path.join(this.authPath, file.id);
               fs.writeFileSync(filePath, file.data);
-              try {
-                  const stats = fs.statSync(filePath);
-                  this.sessionFilesMtime.set(file.id, stats.mtimeMs);
-              } catch (e) {}
           }
-          this.addLog('✅ Login recuperado com sucesso do banco externo!');
+          this.addLog('✅ Login legado (arquivos individuais) recuperado com sucesso!');
           return true;
       } catch (e) {
-          this.addLog('❌ Falha ao carregar sessão do banco.');
+          this.addLog(`❌ Falha na restauração da sessão legada: ${e.message}`);
           return false;
       }
   }
 
-  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Sync incremental otimizado)
+  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Compacta tudo em 1 único bundle para evitar corrupção)
   async syncSessionToNeon() {
-      const { saveSessionFile } = require('../database/init');
+      const { saveSessionFile, db } = require('../database/init');
       try {
           if (!fs.existsSync(this.authPath)) return;
           const files = fs.readdirSync(this.authPath);
-          
-          let syncCount = 0;
+          if (files.length === 0) return;
+
+          const bundle = {};
           for (const file of files) {
               const filePath = path.join(this.authPath, file);
               if (fs.lstatSync(filePath).isFile()) {
-                  const stats = fs.statSync(filePath);
-                  const mtime = stats.mtimeMs;
-                  
-                  // Se o arquivo não mudou desde o último sync, pulamos para não congestionar o pool do Postgres
-                  if (this.sessionFilesMtime.get(file) === mtime) {
-                      continue;
-                  }
-                  
-                  const data = fs.readFileSync(filePath); // Lendo como Buffer (Binário)
-                  await saveSessionFile(file, data);
-                  this.sessionFilesMtime.set(file, mtime);
-                  syncCount++;
+                  const data = fs.readFileSync(filePath);
+                  bundle[file] = data.toString('base64');
               }
           }
-          if (syncCount > 0) {
-              logger.info(`📤 Sincronizados ${syncCount} arquivos de sessão modificados para o Neon.`);
-          }
+
+          const serialized = JSON.stringify(bundle);
+          const compressed = Buffer.from(serialized, 'utf-8');
+
+          await saveSessionFile('session_bundle', compressed);
+          logger.info('📤 Sincronizado bundle de sessão completo e atômico para o Neon.');
+
+          // Limpa registros legados individuais para otimizar espaço no banco
+          await db.run("DELETE FROM sessions WHERE id != 'session_bundle'", []);
       } catch (e) {
-          logger.warn(`Erro na sincronização total: ${e.message}`);
+          logger.warn(`Erro na sincronização do bundle de sessão: ${e.message}`);
       }
   }
 
@@ -89,26 +128,38 @@ class WhatsappPublisher {
   }
 
   async initialize() {
-    this.latestQr = null;
-    this.latestPairingCode = null;
-    this._cachedGroupId = null; // Reset cache do grupo no reconnect
-
-    // Evita múltiplas instâncias rodando juntas (Causa erro 405)
-    if (this.sock) {
-        try { 
-            this.sock.ev.removeAllListeners(); 
-            this.sock.end();
-        } catch(e) {}
-        this.sock = null;
+    if (this.isInitializing) {
+        logger.warn('⚠️ [Initialize] Inicialização do WhatsApp já em andamento. Ignorando chamada duplicada.');
+        return;
     }
+    this.isInitializing = true;
 
-    // TENTA RESTAURAR ANTES DE LIGAR O MOTOR
-    await this.restoreSessionFromNeon();
-
-    this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
     try {
+        this.latestQr = null;
+        this.latestPairingCode = null;
+        this._cachedGroupId = null; // Reset cache do grupo no reconnect
+
+        // Cancela qualquer agendamento de reconexão pendente
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+
+        // Evita múltiplas instâncias rodando juntas (Causa erro 405)
+        if (this.sock) {
+            try { 
+                this.sock.ev.removeAllListeners(); 
+                this.sock.end();
+            } catch(e) {}
+            this.sock = null;
+        }
+
+        // TENTA RESTAURAR ANTES DE LIGAR O MOTOR
+        await this.restoreSessionFromNeon();
+
+        this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
         const baileys = await import('@whiskeysockets/baileys');
-        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, Browsers } = baileys;
+        const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = baileys;
         const { Boom } = await import('@hapi/boom');
 
         const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
@@ -126,7 +177,7 @@ class WhatsappPublisher {
         this.sock.ev.on('creds.update', async () => {
             try {
                 await saveCreds();
-                await this.syncSessionToNeon(); // Sincroniza tudo
+                await this.syncSessionToNeon(); // Sincroniza bundle atômico
             } catch (err) {
                 logger.error('Erro ao sincronizar credenciais:', err);
             }
@@ -158,32 +209,35 @@ class WhatsappPublisher {
             const shouldReconnect = !isLoggedOut;
             
             this.isReady = false;
+
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+            }
             
             if (statusCode === 408) {
                 this.addLog(`⏳ Timeout de conexão (408). Reconectando em 15s...`);
                 this.initStatus = 'Reconectando (timeout)...';
-                setTimeout(() => this.initialize(), 15000);
+                this.reconnectTimeout = setTimeout(() => this.initialize(), 15000);
             } else if (statusCode === 515 || statusCode === 503) {
                 this.addLog(`⏳ Servidor WhatsApp indisponível/Restart (${statusCode}). Reconectando em 5s...`);
                 this.initStatus = 'Reconectando (515)...';
-                setTimeout(() => this.initialize(), 5000);
+                this.reconnectTimeout = setTimeout(() => this.initialize(), 5000);
             } else if (shouldReconnect) {
                 this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando em 20s...`);
                 this.initStatus = 'Reconectando...';
-                setTimeout(() => this.initialize(), 20000);
+                this.reconnectTimeout = setTimeout(() => this.initialize(), 20000);
             } else {
                 this.initStatus = 'Sessão Inválida (Limpando...)';
                 // Se foi deslogado, precisamos limpar tudo para gerar novo QR
                 const { db } = require('../database/init');
                 db.run('DELETE FROM sessions', []).catch(() => {});
-                this.sessionFilesMtime.clear(); // Limpa cache local
                 try {
                     if (fs.existsSync(this.authPath)) {
                         fs.rmSync(this.authPath, { recursive: true, force: true });
                     }
                 } catch (e) {}
                 this.addLog('⚠️ Sessão limpa devido a logout. Reiniciando para novo pareamento...');
-                setTimeout(() => this.initialize(), 5000);
+                this.reconnectTimeout = setTimeout(() => this.initialize(), 5000);
             }
           } else if (connection === 'open') {
             this.initStatus = '✅ Conectado!';
@@ -198,6 +252,8 @@ class WhatsappPublisher {
         });
     } catch (err) {
         this.addLog(`❌ Erro no boot: ${err.message}`);
+    } finally {
+        this.isInitializing = false;
     }
   }
 

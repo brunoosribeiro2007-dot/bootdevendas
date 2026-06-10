@@ -2,14 +2,14 @@ const cron = require('node-cron');
 const repository = require('../database/repository');
 const logger = require('../config/logger');
 
-// Função para limpar a fila e produtos
+// Função para limpar apenas a fila (preserva histórico de produtos por 3 dias)
 const cleanupTask = async () => {
     try {
-        logger.info('Iniciando limpeza diária do banco de dados (novo dia)...');
-        await repository.clearQueue();
-        logger.info('Banco de dados limpo com sucesso! Pronto para novas ofertas.');
+        logger.info('Iniciando limpeza diária da fila de publicações (fim do expediente/novo dia)...');
+        await repository.clearQueueOnly();
+        logger.info('Fila de publicações limpa com sucesso! Histórico de produtos preservado.');
     } catch (error) {
-        logger.error('Erro ao realizar limpeza diária:', error);
+        logger.error('Erro ao realizar limpeza diária da fila:', error);
     }
 };
 
