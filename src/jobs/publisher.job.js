@@ -3,27 +3,27 @@ const logger = require('../config/logger');
 const repository = require('../database/repository');
 const publisher = require('../publishers/whatsapp.publisher');
 
-const isWithinPublishTime = () => {
-  const getPortoVelhoTime = () => {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Porto_Velho',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(new Date());
-    const h = Number(parts.find(p => p.type === 'hour').value);
-    const m = Number(parts.find(p => p.type === 'minute').value);
-    return { hour: h % 24, minute: m };
-  };
+const getPortoVelhoTime = () => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Porto_Velho',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(new Date());
+  const h = Number(parts.find(p => p.type === 'hour').value);
+  const m = Number(parts.find(p => p.type === 'minute').value);
+  return { hour: h % 24, minute: m };
+};
 
+const parseTime = (timeStr) => {
+  const [h, m] = timeStr.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const isWithinPublishTime = () => {
   const { hour: currentHour, minute: currentMinute } = getPortoVelhoTime();
   const currentTotal = currentHour * 60 + currentMinute;
-
-  const parseTime = (timeStr) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
 
   const startTotal = parseTime(env.publishStartTime || '08:00');
   const endTotal = parseTime(env.publishEndTime || '22:00');
@@ -34,6 +34,18 @@ const isWithinPublishTime = () => {
     // Caso em que o horário passa da meia-noite (ex: 22:00 as 08:00)
     return currentTotal >= startTotal || currentTotal <= endTotal;
   }
+};
+
+const shouldSendGoodNight = () => {
+  const { hour: currentHour, minute: currentMinute } = getPortoVelhoTime();
+  const currentTotal = currentHour * 60 + currentMinute;
+  
+  const endTotal = parseTime(env.publishEndTime || '22:00');
+  
+  // Diferença em minutos considerando ciclo de 24h
+  const diff = (currentTotal - endTotal + 1440) % 1440;
+  // Retorna true apenas se estivermos nos primeiros 15 minutos após o horário de término
+  return diff >= 0 && diff <= 15;
 };
 
 let isPublishing = false;
@@ -47,7 +59,7 @@ const publishTaskContinuo = async () => {
         while (true) {
             // ✅ VERIFICAÇÃO 1: Horário de publicação
             if (!isWithinPublishTime()) {
-                if (!sentGoodNightMessage) {
+                if (!sentGoodNightMessage && shouldSendGoodNight()) {
                     try {
                         logger.info('Tentando enviar mensagem de boa noite...');
                         const goodNightMsg = `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Fiquem com Deus e tenham uma excelente noite! ✨💤`;
