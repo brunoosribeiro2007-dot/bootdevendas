@@ -23,9 +23,9 @@ if (USE_NEON) {
 } else {
     logger.warn('⚠️  DATABASE_URL não encontrada. Usando SQLite local para desenvolvimento.');
     const Database = require('better-sqlite3');
-    sqliteDb = new Database(env.dbPath);
+    sqliteDb = new Database(env.dbPath, { timeout: 10000 });
     sqliteDb.pragma('journal_mode = WAL');
-    logger.info('🗃️  Modo: SQLite local');
+    logger.info('🗃️  Modo: SQLite local (com busy_timeout de 10s)');
 }
 
 // Adaptador unificado — mesma interface para Postgres e SQLite

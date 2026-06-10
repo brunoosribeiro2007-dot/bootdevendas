@@ -16,6 +16,37 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // Healthcheck (CRITICAL for Render)
 app.get('/health', (req, res) => res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() }));
 
+// Middleware de Autenticação Básica (Protege todas as rotas e APIs abaixo se DASHBOARD_PASSWORD estiver configurado)
+const basicAuthMiddleware = (req, res, next) => {
+    const username = process.env.DASHBOARD_USERNAME || 'admin';
+    const password = process.env.DASHBOARD_PASSWORD;
+
+    if (!password) {
+        return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Affiliate Engine Dashboard"');
+        return res.status(401).send('Acesso não autorizado. Autenticação básica requerida.');
+    }
+
+    try {
+        const auth = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
+        const user = auth[0];
+        const pass = auth[1];
+
+        if (user === username && pass === password) {
+            return next();
+        }
+    } catch (e) {}
+
+    res.setHeader('WWW-Authenticate', 'Basic realm="Affiliate Engine Dashboard"');
+    return res.status(401).send('Credenciais inválidas.');
+};
+
+app.use(basicAuthMiddleware);
+
 // Redireciona a raiz para o qr code
 app.get('/', (req, res) => res.redirect('/qr'));
 

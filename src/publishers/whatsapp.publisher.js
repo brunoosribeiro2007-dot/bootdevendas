@@ -13,6 +13,7 @@ class WhatsappPublisher {
     this.initStatus = 'Aguardando...';
     this.logs = [];
     this.authPath = path.resolve(process.cwd(), '.baileys_auth');
+    this.sessionFilesMtime = new Map(); // Cache local dos tempos de modificação dos arquivos
     
     if (!fs.existsSync(this.authPath)) {
         try { fs.mkdirSync(this.authPath, { recursive: true }); } catch (e) {}
@@ -30,9 +31,14 @@ class WhatsappPublisher {
               return false;
           }
           
+          this.sessionFilesMtime.clear();
           for (const file of files) {
               const filePath = path.join(this.authPath, file.id);
               fs.writeFileSync(filePath, file.data);
+              try {
+                  const stats = fs.statSync(filePath);
+                  this.sessionFilesMtime.set(file.id, stats.mtimeMs);
+              } catch (e) {}
           }
           this.addLog('✅ Login recuperado com sucesso do banco externo!');
           return true;
@@ -42,20 +48,33 @@ class WhatsappPublisher {
       }
   }
 
-  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Sync total)
+  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Sync incremental otimizado)
   async syncSessionToNeon() {
       const { saveSessionFile } = require('../database/init');
       try {
           if (!fs.existsSync(this.authPath)) return;
           const files = fs.readdirSync(this.authPath);
-          this.addLog(`📤 Sincronizando ${files.length} arquivos de sessão para o Neon...`);
           
+          let syncCount = 0;
           for (const file of files) {
               const filePath = path.join(this.authPath, file);
               if (fs.lstatSync(filePath).isFile()) {
+                  const stats = fs.statSync(filePath);
+                  const mtime = stats.mtimeMs;
+                  
+                  // Se o arquivo não mudou desde o último sync, pulamos para não congestionar o pool do Postgres
+                  if (this.sessionFilesMtime.get(file) === mtime) {
+                      continue;
+                  }
+                  
                   const data = fs.readFileSync(filePath); // Lendo como Buffer (Binário)
                   await saveSessionFile(file, data);
+                  this.sessionFilesMtime.set(file, mtime);
+                  syncCount++;
               }
+          }
+          if (syncCount > 0) {
+              logger.info(`📤 Sincronizados ${syncCount} arquivos de sessão modificados para o Neon.`);
           }
       } catch (e) {
           logger.warn(`Erro na sincronização total: ${e.message}`);
@@ -76,7 +95,10 @@ class WhatsappPublisher {
 
     // Evita múltiplas instâncias rodando juntas (Causa erro 405)
     if (this.sock) {
-        try { this.sock.ev.removeAllListeners(); } catch(e) {}
+        try { 
+            this.sock.ev.removeAllListeners(); 
+            this.sock.end();
+        } catch(e) {}
         this.sock = null;
     }
 
@@ -154,6 +176,7 @@ class WhatsappPublisher {
                 // Se foi deslogado, precisamos limpar tudo para gerar novo QR
                 const { db } = require('../database/init');
                 db.run('DELETE FROM sessions', []).catch(() => {});
+                this.sessionFilesMtime.clear(); // Limpa cache local
                 try {
                     if (fs.existsSync(this.authPath)) {
                         fs.rmSync(this.authPath, { recursive: true, force: true });
