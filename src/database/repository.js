@@ -1,4 +1,4 @@
-const { db } = require('./init');
+const { db, isPostgres } = require('./init');
 const logger = require('../config/logger');
 
 let lastSentNiche = '';
@@ -230,7 +230,7 @@ const deleteProductAndQueueItem = async (productId, niche) => {
 
 const pruneOldProducts = async () => {
     try {
-        const USE_POSTGRES = !!process.env.DATABASE_URL;
+        const USE_POSTGRES = isPostgres();
         let query;
         if (USE_POSTGRES) {
             query = "DELETE FROM products WHERE created_at < NOW() - INTERVAL '3 days'";
