@@ -4,6 +4,13 @@ const logger = require('../config/logger');
 const path = require('path');
 const fs = require('fs');
 
+const promiseTimeout = (promise, ms, errorMsg) => {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))
+    ]);
+};
+
 class WhatsappPublisher {
   constructor() {
     this.sock = null;
@@ -22,10 +29,10 @@ class WhatsappPublisher {
     }
   }
 
-  // 🔄 CARREGAR SESSÃO DO NEON PARA O DISCO (Bundle atômico com fallback legado)
-  async restoreSessionFromNeon() {
+  // 🔄 CARREGAR SESSÃO DO SUPABASE PARA O DISCO (Bundle atômico com fallback legado)
+  async restoreSessionFromPostgres() {
       const { db } = require('../database/init');
-      this.addLog('📥 Recuperando login salvo no Neon.tech...');
+      this.addLog('📥 Recuperando login salvo no Supabase...');
       try {
           const row = await db.get('SELECT data FROM sessions WHERE id = ?', ['session_bundle']);
           if (!row || !row.data) {
@@ -70,7 +77,7 @@ class WhatsappPublisher {
       try {
           const files = await getAllSessionFiles();
           if (files.length === 0) {
-              this.addLog('⚠️ Nenhuma sessão anterior encontrada no Neon.');
+              this.addLog('⚠️ Nenhuma sessão anterior encontrada no Supabase.');
               return false;
           }
 
@@ -90,8 +97,8 @@ class WhatsappPublisher {
       }
   }
 
-  // 📤 SALVAR SESSÃO DO DISCO PARA O NEON (Compacta tudo em 1 único bundle para evitar corrupção)
-  async syncSessionToNeon() {
+  // 📤 SALVAR SESSÃO DO DISCO PARA O SUPABASE (Compacta tudo em 1 único bundle para evitar corrupção)
+  async syncSessionToPostgres() {
       const { saveSessionFile, db } = require('../database/init');
       try {
           if (!fs.existsSync(this.authPath)) return;
@@ -111,7 +118,7 @@ class WhatsappPublisher {
           const compressed = Buffer.from(serialized, 'utf-8');
 
           await saveSessionFile('session_bundle', compressed);
-          logger.info('📤 Sincronizado bundle de sessão completo e atômico para o Neon.');
+          logger.info('📤 Sincronizado bundle de sessão completo e atômico para o Supabase.');
 
           // Limpa registros legados individuais para otimizar espaço no banco
           await db.run("DELETE FROM sessions WHERE id != 'session_bundle'", []);
@@ -155,7 +162,7 @@ class WhatsappPublisher {
         }
 
         // TENTA RESTAURAR ANTES DE LIGAR O MOTOR
-        await this.restoreSessionFromNeon();
+        await this.restoreSessionFromPostgres();
 
         this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
         const baileys = await import('@whiskeysockets/baileys');
@@ -170,14 +177,16 @@ class WhatsappPublisher {
           auth: state,
           logger: pino({ level: 'silent' }),
           connectTimeoutMs: 60000,
-          printQRInTerminal: true
+          printQRInTerminal: true,
+          syncFullHistory: false,
+          shouldSyncHistoryMessage: () => false
         });
 
         // SALVA NO BANCO SEMPRE QUE O LOGIN MUDA
         this.sock.ev.on('creds.update', async () => {
             try {
                 await saveCreds();
-                await this.syncSessionToNeon(); // Sincroniza bundle atômico
+                await this.syncSessionToPostgres(); // Sincroniza bundle atômico
             } catch (err) {
                 logger.error('Erro ao sincronizar credenciais:', err);
             }
@@ -247,7 +256,7 @@ class WhatsappPublisher {
             this.addLog('✅ Conexão realizada com sucesso! Bot pronto para publicações.');
             
             // Sincroniza a sessão após conectar com sucesso
-            this.syncSessionToNeon().catch(err => logger.warn('Erro ao sincronizar sessão após conexão:', err.message));
+            this.syncSessionToPostgres().catch(err => logger.warn('Erro ao sincronizar sessão após conexão:', err.message));
           }
         });
     } catch (err) {
@@ -255,6 +264,23 @@ class WhatsappPublisher {
     } finally {
         this.isInitializing = false;
     }
+  }
+
+  handleTimeoutOrConnectionIssue() {
+      this.isReady = false;
+      this._cachedGroupId = null;
+      this.addLog('⚠️ Instabilidade ou timeout detectado. Forçando reinicialização da conexão do WhatsApp...');
+      if (this.sock) {
+          try {
+              this.sock.ev.removeAllListeners();
+              this.sock.end();
+          } catch (e) {}
+          this.sock = null;
+      }
+      if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+      }
+      this.reconnectTimeout = setTimeout(() => this.initialize(), 10000);
   }
 
   async triggerPairing(phoneNumber) {
@@ -283,7 +309,11 @@ class WhatsappPublisher {
             chatId = this._cachedGroupId;
         } else {
             try {
-                const groups = await this.sock.groupFetchAllParticipating();
+                const groups = await promiseTimeout(
+                    this.sock.groupFetchAllParticipating(),
+                    20000,
+                    'Timeout ao buscar lista de grupos'
+                );
                 const groupName = targetGroup.toLowerCase().trim();
                 let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
                 if (!group) {
@@ -321,10 +351,17 @@ class WhatsappPublisher {
           logger.error('❌ Não foi possível determinar o destino para envio de texto.');
           return false;
       }
-      await this.sock.sendMessage(chatId, { text });
+      await promiseTimeout(
+          this.sock.sendMessage(chatId, { text }),
+          25000,
+          'Timeout ao enviar mensagem de texto no WhatsApp'
+      );
       return true;
     } catch (error) {
-      logger.error('❌ Erro ao enviar mensagem de texto no WhatsApp:', error);
+      logger.error('❌ Erro ao enviar mensagem de texto no WhatsApp:', error.message || error);
+      if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
+          this.handleTimeoutOrConnectionIssue();
+      }
       return false;
     }
   }
@@ -364,32 +401,50 @@ class WhatsappPublisher {
 
       if (imageBuffer) {
           try {
-              await this.sock.sendMessage(chatId, {
-                  image: imageBuffer,
-                  caption: item.formatted_message
-              });
+              await promiseTimeout(
+                  this.sock.sendMessage(chatId, {
+                      image: imageBuffer,
+                      caption: item.formatted_message
+                  }),
+                  35000,
+                  'Timeout ao enviar imagem no WhatsApp'
+              );
               return true;
           } catch (sendImgErr) {
-              logger.warn(`⚠️ Falha ao enviar mensagem com imagem (${sendImgErr.message}). Tentando enviar apenas texto...`);
+              logger.warn(`⚠️ Falha ao enviar mensagem com imagem (${sendImgErr.message}). Prosseguindo com fallback de texto.`);
+              if (sendImgErr.message?.includes('Timeout')) {
+                  this.handleTimeoutOrConnectionIssue();
+                  return false;
+              }
           }
       }
 
       // Envia somente texto como fallback
       try {
-          await this.sock.sendMessage(chatId, {
-              text: item.formatted_message
-          });
+          await promiseTimeout(
+              this.sock.sendMessage(chatId, {
+                  text: item.formatted_message
+              }),
+              25000,
+              'Timeout ao enviar mensagem de texto no WhatsApp'
+          );
           return true;
       } catch (textErr) {
           logger.error('❌ Falha total ao enviar mensagem:', textErr.message);
-          if (textErr.message?.includes('Connection Closed') || textErr.message?.includes('not open')) {
-              this.isReady = false;
-              this._cachedGroupId = null;
+          if (
+              textErr.message?.includes('Connection Closed') || 
+              textErr.message?.includes('not open') || 
+              textErr.message?.includes('Timeout')
+          ) {
+              this.handleTimeoutOrConnectionIssue();
           }
           return false;
       }
     } catch (error) {
-      logger.error('❌ Erro ao publicar mensagem no WhatsApp:', error);
+      logger.error('❌ Erro ao publicar mensagem no WhatsApp:', error.message || error);
+      if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
+          this.handleTimeoutOrConnectionIssue();
+      }
       return false;
     }
   }

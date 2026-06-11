@@ -2,15 +2,15 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 
 // ============================================================
-// MODO AUTOMÁTICO: Neon (PostgreSQL) quando DATABASE_URL existe
+// MODO AUTOMÁTICO: Supabase (PostgreSQL) quando DATABASE_URL existe
 //                  SQLite local quando não existe
 // ============================================================
 
-const USE_NEON = !!env.databaseUrl;
+const USE_POSTGRES = !!env.databaseUrl;
 let pool = null;
 let sqliteDb = null;
 
-if (USE_NEON) {
+if (USE_POSTGRES) {
     const { Pool } = require('pg');
     pool = new Pool({
         connectionString: env.databaseUrl,
@@ -19,7 +19,7 @@ if (USE_NEON) {
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000
     });
-    logger.info('🐘 Modo: PostgreSQL (Neon)');
+    logger.info('🐘 Modo: PostgreSQL (Supabase)');
 } else {
     logger.warn('⚠️  DATABASE_URL não encontrada. Usando SQLite local para desenvolvimento.');
     const Database = require('better-sqlite3');
@@ -32,7 +32,7 @@ if (USE_NEON) {
 const db = {
     run: async (query, params = []) => {
         try {
-            if (USE_NEON) {
+            if (USE_POSTGRES) {
                 let index = 1;
                 const pgQuery = query.replace(/\?/g, () => `$${index++}`);
                 const res = await pool.query(pgQuery, params);
@@ -44,13 +44,13 @@ const db = {
                 return { rowCount: result.changes };
             }
         } catch (err) {
-            logger.error(`❌ Erro no Banco (${USE_NEON ? 'Neon' : 'SQLite'}): ${err.message}`, { query });
+            logger.error(`❌ Erro no Banco (${USE_POSTGRES ? 'Supabase' : 'SQLite'}): ${err.message}`, { query });
             throw err;
         }
     },
     get: async (query, params = []) => {
         try {
-            if (USE_NEON) {
+            if (USE_POSTGRES) {
                 let index = 1;
                 const pgQuery = query.replace(/\?/g, () => `$${index++}`);
                 const res = await pool.query(pgQuery, params);
@@ -66,7 +66,7 @@ const db = {
     },
     all: async (query, params = []) => {
         try {
-            if (USE_NEON) {
+            if (USE_POSTGRES) {
                 let index = 1;
                 const pgQuery = query.replace(/\?/g, () => `$${index++}`);
                 const res = await pool.query(pgQuery, params);
@@ -98,7 +98,7 @@ const DDL = {
             discount_percent INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
-    queue: USE_NEON
+    queue: USE_POSTGRES
         ? `CREATE TABLE IF NOT EXISTS queue (
                 id SERIAL PRIMARY KEY,
                 product_id TEXT NOT NULL UNIQUE,
@@ -122,15 +122,15 @@ const DDL = {
     sessions: `
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
-            data ${USE_NEON ? 'BYTEA' : 'BLOB'} NOT NULL,
+            data ${USE_POSTGRES ? 'BYTEA' : 'BLOB'} NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
 };
 
 const initializeDB = async () => {
     try {
-        if (USE_NEON) {
-            logger.info('Conectando ao Neon (PostgreSQL)...');
+        if (USE_POSTGRES) {
+            logger.info('Conectando ao Supabase (PostgreSQL)...');
             await pool.query(DDL.products);
             try {
                 await pool.query('ALTER TABLE products ADD COLUMN original_link TEXT');
@@ -195,10 +195,10 @@ const initializeDB = async () => {
     }
 };
 
-// Funções de sessão (para persistência do WhatsApp no Neon)
+// Funções de sessão (para persistência do WhatsApp no Supabase)
 const saveSessionFile = async (id, data) => {
     try {
-        if (USE_NEON) {
+        if (USE_POSTGRES) {
             const query = 'INSERT INTO sessions (id, data, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = CURRENT_TIMESTAMP';
             await pool.query(query, [id, data]);
         } else {
@@ -212,7 +212,7 @@ const saveSessionFile = async (id, data) => {
 
 const deleteSessionFile = async (id) => {
     try {
-        if (USE_NEON) {
+        if (USE_POSTGRES) {
             await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
         } else {
             sqliteDb.prepare('DELETE FROM sessions WHERE id = ?').run(id);
@@ -224,7 +224,7 @@ const deleteSessionFile = async (id) => {
 
 const getAllSessionFiles = async () => {
     try {
-        if (USE_NEON) {
+        if (USE_POSTGRES) {
             const res = await pool.query('SELECT id, data FROM sessions');
             return res.rows;
         } else {
