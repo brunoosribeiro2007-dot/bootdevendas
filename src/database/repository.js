@@ -21,10 +21,16 @@ const normalizeTitle = (title) => {
         .trim();
 };
 
+const cleanLink = (url) => {
+    if (!url || typeof url !== 'string') return '';
+    return url.split('?')[0].split('#')[0].trim();
+};
+
 // Salva Produto com Bypass de Conflito (Postgres style)
 const saveProduct = async (product) => {
     try {
         const originalLink = product.originalLink || product.link || '';
+        const cleanNewLink = cleanLink(originalLink);
         
         // Busca o histórico de produtos recentes para checagem robusta em JS
         const existingProducts = await db.all("SELECT id, title, link, original_link FROM products");
@@ -45,8 +51,8 @@ const saveProduct = async (product) => {
                 return 0;
             }
             
-            // 3. Checagem por links brutos
-            if (originalLink && (p.original_link === originalLink || p.link === originalLink)) {
+            // 3. Checagem por links limpos (sem parâmetros de busca/query)
+            if (cleanNewLink && (cleanLink(p.original_link) === cleanNewLink || cleanLink(p.link) === cleanNewLink)) {
                 logger.info(`[SaveProduct] Produto duplicado ignorado (link idêntico no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
                 return 0;
             }
