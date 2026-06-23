@@ -22,4 +22,11 @@ module.exports = {
   publishStartTime: process.env.PUBLISH_START_TIME || '08:00',
   publishEndTime: process.env.PUBLISH_END_TIME || '22:00',
   renderExternalUrl: process.env.RENDER_EXTERNAL_URL || null,
+
+  shopeeAppId: process.env.SHOPEE_APP_ID || '',
+  shopeeSecret: process.env.SHOPEE_SECRET || '',
+  shopeeAffiliateTag: process.env.SHOPEE_AFFILIATE_TAG || '',
+  useShopee: (process.env.USE_SHOPEE || 'true').toLowerCase() === 'true',
+  historyPruneDays: parseInt(process.env.HISTORY_PRUNE_DAYS || '15', 10),
 };
+

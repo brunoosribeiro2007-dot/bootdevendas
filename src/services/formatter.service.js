@@ -167,8 +167,68 @@ class FormatterService {
     return null;
   }
 
+  async formatShopeeLinkViaApi(link) {
+    const appId = env.shopeeAppId;
+    const secret = env.shopeeSecret;
+    if (!appId || !secret) return null;
+
+    const query = `
+      mutation generateShortLink($url: String!) {
+        generateShortLink(input: { originUrl: $url }) {
+          shortLink
+        }
+      }
+    `;
+    const variables = { url: link };
+    const payloadStr = JSON.stringify({ query, variables });
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+
+    const crypto = require('crypto');
+    const baseString = appId + timestamp + payloadStr + secret;
+    const signature = crypto.createHash('sha256').update(baseString).digest('hex');
+
+    const url = 'https://open-api.affiliate.shopee.com.br/graphql';
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `SHA256 Credential=${appId}, Timestamp=${timestamp}, Signature=${signature}`
+    };
+
+    try {
+      const res = await axios.post(url, payloadStr, { headers, timeout: 8000 });
+      if (res.data && res.data.errors) {
+        logger.error('Error generating Shopee short link:', JSON.stringify(res.data.errors));
+        return null;
+      }
+      const shortLink = res.data?.data?.generateShortLink?.shortLink;
+      if (shortLink) {
+        logger.info(`✅ Shopee Link generated: ${shortLink}`);
+        return shortLink;
+      }
+    } catch (e) {
+      logger.warn(`Failed to generate Shopee link via API: ${e.message}`);
+    }
+    return null;
+  }
+
   async formatLink(link) {
     if (!link) return '';
+
+    const isShopee = link.includes('shopee.com.br') || link.includes('shope.ee');
+    if (isShopee) {
+      const apiLink = await this.formatShopeeLinkViaApi(link);
+      if (apiLink) return apiLink;
+
+      const baseLink = link.split('?')[0].split('#')[0];
+      const trackingParam = env.shopeeAffiliateTag ? `?utm_campaign=-&utm_content=-&utm_medium=affiliates&utm_source=an_spp&utm_term=${env.shopeeAffiliateTag}` : '';
+      const longAffLink = `${baseLink}${trackingParam}`;
+
+      if (process.env.NODE_ENV !== 'test') {
+        logger.warn('⚠️ Nenhum método oficial da Shopee funcionou. Tentando encurtador genérico...');
+        const shortened = await this.shortenUrl(longAffLink);
+        if (shortened) return shortened;
+      }
+      return longAffLink;
+    }
 
     const tag = env.mlAffiliateTag || 'bv20260330080614';
     // Limpa o link de parâmetros originais
@@ -299,6 +359,19 @@ class FormatterService {
       return value.toFixed(2).replace('.', ',');
     };
 
+    const isShopee = product.id?.startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
+    const shopeeHeaders = [
+      'ACHADO DO DIA SHOPEE 🧡',
+      'PROMOÇÃO EXCLUSIVA SHOPEE 🔥',
+      'SÓ HOJE NA SHOPEE ⚡',
+      'OLHA ESSE PRECINHO NA SHOPEE! 👀',
+      'DESCONTO ARRASADOR SHOPEE 💥',
+      'SHOPEE ARRASA 🧡',
+      'OFERTA IMPERDÍVEL SHOPEE 🔥',
+      'PREÇO BAIXO DE VERDADE SHOPEE 💸',
+      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
+      'ACHADO IMPERDÍVEL SHOPEE 💎'
+    ];
     const headers = [
       'MERCADO LIVRE ARRASA 💛',
       'OFERTA IMPERDÍVEL 🔥',
@@ -311,7 +384,9 @@ class FormatterService {
       'OLHA ESSE PRECINHO! 👀',
       'ACHADO IMPERDÍVEL 💎'
     ];
-    const headline = headers[Math.floor(Math.random() * headers.length)];
+    const headline = isShopee 
+      ? shopeeHeaders[Math.floor(Math.random() * shopeeHeaders.length)]
+      : headers[Math.floor(Math.random() * headers.length)];
 
     const lines = [];
     lines.push(headline);

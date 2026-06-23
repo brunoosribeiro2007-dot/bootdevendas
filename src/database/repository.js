@@ -1,5 +1,6 @@
 const { db, isPostgres } = require('./init');
 const logger = require('../config/logger');
+const env = require('../config/env');
 
 let lastSentNiche = '';
 
@@ -7,6 +8,44 @@ const extractMlbId = (link) => {
     if (!link || typeof link !== 'string') return null;
     const match = link.match(/MLB-?(\d+)/i);
     return match ? match[1] : null;
+};
+
+const extractShopeeId = (link) => {
+    if (!link || typeof link !== 'string') return null;
+    const match1 = link.match(/product\/(\d+)\/(\d+)/i);
+    if (match1) return match1[2];
+    const match2 = link.match(/product-i\.(\d+)\.(\d+)/i);
+    if (match2) return match2[2];
+    const match3 = link.match(/SP-(\d+)/);
+    if (match3) return match3[1];
+    return null;
+};
+
+const extractImageId = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const clean = url.split('?')[0].split('#')[0];
+    
+    // Mercado Livre
+    if (clean.includes('mlstatic.com')) {
+        const match = clean.match(/D_NQ_NP_(?:2X_)?([a-zA-Z0-9_-]+)-[a-zA-Z]\.[a-zA-Z0-9]+$/i);
+        if (match) return match[1];
+        
+        const parts = clean.split('/');
+        const filename = parts[parts.length - 1];
+        const baseMatch = filename.match(/^(.+)-[a-zA-Z]\.[a-zA-Z0-9]+$/i);
+        if (baseMatch) return baseMatch[1];
+        return filename;
+    }
+    
+    // Shopee
+    if (clean.includes('shopee.com') || clean.includes('susercontent.com')) {
+        const parts = clean.split('/');
+        return parts[parts.length - 1] || clean;
+    }
+    
+    // Outros
+    const parts = clean.split('/');
+    return parts[parts.length - 1] || clean;
 };
 
 const normalizeTitle = (title) => {
@@ -21,6 +60,25 @@ const normalizeTitle = (title) => {
         .trim();
 };
 
+const titlesAreVerySimilar = (t1, t2) => {
+    const norm1 = normalizeTitle(t1);
+    const norm2 = normalizeTitle(t2);
+    if (!norm1 || !norm2) return false;
+    
+    if (norm1 === norm2) return true;
+    
+    const words1 = norm1.split(' ').filter(w => w.length > 1);
+    const words2 = norm2.split(' ').filter(w => w.length > 1);
+    
+    if (words1.length === 0 || words2.length === 0) return false;
+    
+    const commonWords = words1.filter(w => words2.includes(w));
+    const minLength = Math.min(words1.length, words2.length);
+    const similarity = commonWords.length / minLength;
+    
+    return similarity >= 0.7;
+};
+
 const cleanLink = (url) => {
     if (!url || typeof url !== 'string') return '';
     return url.split('?')[0].split('#')[0].trim();
@@ -33,10 +91,11 @@ const saveProduct = async (product) => {
         const cleanNewLink = cleanLink(originalLink);
         
         // Busca o histórico de produtos recentes para checagem robusta em JS
-        const existingProducts = await db.all("SELECT id, title, link, original_link FROM products");
+        const existingProducts = await db.all("SELECT id, title, link, original_link, image_url FROM products");
         
         const normNewTitle = normalizeTitle(product.title);
         const newMlbId = extractMlbId(originalLink);
+        const newShopeeId = extractShopeeId(originalLink) || extractShopeeId(product.id);
         
         for (const p of existingProducts) {
             // 1. Checagem por MLB ID
@@ -44,17 +103,41 @@ const saveProduct = async (product) => {
                 logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo MLB ID no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
                 return 0;
             }
-            
-            // 2. Checagem por título normalizado
-            if (normNewTitle && normalizeTitle(p.title) === normNewTitle) {
-                logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo título normalizado no histórico). ID novo: ${product.id}, ID existente: ${p.id}, Título: ${product.title}`);
+
+            // Checagem por Shopee ID
+            if (newShopeeId && (extractShopeeId(p.original_link) === newShopeeId || extractShopeeId(p.link) === newShopeeId || extractShopeeId(p.id) === newShopeeId)) {
+                logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo Shopee ID no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
                 return 0;
+            }
+            
+            // 2. Checagem por título normalizado ou muito similar
+            if (normNewTitle) {
+                const normExisting = normalizeTitle(p.title);
+                if (normExisting === normNewTitle || titlesAreVerySimilar(p.title, product.title)) {
+                    logger.info(`[SaveProduct] Produto duplicado ignorado (título idêntico ou muito similar no histórico). ID novo: ${product.id}, ID existente: ${p.id}, Título novo: "${product.title}", Título existente: "${p.title}"`);
+                    return 0;
+                }
             }
             
             // 3. Checagem por links limpos (sem parâmetros de busca/query)
             if (cleanNewLink && (cleanLink(p.original_link) === cleanNewLink || cleanLink(p.link) === cleanNewLink)) {
                 logger.info(`[SaveProduct] Produto duplicado ignorado (link idêntico no histórico). ID novo: ${product.id}, ID existente: ${p.id}`);
                 return 0;
+            }
+
+            // 4. Checagem por imagem idêntica (evita posts com o mesmo visual)
+            if (product.imageUrl && p.image_url) {
+                const newImgId = extractImageId(product.imageUrl);
+                const existingImgId = extractImageId(p.image_url);
+                if (newImgId && existingImgId) {
+                    if (newImgId === existingImgId) {
+                        logger.info(`[SaveProduct] Produto duplicado ignorado (mesmo ID de imagem no histórico). ID novo: ${product.id}, ID existente: ${p.id}, Nova Imagem: ${product.imageUrl}, Existente: ${p.image_url}`);
+                        return 0;
+                    }
+                } else if (product.imageUrl === p.image_url) {
+                    logger.info(`[SaveProduct] Produto duplicado ignorado (mesma imagem no histórico). ID novo: ${product.id}, ID existente: ${p.id}, Imagem: ${product.imageUrl}`);
+                    return 0;
+                }
             }
         }
 
@@ -169,22 +252,27 @@ const getNextApprovedItem = async () => {
             // Se o produto selecionado já foi publicado (está em products mas não está mais em queue),
             // removemos esse item duplicado da fila e continuamos o loop para pegar outro.
             const publishedProducts = await db.all(`
-                SELECT p.id, p.title, p.link, p.original_link 
+                SELECT p.id, p.title, p.link, p.original_link, p.image_url 
                 FROM products p
                 LEFT JOIN queue q ON p.id = q.product_id
                 WHERE q.product_id IS NULL AND p.id != ?
             `, [item.product_id]);
 
             const itemMlbId = extractMlbId(item.original_link || item.link);
+            const itemShopeeId = extractShopeeId(item.original_link || item.link) || extractShopeeId(item.product_id);
             const itemNormTitle = normalizeTitle(item.title);
-
+ 
             let isDup = false;
             for (const p of publishedProducts) {
                 if (itemMlbId && (extractMlbId(p.original_link) === itemMlbId || extractMlbId(p.link) === itemMlbId)) {
                     isDup = true;
                     break;
                 }
-                if (itemNormTitle && normalizeTitle(p.title) === itemNormTitle) {
+                if (itemShopeeId && (extractShopeeId(p.original_link) === itemShopeeId || extractShopeeId(p.link) === itemShopeeId || extractShopeeId(p.id) === itemShopeeId)) {
+                    isDup = true;
+                    break;
+                }
+                if (itemNormTitle && (normalizeTitle(p.title) === itemNormTitle || titlesAreVerySimilar(p.title, item.title))) {
                     isDup = true;
                     break;
                 }
@@ -195,6 +283,19 @@ const getNextApprovedItem = async () => {
                 if (item.original_link && (p.original_link === item.original_link || p.link === item.original_link)) {
                     isDup = true;
                     break;
+                }
+                if (item.image_url && p.image_url) {
+                    const itemImgId = extractImageId(item.image_url);
+                    const pImgId = extractImageId(p.image_url);
+                    if (itemImgId && pImgId) {
+                        if (itemImgId === pImgId) {
+                            isDup = true;
+                            break;
+                        }
+                    } else if (p.image_url === item.image_url) {
+                        isDup = true;
+                        break;
+                    }
                 }
             }
 
@@ -230,16 +331,17 @@ const deleteProductAndQueueItem = async (productId, niche) => {
 
 const pruneOldProducts = async () => {
     try {
+        const days = env.historyPruneDays || 15;
         const USE_POSTGRES = isPostgres();
         let query;
         if (USE_POSTGRES) {
-            query = "DELETE FROM products WHERE created_at < NOW() - INTERVAL '3 days'";
+            query = `DELETE FROM products WHERE created_at < NOW() - INTERVAL '${days} days'`;
         } else {
-            query = "DELETE FROM products WHERE created_at < datetime('now', '-3 days')";
+            query = `DELETE FROM products WHERE created_at < datetime('now', '-${days} days')`;
         }
         const res = await db.run(query, []);
         if (res.rowCount > 0) {
-            logger.info(`🧹 Limpeza: ${res.rowCount} produtos antigos com mais de 3 dias foram removidos do banco.`);
+            logger.info(`🧹 Limpeza: ${res.rowCount} produtos antigos com mais de ${days} dias foram removidos do banco.`);
         }
     } catch (err) {
         logger.warn('Erro ao limpar produtos antigos:', err.message);

@@ -3,6 +3,7 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 const mlService = require('../services/mercadoLivre.service');
 const { enrichProductDetails } = require('../services/mercadoLivre.service');
+const shopeeService = require('../services/shopee.service');
 const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 
@@ -22,10 +23,6 @@ const captureTask = async () => {
         logger.warn('⚠️ Nenhuma keyword configurada! Verifique ML_SEARCH_KEYWORD.');
         return;
     }
-
-    // ⭐ EMBARALHAMENTO DE KEYWORDS: Garante que cada ciclo de captura seja imprevisível
-    allKeywords.sort(() => Math.random() - 0.5);
-
     // 🔄 ROTAÇÃO: Processa pouquíssimas keywords por ciclo para evitar OOM no Render
     // A cada execução, pega apenas 3 da lista para manter o heap baixo
     const maxPerCycle = 3;
@@ -49,11 +46,21 @@ const captureTask = async () => {
     for (const keyword of selectedKeywords) {
         try {
             logger.info(`🔎 Buscando por: ${keyword}`);
-            const products = await mlService.searchProducts(keyword, env.mlCategory);
-            logger.info(`📦 Busca por '${keyword}' retornou ${products.length} produtos.`);
+            
+            // Busca Mercado Livre
+            const mlProducts = await mlService.searchProducts(keyword, env.mlCategory);
+            logger.info(`📦 Busca no ML por '${keyword}' retornou ${mlProducts.length} produtos.`);
+            if (mlProducts.length > 0) {
+                allProductsInCycle.push(...mlProducts);
+            }
 
-            if (products.length > 0) {
-                allProductsInCycle.push(...products);
+            // Busca Shopee (se ativado)
+            if (env.useShopee && env.shopeeAppId && env.shopeeSecret) {
+                const shopeeProducts = await shopeeService.searchProducts(keyword);
+                logger.info(`📦 Busca na Shopee por '${keyword}' retornou ${shopeeProducts.length} produtos.`);
+                if (shopeeProducts.length > 0) {
+                    allProductsInCycle.push(...shopeeProducts);
+                }
             }
 
             // Aguarda pequeno intervalo para evitar bloqueio IP
@@ -79,21 +86,26 @@ const captureTask = async () => {
         try {
             // 1. Gerar o link oficial de afiliado e validar
             const finalLink = await formatterService.formatLink(product.link);
-            if (!finalLink || !finalLink.includes('meli.la')) {
-                logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar um link oficial meli.la.`);
+            const isMeliLink = finalLink && finalLink.includes('meli.la');
+            const isShopeeLink = finalLink && (finalLink.includes('shope.ee') || finalLink.includes('shopee.com.br') || finalLink.includes('tinyurl.com') || finalLink.includes('is.gd') || finalLink.includes('v.gd'));
+            
+            if (!finalLink || (!isMeliLink && !isShopeeLink)) {
+                logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar um link oficial ou encurtado.`);
                 continue;
             }
 
-            // Enriquecer detalhes do produto (com timeout de 5s para não travar o ciclo)
+            // Enriquecer detalhes do produto se for Mercado Livre (com timeout de 5s para não travar o ciclo)
             let enrichedProduct = product;
-            try {
-                const enrichPromise = enrichProductDetails(product);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout enriquecimento')), 5000));
-                enrichedProduct = await Promise.race([enrichPromise, timeoutPromise]);
-            } catch (enrichErr) {
-                // Se enriquecimento falhar ou demorar, usa o produto básico mesmo
-                logger.debug(`⏩ Enriquecimento pulado para "${product.title}": ${enrichErr.message}`);
-                enrichedProduct = product;
+            if (!product.id.startsWith('SP-')) {
+                try {
+                    const enrichPromise = enrichProductDetails(product);
+                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout enriquecimento')), 5000));
+                    enrichedProduct = await Promise.race([enrichPromise, timeoutPromise]);
+                } catch (enrichErr) {
+                    // Se enriquecimento falhar ou demorar, usa o produto básico mesmo
+                    logger.debug(`⏩ Enriquecimento pulado para "${product.title}": ${enrichErr.message}`);
+                    enrichedProduct = product;
+                }
             }
 
             // Salva o link original e o de afiliado oficial no produto
