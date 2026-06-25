@@ -380,6 +380,25 @@ const resetSendingStatus = async () => {
     }
 };
 
+const resetStuckSendingItems = async () => {
+    try {
+        const USE_POSTGRES = isPostgres();
+        let query;
+        if (USE_POSTGRES) {
+            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < NOW() - INTERVAL '10 minutes'`;
+        } else {
+            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < datetime('now', '-10 minutes')`;
+        }
+        const res = await db.run(query, []);
+        if (res.rowCount > 0) {
+            logger.info(`🔄 Recuperação automática: ${res.rowCount} itens travados em 'sending' por mais de 10 minutos foram reativados.`);
+        }
+        return res.rowCount;
+    } catch (err) {
+        logger.error('Erro ao resetar itens travados em envio:', err);
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -391,5 +410,6 @@ module.exports = {
   clearQueue,
   clearQueueOnly,
   resetSendingStatus,
+  resetStuckSendingItems,
   pruneOldProducts
 };

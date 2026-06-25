@@ -359,7 +359,7 @@ class FormatterService {
       return value.toFixed(2).replace('.', ',');
     };
 
-    const isShopee = product.id?.startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
+    const isShopee = String(product.id || '').startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
     const shopeeHeaders = [
       'ACHADO DO DIA SHOPEE 🧡',
       'PROMOÇÃO EXCLUSIVA SHOPEE 🔥',

@@ -1,3 +1,6 @@
+// Habilita bypass de certificados autoassinados para redes corporativas / SSL interception
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const app = require('./app');
 const env = require('./config/env');
 const logger = require('./config/logger');

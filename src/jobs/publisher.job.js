@@ -92,6 +92,9 @@ const publishTaskContinuo = async () => {
                 continue;
             }
 
+            // ✅ Recuperação automática de itens travados em 'sending' por mais de 10 minutos
+            await repository.resetStuckSendingItems();
+
             // ✅ VERIFICAÇÃO 3: Buscar próximo item SOMENTE quando tudo está OK
             const item = await repository.getNextApprovedItem();
             if (!item) {
@@ -107,37 +110,46 @@ const publishTaskContinuo = async () => {
             wasQueueEmptyLogged = false; // Reseta flag para a próxima vez que a fila esvaziar
             logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
             
-            // Verifica novamente antes de enviar (pode ter desconectado no intervalo)
-            if (!publisher.isReady) {
-                logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
-                await new Promise(r => setTimeout(r, 15000));
-                continue;
-            }
-
-            // Gera a mensagem formatada dinamicamente na hora do envio
-            const formatterService = require('../services/formatter.service');
-            item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
-
-            const success = await publisher.publish(item);
-
-            if (success) {
-                // Remove o produto e item da fila do banco para não ocupar espaço
-                await repository.deleteProductAndQueueItem(item.product_id, item.description);
-                logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
-            } else {
-                logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
-                // Reseta o status de volta para 'approved' para nova tentativa
-                await repository.updateQueueStatus(item.id, 'approved');
-                // Se falhou porque o WhatsApp caiu, espera mais
+            try {
+                // Verifica novamente antes de enviar (pode ter desconectado no intervalo)
                 if (!publisher.isReady) {
-                    await new Promise(r => setTimeout(r, 30000));
+                    logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
+                    await repository.updateQueueStatus(item.id, 'approved'); // Devolve para 'approved'
+                    await new Promise(r => setTimeout(r, 15000));
                     continue;
                 }
-                // Falha por outro motivo (ex: imagem inválida) — espera e tenta próximo
+
+                // Gera a mensagem formatada dinamicamente na hora do envio
+                const formatterService = require('../services/formatter.service');
+                item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+
+                const success = await publisher.publish(item);
+
+                if (success) {
+                    // Remove o produto e item da fila do banco para não ocupar espaço
+                    await repository.deleteProductAndQueueItem(item.product_id, item.description);
+                    logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
+                } else {
+                    logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
+                    // Reseta o status de volta para 'approved' para nova tentativa
+                    await repository.updateQueueStatus(item.id, 'approved');
+                    // Se falhou porque o WhatsApp caiu, espera mais
+                    if (!publisher.isReady) {
+                        await new Promise(r => setTimeout(r, 30000));
+                        continue;
+                    }
+                    // Falha por outro motivo (ex: imagem inválida) — espera e tenta próximo
+                    await new Promise(r => setTimeout(r, 10000));
+                    continue;
+                }
+            } catch (itemError) {
+                logger.error(`❌ Erro crítico ao processar/publicar item ${item.id}:`, itemError.stack || itemError.message || itemError);
+                // Sempre devolve para a fila em caso de erro não tratado para evitar travar a fila
+                await repository.updateQueueStatus(item.id, 'approved');
                 await new Promise(r => setTimeout(r, 10000));
                 continue;
             }
-            
+
             // Pausa de 3 minutos fixos entre publicações para evitar bloqueios do WhatsApp
             const delayMs = 180000; // 3 minutos
             logger.info(`⏳ Intervalo seguro: Aguardando 3 minutos antes do próximo envio...`);

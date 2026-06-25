@@ -96,7 +96,7 @@ const captureTask = async () => {
 
             // Enriquecer detalhes do produto se for Mercado Livre (com timeout de 5s para não travar o ciclo)
             let enrichedProduct = product;
-            if (!product.id.startsWith('SP-')) {
+            if (!String(product.id || '').startsWith('SP-')) {
                 try {
                     const enrichPromise = enrichProductDetails(product);
                     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout enriquecimento')), 5000));
