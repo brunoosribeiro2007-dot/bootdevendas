@@ -27,12 +27,12 @@ const extractImageId = (url) => {
     
     // Mercado Livre
     if (clean.includes('mlstatic.com')) {
-        const match = clean.match(/D_NQ_NP_(?:2X_)?([a-zA-Z0-9_-]+)-[a-zA-Z]\.[a-zA-Z0-9]+$/i);
+        const match = clean.match(/D_(?:NQ|Q)_NP_(?:2X_)?([a-zA-Z0-9_-]+)-[a-zA-Z0-9]+\.[a-zA-Z0-9]+$/i);
         if (match) return match[1];
         
         const parts = clean.split('/');
         const filename = parts[parts.length - 1];
-        const baseMatch = filename.match(/^(.+)-[a-zA-Z]\.[a-zA-Z0-9]+$/i);
+        const baseMatch = filename.match(/^(.+)-[a-zA-Z0-9]+\.[a-zA-Z0-9]+$/i);
         if (baseMatch) return baseMatch[1];
         return filename;
     }
