@@ -133,6 +133,8 @@ async function searchProducts(keyword) {
         const id = `SP-${item.itemId}`;
         const link = item.productLink || `https://shopee.com.br/product/${item.shopId}/${item.itemId}`;
 
+        const qualityScore = ((rating || 4.5) * 25) + ((item.sales || 100) / 50) + 30 + discountPercent;
+
         products.push({
           id,
           title,
@@ -143,7 +145,8 @@ async function searchProducts(keyword) {
           imageUrl: item.imageUrl,
           description: `Oferta (Shopee): ${keyword}`,
           rating: rating || 4.5,
-          reviewsCount: item.sales || 100
+          reviewsCount: item.sales || 100,
+          qualityScore
         });
 
       } catch (itemErr) {

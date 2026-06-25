@@ -100,6 +100,9 @@ const DDL = {
             coupon TEXT,
             old_price REAL,
             discount_percent INTEGER,
+            rating REAL,
+            reviews_count INTEGER,
+            quality_score REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
     queue: `CREATE TABLE IF NOT EXISTS queue (
@@ -154,6 +157,18 @@ const runSqliteDDL = () => {
         sqliteDb.exec('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
         logger.info('🗃️ SQLite: Coluna "discount_percent" adicionada à tabela products.');
     } catch (e) {}
+    try {
+        sqliteDb.exec('ALTER TABLE products ADD COLUMN rating REAL');
+        logger.info('🗃️ SQLite: Coluna "rating" adicionada à tabela products.');
+    } catch (e) {}
+    try {
+        sqliteDb.exec('ALTER TABLE products ADD COLUMN reviews_count INTEGER');
+        logger.info('🗃️ SQLite: Coluna "reviews_count" adicionada à tabela products.');
+    } catch (e) {}
+    try {
+        sqliteDb.exec('ALTER TABLE products ADD COLUMN quality_score REAL');
+        logger.info('🗃️ SQLite: Coluna "quality_score" adicionada à tabela products.');
+    } catch (e) {}
     sqliteDb.exec(DDL.queue);
     // Auto-migração para remover CHECK constraint antigo no SQLite
     try {
@@ -199,6 +214,18 @@ const initializeDB = async () => {
                 try {
                     await pool.query('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
                     logger.info('🐘 Postgres: Coluna "discount_percent" adicionada à tabela products.');
+                } catch (e) {}
+                try {
+                    await pool.query('ALTER TABLE products ADD COLUMN rating REAL');
+                    logger.info('🐘 Postgres: Coluna "rating" adicionada à tabela products.');
+                } catch (e) {}
+                try {
+                    await pool.query('ALTER TABLE products ADD COLUMN reviews_count INTEGER');
+                    logger.info('🐘 Postgres: Coluna "reviews_count" adicionada à tabela products.');
+                } catch (e) {}
+                try {
+                    await pool.query('ALTER TABLE products ADD COLUMN quality_score REAL');
+                    logger.info('🐘 Postgres: Coluna "quality_score" adicionada à tabela products.');
                 } catch (e) {}
                 await pool.query(DDL.queuePostgres);
                 await pool.query(DDL.sessionsPostgres);

@@ -142,8 +142,8 @@ const saveProduct = async (product) => {
         }
 
         const query = `
-            INSERT INTO products (id, title, price, link, original_link, image_url, description, coupon, old_price, discount_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO products (id, title, price, link, original_link, image_url, description, coupon, old_price, discount_percent, rating, reviews_count, quality_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO NOTHING
         `;
         const res = await db.run(query, [
@@ -156,7 +156,10 @@ const saveProduct = async (product) => {
             product.description,
             product.coupon || '',
             product.oldPrice !== undefined ? product.oldPrice : null,
-            product.discountPercent !== undefined ? product.discountPercent : null
+            product.discountPercent !== undefined ? product.discountPercent : null,
+            product.rating !== undefined ? product.rating : null,
+            product.reviewsCount !== undefined ? product.reviewsCount : null,
+            product.qualityScore !== undefined ? product.qualityScore : null
         ]);
         return res.rowCount;
     } catch (err) {
@@ -207,26 +210,26 @@ const getNextApprovedItem = async () => {
         const lastNiche = lastSentNiche;
 
         while (true) {
-            // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado
+            // 2. Tentar pegar um produto APROVADO que seja de um nicho DIFERENTE do último enviado, ordenando por qualidade/métricas
             let query = `
-                SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
+                SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent, p.rating, p.reviews_count, p.quality_score
                 FROM queue q 
                 JOIN products p ON q.product_id = p.id 
                 WHERE q.status = 'approved' 
                 AND p.description != ?
-                ORDER BY RANDOM()
+                ORDER BY p.quality_score DESC NULLS LAST, p.created_at ASC
                 LIMIT 1
             `;
             let item = await db.get(query, [lastNiche]);
 
-            // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado
+            // 3. Fallback: Se não achar de nicho diferente, pega qualquer aprovado ordenando por qualidade/métricas
             if (!item) {
                 query = `
-                    SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent
+                    SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent, p.rating, p.reviews_count, p.quality_score
                     FROM queue q 
                     JOIN products p ON q.product_id = p.id 
                     WHERE q.status = 'approved' 
-                    ORDER BY RANDOM()
+                    ORDER BY p.quality_score DESC NULLS LAST, p.created_at ASC
                     LIMIT 1
                 `;
                 item = await db.get(query, []);

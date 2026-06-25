@@ -64,7 +64,8 @@ describe('Shopee Service', () => {
       imageUrl: 'https://cf.shopee.com.br/file/img_123',
       description: 'Oferta (Shopee): panelas',
       rating: 4.8,
-      reviewsCount: 250
+      reviewsCount: 250,
+      qualityScore: 180
     });
   });
 

@@ -231,8 +231,8 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 if (title && price && link) {
                     const id = getStableId(link, title);
                     if (!products.find(p => p.id === id)) {
-                        // Atribuindo um Score de Qualidade para ordenação posterior
-                        const qualityScore = (isOfficialStore ? 50 : 0) + (isFull ? 30 : 0) + (discountPercent);
+                        // Atribuindo um Score de Qualidade para ordenação posterior (relevância + nota + reviews)
+                        const qualityScore = ((rating || 4.5) * 25) + (reviewsCount / 50) + (isOfficialStore ? 50 : 0) + (isFull ? 30 : 0) + (discountPercent);
                         
                         products.push({ 
                             id, 
@@ -335,17 +335,26 @@ const fetchFromBackupAPI = async (searchTerm) => {
                         .map(p => {
                             const apiRating = p.reviews?.rating_average || p.rating_average || null;
                             const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
+                            const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
+                            
+                            const isOfficial = !!(p.official_store_id || p.official_store_name);
+                            const isFull = !!(p.shipping?.store_pick_up || p.shipping?.logistic_type === 'fulfillment');
+                            
+                            // Calcula score consistente para a API
+                            const score = ((apiRating || 4.5) * 25) + (apiReviewsCount / 50) + (isOfficial ? 50 : 0) + (isFull ? 30 : 0) + discount;
+                            
                             return {
                                 id: p.id,
                                 title: p.title,
                                 price: p.price,
                                 oldPrice: p.original_price || null,
-                                discountPercent: p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : null,
+                                discountPercent: discount || null,
                                 link: p.permalink,
                                 imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'), // -W é maior
-                                description: 'Oferta Especial',
-                                rating: apiRating,
-                                reviewsCount: apiReviewsCount
+                                description: `Oferta Especial: ${searchTerm}`,
+                                rating: apiRating || 4.5,
+                                reviewsCount: apiReviewsCount || 100,
+                                qualityScore: score
                             };
                         });
                 
@@ -524,10 +533,9 @@ const searchCategoryDealsFallback = async (searchTerm) => {
             return matchedProducts;
         }
 
-        // Se nenhum corresponder especificamente, retorna as 6 principais ofertas gerais da categoria
-        // Isso garante que o bot nunca fique sem produtos do nicho de Casa para postar
-        logger.info(`ℹ️ Fallback: Nenhuma oferta direta de "${searchTerm}". Retornando as 6 melhores ofertas gerais do nicho Casa.`);
-        return allDeals.slice(0, 6);
+        // Se nenhum corresponder especificamente, retorna array vazio para evitar flood de duplicatas genéricas no mesmo ciclo
+        logger.info(`ℹ️ Fallback: Nenhuma oferta direta de "${searchTerm}" foi encontrada nas ofertas da categoria. Retornando vazio para evitar duplicação de itens.`);
+        return [];
 
     } catch (err) {
         logger.error(`❌ Erro no Fallback de Ofertas por Categoria:`, err.message);
