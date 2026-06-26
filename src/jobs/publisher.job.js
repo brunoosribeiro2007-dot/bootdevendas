@@ -2,6 +2,7 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 const repository = require('../database/repository');
 const publisher = require('../publishers/whatsapp.publisher');
+const cron = require('node-cron');
 
 const getPortoVelhoTime = () => {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -50,150 +51,100 @@ const shouldSendGoodNight = () => {
 
 let isPublishing = false;
 let sentGoodNightMessage = false;
-let wasQueueEmptyLogged = false;
 
-const publishTaskContinuo = async () => {
-    if (isPublishing) return;
+const publishTask = async () => {
+    if (isPublishing) {
+        logger.debug('⚠️ [PublishTask] Tentativa de publicação ignorada: envio em andamento.');
+        return;
+    }
     isPublishing = true;
     
     try {
-        while (true) {
-            // ✅ VERIFICAÇÃO 1: Horário de publicação
-            if (!isWithinPublishTime()) {
-                if (!sentGoodNightMessage && shouldSendGoodNight()) {
-                    try {
-                        logger.info('Tentando enviar mensagem de boa noite...');
-                        const goodNightMsg = `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Fiquem com Deus e tenham uma excelente noite! ✨💤`;
-                        const sent = await publisher.sendTextMessage(goodNightMsg);
-                        if (sent) {
-                            sentGoodNightMessage = true;
-                            logger.info('✅ Mensagem de boa noite enviada com sucesso!');
-                        }
-                    } catch (err) {
-                        logger.error('Erro ao enviar mensagem de boa noite:', err);
+        // ✅ VERIFICAÇÃO 1: Horário de publicação
+        if (!isWithinPublishTime()) {
+            if (!sentGoodNightMessage && shouldSendGoodNight()) {
+                try {
+                    logger.info('Tentando enviar mensagem de boa noite...');
+                    const goodNightMsg = `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Fiquem com Deus e tenham uma excelente noite! ✨💤`;
+                    const sent = await publisher.sendTextMessage(goodNightMsg);
+                    if (sent) {
+                        sentGoodNightMessage = true;
+                        logger.info('✅ Mensagem de boa noite enviada com sucesso!');
                     }
+                } catch (err) {
+                    logger.error('Erro ao enviar mensagem de boa noite:', err);
                 }
-
-                logger.info(`⏳ Fora do horário de publicação definido (${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}). Pausando o bot de publicação.`);
-                await new Promise(r => setTimeout(r, 60000)); // Espera 1 minuto
-                continue;
             }
+            return;
+        }
 
-            // Reseta a flag para que o boa noite possa ser enviado no final do próximo dia
-            if (sentGoodNightMessage) {
-                sentGoodNightMessage = false;
-            }
+        // Reseta a flag para que o boa noite possa ser enviado no final do próximo dia
+        if (sentGoodNightMessage) {
+            sentGoodNightMessage = false;
+        }
 
-            // ✅ VERIFICAÇÃO 2: WhatsApp DEVE estar conectado ANTES de puxar da fila
-            // Isso evita consumir itens da fila enquanto o WhatsApp não está pronto
+        // ✅ VERIFICAÇÃO 2: WhatsApp DEVE estar conectado
+        if (!publisher.isReady) {
+            logger.warn('⏳ WhatsApp não está conectado. Ignorando este ciclo de publicação.');
+            return;
+        }
+
+        // ✅ Recuperação automática de itens travados em 'sending' por mais de 10 minutos
+        await repository.resetStuckSendingItems();
+
+        // ✅ VERIFICAÇÃO 3: Buscar próximo item
+        const item = await repository.getNextApprovedItem();
+        if (!item) {
+            logger.debug('ℹ️ Fila de publicações aprovadas está vazia.');
+            return;
+        }
+
+        logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
+        
+        try {
+            // Verifica novamente antes de enviar
             if (!publisher.isReady) {
-                logger.info('⏳ WhatsApp não está conectado. Aguardando reconexão (30s)...');
-                await new Promise(r => setTimeout(r, 30000));
-                continue;
+                logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
+                await repository.updateQueueStatus(item.id, 'approved'); // Devolve para 'approved'
+                return;
             }
 
-            // ✅ Recuperação automática de itens travados em 'sending' por mais de 10 minutos
-            await repository.resetStuckSendingItems();
+            // Gera a mensagem formatada dinamicamente na hora do envio
+            const formatterService = require('../services/formatter.service');
+            item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
 
-            // ✅ VERIFICAÇÃO 3: Buscar próximo item SOMENTE quando tudo está OK
-            const item = await repository.getNextApprovedItem();
-            if (!item) {
-                if (!wasQueueEmptyLogged) {
-                    logger.info('ℹ️ Fila de publicações aprovadas está vazia. Aguardando novos produtos...');
-                    wasQueueEmptyLogged = true;
-                }
-                // Fila vazia — espera mais tempo para não sobrecarregar o banco
-                await new Promise(r => setTimeout(r, 30000)); // 30 segundos
-                continue;
-            }
+            const success = await publisher.publish(item);
 
-            wasQueueEmptyLogged = false; // Reseta flag para a próxima vez que a fila esvaziar
-            logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
-            
-            try {
-                // Verifica novamente antes de enviar (pode ter desconectado no intervalo)
-                if (!publisher.isReady) {
-                    logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
-                    await repository.updateQueueStatus(item.id, 'approved'); // Devolve para 'approved'
-                    await new Promise(r => setTimeout(r, 15000));
-                    continue;
-                }
-
-                // Gera a mensagem formatada dinamicamente na hora do envio
-                const formatterService = require('../services/formatter.service');
-                item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
-
-                const success = await publisher.publish(item);
-
-                if (success) {
-                    // Remove o produto e item da fila do banco para não ocupar espaço
-                    await repository.deleteProductAndQueueItem(item.product_id, item.description);
-                    logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
-                } else {
-                    logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
-                    // Reseta o status de volta para 'approved' para nova tentativa
-                    await repository.updateQueueStatus(item.id, 'approved');
-                    // Se falhou porque o WhatsApp caiu, espera mais
-                    if (!publisher.isReady) {
-                        await new Promise(r => setTimeout(r, 30000));
-                        continue;
-                    }
-                    // Falha por outro motivo (ex: imagem inválida) — espera e tenta próximo
-                    await new Promise(r => setTimeout(r, 10000));
-                    continue;
-                }
-            } catch (itemError) {
-                logger.error(`❌ Erro crítico ao processar/publicar item ${item.id}:`, itemError.stack || itemError.message || itemError);
-                // Sempre devolve para a fila em caso de erro não tratado para evitar travar a fila
+            if (success) {
+                // Remove o produto e item da fila do banco para não ocupar espaço
+                await repository.deleteProductAndQueueItem(item.product_id, item.description);
+                logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
+            } else {
+                logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
                 await repository.updateQueueStatus(item.id, 'approved');
-                await new Promise(r => setTimeout(r, 10000));
-                continue;
             }
-
-            // Pausa de 3 minutos fixos entre publicações para evitar bloqueios do WhatsApp
-            const delayMs = 180000; // 3 minutos
-            logger.info(`⏳ Intervalo seguro: Aguardando 3 minutos antes do próximo envio...`);
-            await new Promise(r => setTimeout(r, delayMs));
+        } catch (itemError) {
+            logger.error(`❌ Erro crítico ao processar/publicar item ${item.id}:`, itemError.stack || itemError.message || itemError);
+            await repository.updateQueueStatus(item.id, 'approved');
         }
     } catch (error) {
         logger.error('❌ Erro no ciclo de publicação:', error);
     } finally {
         isPublishing = false;
-        // Reinicia se der erro severo que quebre o loop
-        setTimeout(publishTaskContinuo, 30000);
-    }
-};
-
-const forcePublish = async () => {
-    try {
-        const item = await repository.getNextApprovedItem();
-        if (!item) {
-            logger.info('Tentativa de publicação forçada manual: fila vazia.');
-            return;
-        }
-        logger.info(`Publicação forçada manual solicitada: publicando item ${item.id}`);
-
-        // Gera a mensagem formatada dinamicamente na hora do envio
-        const formatterService = require('../services/formatter.service');
-        item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
-
-        const success = await publisher.publish(item);
-        if (success) {
-            // Remove o produto e item da fila do banco para não ocupar espaço
-            await repository.deleteProductAndQueueItem(item.product_id, item.description);
-            logger.info(`✅ Item ${item.id} publicado forçadamente e removido do banco.`);
-        } else {
-            // Se falhou, reverte o status para 'approved'
-            await repository.updateQueueStatus(item.id, 'approved');
-        }
-    } catch (err) {
-        logger.error('Erro na publicação forçada manual:', err);
     }
 };
 
 const startPublishJob = () => {
-  logger.info(`Agendando job de publicação para modo CONTÍNUO (Sem pausas) das ${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}`);
-  publishTaskContinuo();
+  logger.info(`Agendando job de publicação com cron: ${env.cronPublishSchedule} das ${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}`);
+  cron.schedule(env.cronPublishSchedule, publishTask);
+  
+  // Executa uma vez no boot se estiver dentro do horário de publicação para não ter que esperar o primeiro tick do cron
+  if (isWithinPublishTime()) {
+      logger.info('🚀 Executando disparo de publicação inicial pós-boot...');
+      setTimeout(() => {
+          publishTask().catch(err => logger.error('Erro na publicação inicial:', err));
+      }, 15000); // 15 segundos após o boot
+  }
 };
 
-module.exports = { startPublishJob, publishTask: forcePublish, publishTaskContinuo };
+module.exports = { startPublishJob, publishTask, publishTaskContinuo: publishTask };
