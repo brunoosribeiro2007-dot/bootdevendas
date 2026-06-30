@@ -18,7 +18,8 @@ const PRODUCT_BLACKLIST = [
     'carregador veicular', 'p/ carro', 'para carro',
     'creatina', 'whey', 'suplemento', 'proteína', 'bcaa', 'termogênico', 'emagrecer', 
     'vitamina', 'ômega 3', 'colágeno', 'pré-treino', 'albumina', 'glutamina',
-    'tênis', 'tenis', 'sapato', 'calçado', 'roupa', 'camisa', 'camiseta', 'calça', 'bermuda', 'jaqueta', 'casaco'
+    'tênis', 'tenis', 'sapato', 'calçado', 'roupa', 'camisa', 'camiseta', 'calça', 'bermuda', 'jaqueta', 'casaco',
+    'aquecedor', 'chuveiro', 'ducha', 'torneira', 'vaso sanitario', 'assento sanitario', 'pressurizador'
 ];
 
 /**

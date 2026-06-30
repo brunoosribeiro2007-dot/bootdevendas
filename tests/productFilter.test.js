@@ -18,6 +18,9 @@ describe('Mercado Livre Service Filtering & Categorization', () => {
       expect(isProductBlacklisted('Pneu aro 14 pirelli')).toBe(true);
       expect(isProductBlacklisted('Chave de fenda magnetica')).toBe(true);
       expect(isProductBlacklisted('Martelete perfurador profissional')).toBe(true);
+      expect(isProductBlacklisted('Aquecedor De Água Elétrico Lorenzetti')).toBe(true);
+      expect(isProductBlacklisted('Chuveiro Multitemperaturas')).toBe(true);
+      expect(isProductBlacklisted('Torneira Monocomando')).toBe(true);
     });
 
     test('should blacklist other unrelated items', () => {
