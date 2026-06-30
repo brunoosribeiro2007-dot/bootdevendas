@@ -160,13 +160,13 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const isOfficialStore = $(element).text().toLowerCase().includes('loja oficial') || $(element).find('.ui-search-official-store-label').length > 0;
                 const isFull = salesText.includes('full') || $(element).find('.ui-search-item__shipping--full').length > 0;
 
-                // 🛑 FILTRO DE QUALIDADE RIGOROSO (Mapeamento de 4.5 estrelas e 100 avaliações)
-                if (!rating || rating < 4.5) {
+                // 🛑 FILTRO DE QUALIDADE RIGOROSO (Mapeamento de 4.2 estrelas e 30 avaliações)
+                if (!rating || rating < 4.2) {
                     logger.debug(`⏩ Ignorando "${title}" por avaliação insuficiente ou inexistente: ${rating || 'N/A'}`);
                     return;
                 }
 
-                if (reviewsCount < 100) {
+                if (reviewsCount < 30) {
                     logger.debug(`⏩ Ignorando "${title}" por quantidade de avaliações insuficiente: ${reviewsCount}`);
                     return;
                 }
@@ -330,8 +330,8 @@ const fetchFromBackupAPI = async (searchTerm) => {
                         .filter(p => {
                             const apiRating = p.reviews?.rating_average || p.rating_average || null;
                             const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
-                            // Exige mais de 4.5 estrelas e pelo menos 100 avaliações
-                            return apiRating && apiRating >= 4.5 && apiReviewsCount >= 100;
+                            // Exige mais de 4.2 estrelas e pelo menos 30 avaliações
+                            return apiRating && apiRating >= 4.2 && apiReviewsCount >= 30;
                         })
                         .map(p => {
                             const apiRating = p.reviews?.rating_average || p.rating_average || null;
@@ -353,8 +353,8 @@ const fetchFromBackupAPI = async (searchTerm) => {
                                 link: p.permalink,
                                 imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'), // -W é maior
                                 description: `Oferta Especial: ${searchTerm}`,
-                                rating: apiRating || 4.5,
-                                reviewsCount: apiReviewsCount || 100,
+                                rating: apiRating || 4.2,
+                                reviewsCount: apiReviewsCount || 30,
                                 qualityScore: score
                             };
                         });

@@ -27,6 +27,6 @@ module.exports = {
   shopeeSecret: process.env.SHOPEE_SECRET || '',
   shopeeAffiliateTag: process.env.SHOPEE_AFFILIATE_TAG || '',
   useShopee: (process.env.USE_SHOPEE || 'true').toLowerCase() === 'true',
-  historyPruneDays: parseInt(process.env.HISTORY_PRUNE_DAYS || '15', 10),
+  historyPruneDays: parseInt(process.env.HISTORY_PRUNE_DAYS || '3', 10),
 };
 

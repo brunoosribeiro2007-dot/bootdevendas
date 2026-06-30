@@ -25,7 +25,7 @@ const captureTask = async () => {
     }
     // 🔄 ROTAÇÃO: Processa pouquíssimas keywords por ciclo para evitar OOM no Render
     // A cada execução, pega apenas 3 da lista para manter o heap baixo
-    const maxPerCycle = 3;
+    const maxPerCycle = 5;
     const startIndex = keywordRotationIndex % allKeywords.length;
     let selectedKeywords = [];
     
