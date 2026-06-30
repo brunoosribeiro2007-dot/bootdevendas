@@ -21,6 +21,6 @@ services:
       - key: ML_SEARCH_KEYWORD
         value: "Panelas, frigideiras, Talheres, pratos, copos, Air Fryer, Liquidificador, Micro-ondas, Cafeteira, Potes herméticos, Porta temperos, Tábua de corte, Vassoura, Rodo, Mop esfregão, Balde, Panos de limpeza, Sabão líquido, Detergente, Desinfetante, Água sanitária, Amaciante, Esponjas, Luvas de limpeza, Máquina de lavar, Varal, Ferro de passar, Tábua de passar, Cesto de roupa, Organizadores de roupa, Sofá, Rack painel TV, Televisão, Tapete sala, Cortina, Ventilador, Cama colchão, Travesseiros, Lençóis, Cobertores, Guarda-roupa, Cabides, Chuveiro, Toalhas banho, Tapete de banheiro, Lixeira banheiro, Espelho banheiro, Porta sabonete, Caixas organizadoras, Organizadores de gaveta, Prateleiras, Nichos parede, Carrinho com rodinhas, Quadros decorativos, Luminárias decorativas, Plantas artificiais, Espelhos decorativos, Velas decorativas, Almofadas, Cortinas estilizadas, Tapetes decorativos"
       - key: CRON_CAPTURE_SCHEDULE
-        value: "0 * * * *"
+        value: "*/10 * * * *"
       - key: CRON_PUBLISH_SCHEDULE
-        value: "*/3 * * * *"
+        value: "*/5 * * * *"
