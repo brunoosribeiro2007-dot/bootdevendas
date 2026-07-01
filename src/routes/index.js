@@ -5,6 +5,7 @@ const logger = require('../config/logger');
 const { db } = require('../database/init');
 const { captureTask } = require('../jobs/capture.job');
 const { publishTask } = require('../jobs/publisher.job');
+const couponFetcher = require('../services/couponFetcher.service');
 
 // Listar fila
 router.get('/queue', async (req, res) => {
@@ -89,6 +90,30 @@ router.get('/coupons', async (req, res) => {
         res.json({ coupons: Object.values(groups) });
     } catch (err) {
         logger.error('Erro ao buscar cupons do banco:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Cupons do dia (cache em memória — fontes externas, não banco de dados)
+router.get('/coupons/daily', async (req, res) => {
+    try {
+        const coupons = couponFetcher.getCachedCoupons();
+        const cacheInfo = couponFetcher.getCacheInfo();
+        res.json({ coupons, cacheInfo });
+    } catch (err) {
+        logger.error('Erro ao buscar cupons diários:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Força atualização imediata do cache de cupons do dia
+router.get('/coupons/daily/refresh', async (req, res) => {
+    try {
+        logger.info('[API] Refresh manual de cupons do dia solicitado.');
+        res.json({ message: 'Refresh de cupons iniciado em background.' });
+        couponFetcher.fetchDailyCoupons(true).catch(e => logger.warn(`Erro no refresh de cupons: ${e.message}`));
+    } catch (err) {
+        logger.error('Erro ao iniciar refresh de cupons:', err);
         res.status(500).json({ error: err.message });
     }
 });

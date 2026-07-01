@@ -1,7 +1,7 @@
 const env = require('../config/env');
 const axios = require('axios');
 const logger = require('../config/logger');
-// couponService removed
+const couponFetcher = require('./couponFetcher.service');
 let meliUiService;
 if (env.useMlAffiliateUi) {
   try { meliUiService = require('./meliUi.service'); } catch (e) { logger.debug('meliUi.service not available:', e.message); }
@@ -352,6 +352,16 @@ class FormatterService {
   async generateFormattedMessage(product, finalLink = null) {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
+
+    // 🏷️ Enriquece cupom: se o produto não trouxer cupom do scraper,
+    // tenta injetar o melhor cupom do cache diário
+    if (!product.coupon || !product.coupon.trim()) {
+      const dailyCoupon = couponFetcher.getBestCouponForMessage();
+      if (dailyCoupon && dailyCoupon.code) {
+        product.coupon = dailyCoupon.code;
+        logger.debug(`[Formatter] Cupom do cache diário injetado: ${dailyCoupon.code}`);
+      }
+    }
 
     // Formata preços no padrão brasileiro
     const formatPrice = (value) => {

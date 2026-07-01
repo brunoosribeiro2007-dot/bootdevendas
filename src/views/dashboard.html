@@ -751,6 +751,109 @@
             color: var(--primary);
             font-weight: 600;
         }
+
+        /* ── Cupons do Dia ── */
+        .daily-coupons-card {
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            background: linear-gradient(135deg, rgba(13, 20, 37, 0.6) 0%, rgba(25, 20, 50, 0.4) 100%);
+        }
+
+        .daily-coupons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        .daily-coupon-card {
+            background: rgba(99, 102, 241, 0.06);
+            border: 1px solid rgba(99, 102, 241, 0.18);
+            border-radius: 12px;
+            padding: 16px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .daily-coupon-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .daily-coupon-card:hover {
+            border-color: rgba(99, 102, 241, 0.45);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+        }
+
+        .daily-coupon-card:hover::before {
+            opacity: 1;
+        }
+
+        .daily-coupon-card.copied {
+            border-color: var(--accent-success);
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .daily-coupon-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--secondary);
+            letter-spacing: 1px;
+            word-break: break-all;
+        }
+
+        .daily-coupon-discount {
+            font-size: 0.82rem;
+            color: var(--accent-success);
+            font-weight: 600;
+        }
+
+        .daily-coupon-source {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .daily-coupon-copy-hint {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-align: right;
+            margin-top: auto;
+        }
+
+        .daily-coupon-card.copied .daily-coupon-copy-hint {
+            color: var(--accent-success);
+        }
+
+        .daily-coupon-empty {
+            grid-column: 1/-1;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            padding: 28px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .daily-coupon-empty svg {
+            width: 36px;
+            height: 36px;
+            opacity: 0.3;
+        }
     </style>
 </head>
 <body>
@@ -859,7 +962,32 @@
             </aside>
         </div>
 
-        <!-- Bottom: Coupons -->
+        <!-- Top: Cupons do Dia (fontes externas, cache em memória) -->
+        <div class="card daily-coupons-card">
+            <div class="coupon-section-header">
+                <div class="card-title">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Cupons do Dia
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span id="daily-coupon-count" class="badge">0</span>
+                    <span id="daily-coupon-cache-info" style="font-size:0.75rem; color:var(--text-muted);"></span>
+                    <button id="btn-refresh-daily-coupons" onclick="refreshDailyCoupons()" class="btn btn-outline" style="padding:4px 12px; font-size:0.78rem; height:auto;">
+                        🔄 Atualizar
+                    </button>
+                </div>
+            </div>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-top:-10px;">
+                Cupons públicos coletados agora do Mercado Livre — clique no código para copiar. Serão aplicados automaticamente nas mensagens enviadas.
+            </p>
+            <div id="daily-coupons-list" class="daily-coupons-grid">
+                <p style="grid-column:1/-1; text-align:center; color:var(--text-muted); font-size:0.9rem; padding:20px 0;">
+                    Carregando cupons do dia...
+                </p>
+            </div>
+        </div>
+
+        <!-- Bottom: Cupons do Banco -->
         <div class="card">
             <div class="coupon-section-header">
                 <div class="card-title">
@@ -877,6 +1005,7 @@
                 </p>
             </div>
         </div>
+
 
         <footer>
             ML Affiliate Bot &bull; Design premium da equipe <span>Antigravity</span>
@@ -938,6 +1067,112 @@
                 executeAction('/api/database/clear', 'btn-clear-db');
             }
         }
+
+        // ── Cupons do Dia ────────────────────────────────────────────────────
+        async function loadDailyCoupons() {
+            try {
+                const res = await fetch('/api/coupons/daily');
+                const data = await res.json();
+
+                const countEl = document.getElementById('daily-coupon-count');
+                const cacheInfoEl = document.getElementById('daily-coupon-cache-info');
+                const list = document.getElementById('daily-coupons-list');
+                if (!list) return;
+
+                const coupons = data.coupons || [];
+                if (countEl) countEl.textContent = coupons.length;
+
+                // Info de cache
+                if (cacheInfoEl && data.cacheInfo) {
+                    const ci = data.cacheInfo;
+                    if (ci.lastUpdate) {
+                        const d = new Date(ci.lastUpdate);
+                        const hhmm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                        cacheInfoEl.textContent = `Atualizado às ${hhmm}${ci.isStale ? ' (desatualizado)' : ''}`;
+                        cacheInfoEl.style.color = ci.isStale ? 'var(--accent-warn)' : 'var(--text-muted)';
+                    } else {
+                        cacheInfoEl.textContent = 'Cache vazio';
+                    }
+                }
+
+                if (coupons.length === 0) {
+                    list.innerHTML = `
+                        <div class="daily-coupon-empty">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"></path></svg>
+                            <span>Nenhum cupom público encontrado agora.</span>
+                            <span style="font-size:0.78rem;">Clique em "Atualizar" para buscar novamente.</span>
+                        </div>`;
+                    return;
+                }
+
+                const sourceLabels = {
+                    api_search: '🔌 API ML',
+                    api_promotions: '📢 Promoções',
+                    html_scrape: '🌐 Página',
+                    html_json_embed: '📦 Embed'
+                };
+
+                list.innerHTML = coupons.map((c, idx) => {
+                    const sourceLabel = sourceLabels[c.source] || '📋 Externo';
+                    const discountHtml = c.discount ? `<div class="daily-coupon-discount">💸 ${c.discount}% OFF</div>` : '';
+                    return `
+                        <div class="daily-coupon-card" id="dc-card-${idx}" onclick="copyDailyCoupon('${c.code}', ${idx})" title="Clique para copiar">
+                            <div class="daily-coupon-code">🏷️ ${c.code}</div>
+                            ${discountHtml}
+                            <div class="daily-coupon-source">${sourceLabel}</div>
+                            <div class="daily-coupon-copy-hint">📋 clique para copiar</div>
+                        </div>`;
+                }).join('');
+
+            } catch(e) {
+                console.error('Erro ao carregar cupons do dia:', e);
+            }
+        }
+
+        function copyDailyCoupon(code, idx) {
+            navigator.clipboard.writeText(code).then(() => {
+                const card = document.getElementById(`dc-card-${idx}`);
+                if (card) {
+                    card.classList.add('copied');
+                    const hint = card.querySelector('.daily-coupon-copy-hint');
+                    if (hint) hint.textContent = '✅ Copiado!';
+                    setTimeout(() => {
+                        card.classList.remove('copied');
+                        if (hint) hint.textContent = '📋 clique para copiar';
+                    }, 2000);
+                }
+            }).catch(() => {
+                // Fallback para browsers sem clipboard API
+                const el = document.createElement('textarea');
+                el.value = code;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            });
+        }
+
+        async function refreshDailyCoupons() {
+            const btn = document.getElementById('btn-refresh-daily-coupons');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span style="display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;"></span> Buscando...';
+            }
+            try {
+                await fetch('/api/coupons/daily/refresh');
+                // Aguarda 3s para o cache ser populado em background
+                await new Promise(r => setTimeout(r, 3000));
+                await loadDailyCoupons();
+            } catch(e) {
+                console.error('Erro ao atualizar cupons:', e);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔄 Atualizar';
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────
 
         async function loadCoupons() {
             try {
@@ -1156,10 +1391,12 @@
         // Initial load
         updateStatus();
         loadCoupons();
+        loadDailyCoupons();
 
         // Polling timers
         setInterval(updateStatus, 3000);
         setInterval(loadCoupons, 20000);
+        setInterval(loadDailyCoupons, 5 * 60 * 1000); // Cupons do dia: a cada 5 min
     </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ const mlService = require('../services/mercadoLivre.service');
 const shopeeService = require('../services/shopee.service');
 const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
+const couponFetcher = require('../services/couponFetcher.service');
 
 // Índice global para rotacionar as keywords a cada ciclo
 let keywordRotationIndex = 0;
@@ -18,6 +19,9 @@ const captureTask = async () => {
   isCapturing = true;
   logger.info('🚀 Iniciando job de captura multi-item do ML...');
   try {
+    // 🏷️ Renova o cache de cupons do dia antes de iniciar a captura
+    couponFetcher.fetchDailyCoupons().catch(e => logger.warn(`[CaptureJob] Erro ao buscar cupons do dia: ${e.message}`));
+
     const repository = require('../database/repository');
     await repository.pruneOldProducts();
 
