@@ -6,9 +6,10 @@ const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
 
-// 🛑 FILTRO DE NICHO (CASA): Ignora ferramentas pesadas, eletrônicos gamer e itens automotivos
+// 🛑 FILTRO DE NICHO (CASA): Ignora ferramentas pesadas, eletrônicos gamer, automotivos e beleza/cosméticos
 const PRODUCT_BLACKLIST = [
-    'martelete', 'parafusadeira', 'furadeira', 'ferramenta', 'pneu', 'pc gamer', 
+    // 🔧 Ferramentas e automotivo
+    'martelete', 'parafusadeira', 'furadeira', 'ferramenta', 'pneu', 'pc gamer',
     'oficina', 'mecanico', 'gamer', 'brinquedo', 'peca de carro', 'moto',
     'chave de fenda', 'serra', 'trena', 'multimetro', 'politriz', 'esmerilhadeira',
     'carro', 'automotivo', 'automotiva', 'veículo', 'veicular', 'capacete', 'retrovisor',
@@ -16,10 +17,29 @@ const PRODUCT_BLACKLIST = [
     'óleo de motor', 'bateria de carro', 'som automotivo', 'central multimídia',
     'tapete de carro', 'capa de banco', 'suporte celular carro', 'transmissor fm',
     'carregador veicular', 'p/ carro', 'para carro',
-    'creatina', 'whey', 'suplemento', 'proteína', 'bcaa', 'termogênico', 'emagrecer', 
+    // 💊 Suplementos e saúde
+    'creatina', 'whey', 'suplemento', 'proteína', 'bcaa', 'termogênico', 'emagrecer',
     'vitamina', 'ômega 3', 'colágeno', 'pré-treino', 'albumina', 'glutamina',
+    // 👗 Moda e vestuário
     'tênis', 'tenis', 'sapato', 'calçado', 'roupa', 'camisa', 'camiseta', 'calça', 'bermuda', 'jaqueta', 'casaco',
-    'aquecedor', 'chuveiro', 'ducha', 'torneira', 'vaso sanitario', 'assento sanitario', 'pressurizador'
+    // 🚿 Hidráulica
+    'aquecedor', 'chuveiro', 'ducha', 'torneira', 'vaso sanitario', 'assento sanitario', 'pressurizador',
+    // 💄 Beleza, cosméticos e cuidados pessoais — FORA DO NICHO CASA
+    'shampoo', 'condicionador', 'mascara capilar', 'mascara facial', 'creme facial', 'creme para rosto',
+    'hidratante facial', 'hidratante corporal', 'protetor solar', 'bronzeador', 'autobronzeador',
+    'esfoliante', 'tônico facial', 'sérum', 'serum facial', 'vitamina c facial',
+    'maquiagem', 'base maquiagem', 'batom', 'blush', 'sombra', 'rímel', 'rimel', 'delineador',
+    'contorno', 'primer facial', 'bb cream', 'cc cream', 'pó facial', 'corretivo',
+    'perfume', 'colônia', 'desodorante', 'antitranspirante',
+    'shave', 'barbear', 'lâmina de barbear', 'gel de barbear', 'after shave',
+    'baume', 'balsamo corporal', 'óleo corporal', 'loção corporal', 'manteiga corporal',
+    'creme anticaspa', 'antiqueda', 'crescimento cabelo', 'minoxidil',
+    'escova progressiva', 'alisamento', 'tintura cabelo', 'coloração cabelo', 'botox capilar',
+    'esmalte', 'acetona', 'removedor de esmalte', 'base para unhas', 'top coat',
+    'la roche', 'la roche posay', 'cicaplast', 'cerave', 'neutrogena', 'vichy', 'avene',
+    'dove', 'nívea', 'nivea', 'garnier', 'loreal', 'l\'oreal', 'maybelline', 'revlon',
+    'kerastase', 'keratin', 'pantene', 'head shoulders', 'tresemme', 'seda',
+    'bioderma', 'roc', 'eucerin', 'isdin', 'skincare', 'skin care', 'dermocosmetico'
 ];
 
 /**
@@ -30,13 +50,34 @@ const isProductBlacklisted = (title) => {
     if (!title) return false;
     const titleLower = title.toLowerCase();
     return PRODUCT_BLACKLIST.some(word => {
-        // Exceções para itens do nicho de casa/organização/limpeza que contêm termos genéricos banidos
+        // ─── Exceções para itens do nicho Casa ───────────────────────────────
         if (word === 'roupa' && (titleLower.includes('guarda-roupa') || titleLower.includes('cesto') || titleLower.includes('varal') || titleLower.includes('cabide') || titleLower.includes('lavar'))) {
             return false;
         }
         if (word === 'ferramenta' && titleLower.includes('caixa de ferramentas')) {
             return false;
         }
+        // 'esmalte' pode aparecer em tintas/revestimentos de parede — permitir
+        if (word === 'esmalte' && (titleLower.includes('tinta') || titleLower.includes('parede') || titleLower.includes('revestimento') || titleLower.includes('piso'))) {
+            return false;
+        }
+        // 'condicionador' em contexto de ar-condicionado — permitir
+        if (word === 'condicionador' && (titleLower.includes('ar') || titleLower.includes('ambiente') || titleLower.includes('split'))) {
+            return false;
+        }
+        // 'base' em contexto de móveis/prateleiras — permitir
+        if (word === 'base maquiagem' && (titleLower.includes('suporte') || titleLower.includes('prateleira') || titleLower.includes('rack') || titleLower.includes('concreto'))) {
+            return false;
+        }
+        // 'shampoo' para carpete/tapete/sofá — permitir
+        if (word === 'shampoo' && (titleLower.includes('carpete') || titleLower.includes('tapete') || titleLower.includes('sofa') || titleLower.includes('sofá') || titleLower.includes('estofado'))) {
+            return false;
+        }
+        // 'seda' pode ser tecido para casa (lençol, fronha) — permitir
+        if (word === 'seda' && (titleLower.includes('len') || titleLower.includes('fronha') || titleLower.includes('cama') || titleLower.includes('pijama') || titleLower.includes('lençol'))) {
+            return false;
+        }
+        // ─────────────────────────────────────────────────────────────────────
         return titleLower.includes(word);
     });
 };

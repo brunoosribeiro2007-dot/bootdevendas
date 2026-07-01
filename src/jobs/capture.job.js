@@ -60,8 +60,9 @@ const captureTask = async () => {
     
     const allProductsInCycle = [];
     
-    // 🚀 Ofertas das Abas Oficiais do Mercado Livre — 5 páginas por categoria (Casa, Eletrodomésticos, Beleza)
-    const dealsCategories = ['MLB1574', 'MLB5726', 'MLB1246'];
+    // 🚀 Ofertas das Abas Oficiais do Mercado Livre — 5 páginas por categoria (Casa e Eletrodomésticos)
+    // ⚠️ MLB1246 (Beleza) removido — fora do nicho Casa
+    const dealsCategories = ['MLB1574', 'MLB5726'];
     // offsets: 1=pág1, 49=pág2, 97=pág3, 145=pág4, 193=pág5
     const dealsOffsets = [1, 49, 97, 145, 193];
     logger.info('🔥 Coletando ofertas reais das abas oficiais de promoções do Mercado Livre...');
