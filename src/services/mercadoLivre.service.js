@@ -39,6 +39,11 @@ const PRODUCT_BLACKLIST = [
     'la roche', 'la roche posay', 'cicaplast', 'cerave', 'neutrogena', 'vichy', 'avene',
     'dove', 'nívea', 'nivea', 'garnier', 'loreal', 'l\'oreal', 'maybelline', 'revlon',
     'kerastase', 'keratin', 'pantene', 'head shoulders', 'tresemme', 'seda',
+    // 💇 Ferramentas de cabelo e estética — FORA DO NICHO CASA
+    'prancha', 'chapinha', 'alisador de cabelo', 'alisador', 'babyliss', 'lizze',
+    'secador de cabelo', 'secador profissional', 'escova secadora', 'escova alisadora',
+    'modelador de cachos', 'ondulador', 'babyliss', 'taiff', 'gama', 'remington',
+    'relaxamento', 'permanente cabelo',
     'bioderma', 'roc', 'eucerin', 'isdin', 'skincare', 'skin care', 'dermocosmetico'
 ];
 

@@ -5,7 +5,7 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'production',
   databaseUrl: process.env.DATABASE_URL,
   dbPath: process.env.DB_PATH || './database.sqlite',
-  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'geladeira, cooktop, fogão, forno elétrico, micro-ondas, air fryer, liquidificador, batedeira, cafeteira, purificador de água, jogo de panelas, panela de pressão elétrica, smart tv, soundbar, ventilador, ar-condicionado, máquina de lavar, aspirador pó robô, secador de cabelo, escova secadora, ferro de passar, adega de vinhos, cervejeira',
+  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'geladeira, cooktop, fogão, forno elétrico, micro-ondas, air fryer, liquidificador, batedeira, cafeteira, purificador de água, jogo de panelas, panela de pressão elétrica, smart tv, soundbar, ventilador, ar-condicionado, máquina de lavar, aspirador pó robô, ferro de passar, adega de vinhos, cervejeira',
   mlCategory: process.env.ML_CATEGORY || '',
   cronCaptureSchedule: process.env.CRON_CAPTURE_SCHEDULE || '0 * * * *',
   cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/3 * * * *',
