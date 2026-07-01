@@ -351,6 +351,16 @@ const pruneOldProducts = async () => {
     }
 };
 
+// Retorna apenas os campos mínimos necessários para pré-checagem de duplicados
+const getAllProductsBasic = async () => {
+    try {
+        return await db.all('SELECT id, title, link, original_link, image_url FROM products');
+    } catch (err) {
+        logger.warn('Erro ao buscar produtos básicos:', err.message);
+        return [];
+    }
+};
+
 const clearQueue = async () => {
     try {
         await db.run('DELETE FROM queue', []);
@@ -405,6 +415,7 @@ const resetStuckSendingItems = async () => {
 module.exports = {
   saveProduct,
   getProductById,
+  getAllProductsBasic,
   enqueueProduct,
   getQueue,
   updateQueueStatus,

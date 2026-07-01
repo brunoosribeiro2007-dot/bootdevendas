@@ -666,9 +666,67 @@ async function enrichProductDetails(product) {
   return product;
 }
 
+/**
+ * Busca ofertas reais diretamente de uma categoria na aba de Ofertas do Mercado Livre
+ */
+const searchDealsByCategory = async (categoryId, offset = 1) => {
+  const fakeIP = getRandomBrIP();
+  const dealsUrl = `https://www.mercadolivre.com.br/ofertas?category=${categoryId}&_Desde=${offset}`;
+  logger.info(`🔎 Buscando ofertas reais na categoria ${categoryId} (Offset: ${offset})...`);
+  
+  try {
+      const headers = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'X-Forwarded-For': fakeIP,
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+      };
+
+      if (env.mlCookieString) {
+          headers['Cookie'] = env.mlCookieString;
+      }
+
+      const { data: html, status } = await axios.get(dealsUrl, {
+          headers,
+          timeout: 12000,
+          validateStatus: () => true
+      });
+
+      if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden')) {
+          logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy...`);
+          // Tentativa com proxy translate
+          const proxyUrl = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;
+          try {
+              const response = await axios.get(proxyUrl, {
+                  headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                      'Accept-Language': 'pt-BR,pt;q=0.9'
+                  },
+                  timeout: 15000
+              });
+              const products = parseProducts(response.data, `Ofertas ${categoryId}`, true);
+              if (products.length > 0) return products;
+          } catch (err) {
+              logger.warn(`⚠️ Falha no proxy translate para ofertas: ${err.message}`);
+          }
+          return [];
+      }
+
+      const products = parseProducts(html, `Ofertas ${categoryId}`);
+      logger.info(`✅ Sucesso na busca de ofertas para ${categoryId} (${products.length} itens encontrados).`);
+      return products;
+  } catch (error) {
+      logger.error(`❌ Erro ao buscar ofertas na categoria ${categoryId}: ${error.message}`);
+      return [];
+  }
+};
+
 module.exports = {
   searchProducts,
   searchDailyDeals,
+  searchDealsByCategory,
   enrichProductDetails,
   isProductBlacklisted,
   getCategoryForKeyword

@@ -2,19 +2,39 @@ const cron = require('node-cron');
 const env = require('../config/env');
 const logger = require('../config/logger');
 const mlService = require('../services/mercadoLivre.service');
-const { enrichProductDetails } = require('../services/mercadoLivre.service');
 const shopeeService = require('../services/shopee.service');
 const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 
 // Índice global para rotacionar as keywords a cada ciclo
 let keywordRotationIndex = 0;
+let isCapturing = false;
 
 const captureTask = async () => {
+  if (isCapturing) {
+      logger.warn('⚠️ [CaptureTask] Captura já está em andamento. Ignorando chamada concorrente.');
+      return;
+  }
+  isCapturing = true;
   logger.info('🚀 Iniciando job de captura multi-item do ML...');
   try {
     const repository = require('../database/repository');
     await repository.pruneOldProducts();
+
+    // ─── Pré-carrega IDs e títulos existentes para checagem rápida de duplicados ───
+    const existingProducts = await repository.getAllProductsBasic();
+    const existingMlbIds = new Set();
+    const existingTitles = [];
+    const existingImageIds = new Set();
+    for (const p of existingProducts) {
+        const mlbId = extractMlbId(p.original_link || p.link);
+        if (mlbId) existingMlbIds.add(mlbId);
+        if (p.title) existingTitles.push(p.title);
+        if (p.image_url) {
+            const imgId = extractImageId(p.image_url);
+            if (imgId) existingImageIds.add(imgId);
+        }
+    }
 
     let keywordsString = env.mlSearchKeyword || '';
     const allKeywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
@@ -24,7 +44,6 @@ const captureTask = async () => {
         return;
     }
     // 🔄 ROTAÇÃO: Processa pouquíssimas keywords por ciclo para evitar OOM no Render
-    // A cada execução, pega apenas 3 da lista para manter o heap baixo
     const maxPerCycle = 5;
     const startIndex = keywordRotationIndex % allKeywords.length;
     let selectedKeywords = [];
@@ -41,7 +60,25 @@ const captureTask = async () => {
     
     const allProductsInCycle = [];
     
-    // ❌ Ofertas do Dia (Produtos Premium) desativado para respeitar rigorosamente o nicho (CASA) configurado.
+    // 🚀 Ofertas das Abas Oficiais do Mercado Livre — 5 páginas por categoria (Casa, Eletrodomésticos, Beleza)
+    const dealsCategories = ['MLB1574', 'MLB5726', 'MLB1246'];
+    // offsets: 1=pág1, 49=pág2, 97=pág3, 145=pág4, 193=pág5
+    const dealsOffsets = [1, 49, 97, 145, 193];
+    logger.info('🔥 Coletando ofertas reais das abas oficiais de promoções do Mercado Livre...');
+    for (const catId of dealsCategories) {
+        for (const offset of dealsOffsets) {
+            try {
+                const deals = await mlService.searchDealsByCategory(catId, offset);
+                if (deals && deals.length > 0) {
+                    allProductsInCycle.push(...deals);
+                }
+                // Pequena pausa entre páginas para evitar bloqueio
+                await new Promise(r => setTimeout(r, 800));
+            } catch (err) {
+                logger.error(`❌ Erro ao capturar aba de ofertas para a categoria ${catId} (offset ${offset}): ${err.message}`);
+            }
+        }
+    }
     
     for (const keyword of selectedKeywords) {
         try {
@@ -66,17 +103,36 @@ const captureTask = async () => {
             // Aguarda pequeno intervalo para evitar bloqueio IP
             await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
         } catch (keywordError) {
-            logger.error(`❌ Erro ao processar palavra-chave "${keyword}":`, keywordError.message);
+            logger.error(`❌ Erro ao processar palavra-chave "${keyword}": ${keywordError.message}`);
         }
     }
 
     // ⭐ EMBARALHAMENTO TOTAL DO CICLO: Mistura produtos de diferentes keywords
-    // Isso evita postar 10 lixeiras seguidas se a keyword 'Lixeira' for processada.
     allProductsInCycle.sort(() => Math.random() - 0.5);
 
     let totalAddedCount = 0;
     for (const product of allProductsInCycle) {
         if (!product.title || !product.price || !product.link) continue;
+
+        // ─── PRÉ-CHECAGEM RÁPIDA DE DUPLICADOS (antes de gastar créditos de link) ───
+        const mlbId = extractMlbId(product.link);
+        if (mlbId && existingMlbIds.has(mlbId)) {
+            logger.debug(`⏩ Pré-checagem: MLB${mlbId} já existe. Pulando.`);
+            continue;
+        }
+        const titleNorm = normalizeTitle(product.title);
+        if (titleNorm && existingTitles.some(t => {
+            const tn = normalizeTitle(t);
+            return tn === titleNorm || titlesAreSimilar(titleNorm, tn);
+        })) {
+            logger.debug(`⏩ Pré-checagem: Título similar já existe: "${product.title}". Pulando.`);
+            continue;
+        }
+        const imgId = product.imageUrl ? extractImageId(product.imageUrl) : null;
+        if (imgId && existingImageIds.has(imgId)) {
+            logger.debug(`⏩ Pré-checagem: Imagem duplicada. Pulando "${product.title}".`);
+            continue;
+        }
 
         // Normalização básica de imagem
         if (!product.imageUrl) {
@@ -94,28 +150,18 @@ const captureTask = async () => {
                 continue;
             }
 
-            // Enriquecer detalhes do produto se for Mercado Livre (com timeout de 5s para não travar o ciclo)
-            let enrichedProduct = product;
-            if (!String(product.id || '').startsWith('SP-')) {
-                try {
-                    const enrichPromise = enrichProductDetails(product);
-                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout enriquecimento')), 5000));
-                    enrichedProduct = await Promise.race([enrichPromise, timeoutPromise]);
-                } catch (enrichErr) {
-                    // Se enriquecimento falhar ou demorar, usa o produto básico mesmo
-                    logger.debug(`⏩ Enriquecimento pulado para "${product.title}": ${enrichErr.message}`);
-                    enrichedProduct = product;
-                }
-            }
-
             // Salva o link original e o de afiliado oficial no produto
-            enrichedProduct.originalLink = product.link;
-            enrichedProduct.link = finalLink;
+            product.originalLink = product.link;
+            product.link = finalLink;
 
             // Não armazena as mensagens no banco para economizar espaço
-            const added = await queueService.addToQueue(enrichedProduct, '', '');
+            const added = await queueService.addToQueue(product, '', '');
             if (added) {
                 totalAddedCount++;
+                // Adiciona ao cache local para evitar duplicados dentro do mesmo ciclo
+                if (mlbId) existingMlbIds.add(mlbId);
+                existingTitles.push(product.title);
+                if (imgId) existingImageIds.add(imgId);
             }
         } catch (fmtErr) {
             logger.warn(`⚠️ Erro ao formatar/enfileirar "${product.title}": ${fmtErr.message}`);
@@ -126,8 +172,53 @@ const captureTask = async () => {
 
   } catch (error) {
     logger.error('❌ Erro crítico no job de captura multi-item:', error);
+  } finally {
+    isCapturing = false;
   }
 };
+
+// ─── Helpers locais para pré-checagem de duplicados ───────────────────────────
+const extractMlbId = (link) => {
+    if (!link || typeof link !== 'string') return null;
+    const match = link.match(/MLB-?(\d+)/i);
+    return match ? match[1] : null;
+};
+
+const extractImageId = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const clean = url.split('?')[0].split('#')[0];
+    if (clean.includes('mlstatic.com')) {
+        const match = clean.match(/D_(?:NQ|Q)_NP_(?:2X_)?([a-zA-Z0-9_-]+)-[a-zA-Z0-9]+\.[a-zA-Z0-9]+$/i);
+        if (match) return match[1];
+        const parts = clean.split('/');
+        const filename = parts[parts.length - 1];
+        const baseMatch = filename.match(/^(.+)-[a-zA-Z0-9]+\.[a-zA-Z0-9]+$/i);
+        if (baseMatch) return baseMatch[1];
+        return filename;
+    }
+    const parts = clean.split('/');
+    return parts[parts.length - 1] || clean;
+};
+
+const normalizeTitle = (title) => {
+    if (!title || typeof title !== 'string') return '';
+    return title.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\b(110v|220v|127v|bivolt|volts|volt)\b/g, '')
+        .replace(/\s+/g, ' ').trim();
+};
+
+const titlesAreSimilar = (n1, n2) => {
+    if (!n1 || !n2) return false;
+    if (n1 === n2) return true;
+    const w1 = n1.split(' ').filter(w => w.length > 1);
+    const w2 = n2.split(' ').filter(w => w.length > 1);
+    if (!w1.length || !w2.length) return false;
+    const common = w1.filter(w => w2.includes(w));
+    return common.length / Math.min(w1.length, w2.length) >= 0.7;
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 const startCaptureJob = () => {
   logger.info(`Agendando job de captura com cron: ${env.cronCaptureSchedule}`);
@@ -141,3 +232,5 @@ const startCaptureJob = () => {
 };
 
 module.exports = { startCaptureJob, captureTask };
+
+

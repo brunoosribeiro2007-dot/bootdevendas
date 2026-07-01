@@ -5,7 +5,7 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'production',
   databaseUrl: process.env.DATABASE_URL,
   dbPath: process.env.DB_PATH || './database.sqlite',
-  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'geladeira brastemp, geladeira electrolux, geladeira consul, cooktop fischer, cooktop brastemp, fogão dako, fogão electrolux, forno elétrico oster, forno elétrico philco, micro-ondas consul, micro-ondas brastemp, air fryer mondial, air fryer oster, air fryer philips walita, liquidificador oster, liquidificador mondial, batedeira arno, cafeteira oster, cafeteira tres coracoes, cafeteira dolce gusto, purificador de água consul, purificador de água ibbl, jogo de panelas tramontina, panela de pressão elétrica mondial, smart tv samsung, smart tv lg, smart tv tcl, soundbar samsung, ventilador arno, ar-condicionado midea, ar-condicionado split lg, máquina de lavar electrolux, máquina de lavar brastemp, aspirador pó robô xiaomi, secador cabelo taiff, escova secadora mondial, ferro de passar arno, adega de vinhos oster, cervejeira consul',
+  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'geladeira, cooktop, fogão, forno elétrico, micro-ondas, air fryer, liquidificador, batedeira, cafeteira, purificador de água, jogo de panelas, panela de pressão elétrica, smart tv, soundbar, ventilador, ar-condicionado, máquina de lavar, aspirador pó robô, secador de cabelo, escova secadora, ferro de passar, adega de vinhos, cervejeira',
   mlCategory: process.env.ML_CATEGORY || '',
   cronCaptureSchedule: process.env.CRON_CAPTURE_SCHEDULE || '0 * * * *',
   cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/3 * * * *',

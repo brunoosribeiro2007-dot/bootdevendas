@@ -51,6 +51,7 @@ const shouldSendGoodNight = () => {
 
 let isPublishing = false;
 let sentGoodNightMessage = false;
+let retryTimeout = null;
 
 const publishTask = async () => {
     if (isPublishing) {
@@ -85,7 +86,14 @@ const publishTask = async () => {
 
         // ✅ VERIFICAÇÃO 2: WhatsApp DEVE estar conectado
         if (!publisher.isReady) {
-            logger.warn('⏳ WhatsApp não está conectado. Ignorando este ciclo de publicação.');
+            logger.warn('⏳ WhatsApp não está conectado. Agendando nova tentativa de publicação em 30 segundos.');
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+            }
+            retryTimeout = setTimeout(() => {
+                retryTimeout = null;
+                publishTask().catch(err => logger.error('Erro ao retentar publicação:', err));
+            }, 30000);
             return;
         }
 
@@ -95,7 +103,12 @@ const publishTask = async () => {
         // ✅ VERIFICAÇÃO 3: Buscar próximo item
         const item = await repository.getNextApprovedItem();
         if (!item) {
-            logger.debug('ℹ️ Fila de publicações aprovadas está vazia.');
+            logger.info('ℹ️ Fila de publicações aprovadas está vazia. Disparando captura emergencial em segundo plano...');
+            const captureJob = require('./capture.job');
+            const capturePromise = captureJob.captureTask();
+            if (capturePromise && typeof capturePromise.catch === 'function') {
+                capturePromise.catch(err => logger.error('Erro na captura emergencial:', err));
+            }
             return;
         }
 
