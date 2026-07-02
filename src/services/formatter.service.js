@@ -427,7 +427,7 @@ class FormatterService {
         cleanCoupon = cleanCoupon.substring(6).trim();
       }
       if (cleanCoupon) {
-        lines.push(`🏷️ Use o cupom: ${cleanCoupon}`);
+        lines.push(`🎟️ Cupom: *${cleanCoupon.toUpperCase()}*`);
       }
     }
 

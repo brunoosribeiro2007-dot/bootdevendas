@@ -207,12 +207,13 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const isFull = salesText.includes('full') || $(element).find('.ui-search-item__shipping--full').length > 0;
 
                 // 🛑 FILTRO DE QUALIDADE RIGOROSO (Mapeamento de 4.2 estrelas e 30 avaliações)
-                if (!rating || rating < 4.2) {
-                    logger.debug(`⏩ Ignorando "${title}" por avaliação insuficiente ou inexistente: ${rating || 'N/A'}`);
+                // Se a página tiver a informação de avaliações, aplicamos o filtro. Se não tiver (como no layout leve do Googlebot), aceitamos o produto.
+                if (rating && !isNaN(rating) && rating < 4.2) {
+                    logger.debug(`⏩ Ignorando "${title}" por avaliação insuficiente: ${rating}`);
                     return;
                 }
 
-                if (reviewsCount < 30) {
+                if (reviewsCount && reviewsCount < 30) {
                     logger.debug(`⏩ Ignorando "${title}" por quantidade de avaliações insuficiente: ${reviewsCount}`);
                     return;
                 }
@@ -453,7 +454,8 @@ const fetchViaProxy = async (proxyName, proxyUrl, searchTerm, category, nextProx
 const searchViaAllOrigins = async (searchTerm, category = '') => {
     const cacheBuster = Math.floor(Math.random() * 100);
     const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    // Usando /raw ao invés de /get para receber a string HTML diretamente (evita retornar objeto JSON)
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
     return await fetchViaProxy('Proxy 4 (AllOrigins)', proxyUrl, searchTerm, category, fetchFromBackupAPI);
 };
 
@@ -604,11 +606,8 @@ const searchProducts = async (searchTerm, category = '') => {
     logger.info(`🔍 Buscando produtos no Mercado Livre para: "${searchTerm}"...`);
     
     const userAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
+        'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)'
     ];
 
     try {
@@ -627,7 +626,8 @@ const searchProducts = async (searchTerm, category = '') => {
             'Pragma': 'no-cache'
         };
 
-        if (env.mlCookieString) {
+        const isCrawler = selectedUA.includes('bot') || selectedUA.includes('Slurp');
+        if (env.mlCookieString && !isCrawler) {
             headers['Cookie'] = env.mlCookieString;
         }
         
@@ -637,7 +637,7 @@ const searchProducts = async (searchTerm, category = '') => {
             validateStatus: () => true
         });
 
-        if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden')) {
+        if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')) {
             logger.warn(`⚠️ Bloqueio direto detectado (Status ${status}). Ativando Modo Stealth...`);
             const stealthResult = await searchViaStealthProxy(searchTerm, category);
             if (stealthResult && stealthResult.length > 0) return stealthResult;
@@ -722,7 +722,7 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
   
   try {
       const headers = {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
           'X-Forwarded-For': fakeIP,
           'Accept-Language': 'pt-BR,pt;q=0.9',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -730,7 +730,8 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
           'Pragma': 'no-cache'
       };
 
-      if (env.mlCookieString) {
+      const isCrawlerDeals = headers['User-Agent'].includes('bot') || headers['User-Agent'].includes('Slurp');
+      if (env.mlCookieString && !isCrawlerDeals) {
           headers['Cookie'] = env.mlCookieString;
       }
 
@@ -740,7 +741,7 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
           validateStatus: () => true
       });
 
-      if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden')) {
+      if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')) {
           logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy...`);
           // Tentativa com proxy translate
           const proxyUrl = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;

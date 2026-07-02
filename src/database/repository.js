@@ -60,6 +60,8 @@ const normalizeTitle = (title) => {
         .trim();
 };
 
+const stopWords = new Set(['de', 'o', 'a', 'com', 'para', 'em', 'do', 'da', 'um', 'uma', 'sem', 'e', 'ou', 'no', 'na', 'os', 'as', 'dos', 'das', 'nos', 'nas']);
+
 const titlesAreVerySimilar = (t1, t2) => {
     const norm1 = normalizeTitle(t1);
     const norm2 = normalizeTitle(t2);
@@ -67,16 +69,25 @@ const titlesAreVerySimilar = (t1, t2) => {
     
     if (norm1 === norm2) return true;
     
-    const words1 = norm1.split(' ').filter(w => w.length > 1);
-    const words2 = norm2.split(' ').filter(w => w.length > 1);
+    // Filtra palavras curtas e stop words, convertendo para um Set de palavras únicas
+    const words1 = new Set(norm1.split(' ').filter(w => w.length > 1 && !stopWords.has(w)));
+    const words2 = new Set(norm2.split(' ').filter(w => w.length > 1 && !stopWords.has(w)));
     
-    if (words1.length === 0 || words2.length === 0) return false;
+    if (words1.size === 0 || words2.size === 0) return false;
     
-    const commonWords = words1.filter(w => words2.includes(w));
-    const minLength = Math.min(words1.length, words2.length);
-    const similarity = commonWords.length / minLength;
+    // Encontra a interseção de termos exclusivos
+    let commonCount = 0;
+    for (const w of words1) {
+        if (words2.has(w)) {
+            commonCount++;
+        }
+    }
     
-    return similarity >= 0.7;
+    const minLength = Math.min(words1.size, words2.size);
+    const similarity = commonCount / minLength;
+    
+    // 75% de similaridade das palavras-chave relevantes
+    return similarity >= 0.75;
 };
 
 const cleanLink = (url) => {
