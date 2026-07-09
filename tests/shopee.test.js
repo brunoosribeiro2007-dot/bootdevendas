@@ -174,7 +174,7 @@ describe('Formatter Service - Shopee', () => {
     expect(msg).toContain('De ~R$ 200,00~');
     expect(msg).toContain('💵 Por R$ 150,00');
     expect(msg).toContain('😱 25% OFF');
-    expect(msg).toContain('🏷️ Use o cupom: SHOPEE20');
+    expect(msg).toContain('🎟️ Use o Cupom: *SHOPEE20*');
     expect(msg).toContain('Compre aqui:');
     expect(msg).toContain('https://shope.ee/xyz123');
   });

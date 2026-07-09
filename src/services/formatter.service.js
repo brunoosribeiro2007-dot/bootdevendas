@@ -353,14 +353,64 @@ class FormatterService {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
 
-    // 🏷️ Enriquece cupom: se o produto não trouxer cupom do scraper,
-    // tenta injetar o melhor cupom do cache diário
-    if (!product.coupon || !product.coupon.trim()) {
-      const dailyCoupon = couponFetcher.getBestCouponForMessage();
-      if (dailyCoupon && dailyCoupon.code) {
-        product.coupon = dailyCoupon.code;
-        logger.debug(`[Formatter] Cupom do cache diário injetado: ${dailyCoupon.code}`);
+    const isShopee = String(product.id || '').startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
+
+    // Helper to validate if a string is a clean/valid coupon code
+    const isValidCouponCode = (c) => {
+      if (!c) return false;
+      const clean = c.trim();
+      if (/\s|%|R\$|off|desconto|grátis|gratis/i.test(clean)) {
+        return false;
       }
+      return /^[A-Z0-9_-]{3,20}$/i.test(clean);
+    };
+
+    // 🏷️ Enriquece cupom:
+    if (isShopee) {
+      // Para Shopee, apenas mantemos o cupom se já for um código válido
+      if (product.coupon && !isValidCouponCode(product.coupon)) {
+        product.coupon = '';
+      }
+    } else {
+      // Para Mercado Livre:
+      let resolvedCoupon = null;
+      const originalCoupon = product.coupon ? product.coupon.trim() : '';
+
+      if (isValidCouponCode(originalCoupon)) {
+        resolvedCoupon = originalCoupon;
+      } else {
+        // Se for uma etiqueta descritiva (ex: "Cupom 10% OFF"), tenta buscar cupom correspondente no cache diário
+        if (originalCoupon) {
+          const numbers = originalCoupon.match(/\d+/g);
+          if (numbers) {
+            const dailyCoupons = couponFetcher.getCachedCoupons() || [];
+            for (const numStr of numbers) {
+              const num = parseInt(numStr, 10);
+              const matched = dailyCoupons.find(c => {
+                if (!c.discount) return false;
+                const discountNum = parseInt(c.discount, 10);
+                return discountNum === num;
+              });
+              if (matched && matched.code) {
+                logger.debug(`[Formatter] Cupom label "${originalCoupon}" associado ao cupom do dia "${matched.code}" pelo desconto de ${num}%`);
+                resolvedCoupon = matched.code;
+                break;
+              }
+            }
+          }
+        }
+
+        // Se ainda não encontrou cupom correspondente, faz fallback para o melhor cupom do dia
+        if (!resolvedCoupon) {
+          const dailyCoupon = couponFetcher.getBestCouponForMessage();
+          if (dailyCoupon && dailyCoupon.code) {
+            logger.debug(`[Formatter] Injetando melhor cupom do dia: ${dailyCoupon.code}`);
+            resolvedCoupon = dailyCoupon.code;
+          }
+        }
+      }
+
+      product.coupon = resolvedCoupon || '';
     }
 
     // Formata preços no padrão brasileiro
@@ -369,7 +419,6 @@ class FormatterService {
       return value.toFixed(2).replace('.', ',');
     };
 
-    const isShopee = String(product.id || '').startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
     const shopeeHeaders = [
       'ACHADO DO DIA SHOPEE 🧡',
       'PROMOÇÃO EXCLUSIVA SHOPEE 🔥',
@@ -427,7 +476,7 @@ class FormatterService {
         cleanCoupon = cleanCoupon.substring(6).trim();
       }
       if (cleanCoupon) {
-        lines.push(`🎟️ Cupom: *${cleanCoupon.toUpperCase()}*`);
+        lines.push(`🎟️ Use o Cupom: *${cleanCoupon.toUpperCase()}*`);
       }
     }
 
