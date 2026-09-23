@@ -423,6 +423,31 @@ const resetStuckSendingItems = async () => {
     }
 };
 
+const getSetting = async (key) => {
+    try {
+        const row = await db.get('SELECT value FROM settings WHERE key = ?', [key]);
+        return row ? row.value : null;
+    } catch (e) {
+        logger.debug(`[Repository] Setting ${key} not found: ${e.message}`);
+        return null;
+    }
+};
+
+const setSetting = async (key, value) => {
+    try {
+        const query = `
+            INSERT INTO settings (key, value, updated_at) 
+            VALUES (?, ?, CURRENT_TIMESTAMP) 
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+        `;
+        await db.run(query, [key, value]);
+        return true;
+    } catch (e) {
+        logger.error(`[Repository] Error saving setting ${key}: ${e.message}`);
+        return false;
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -436,5 +461,8 @@ module.exports = {
   clearQueueOnly,
   resetSendingStatus,
   resetStuckSendingItems,
-  pruneOldProducts
+  pruneOldProducts,
+  getSetting,
+  setSetting
 };
+

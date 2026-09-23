@@ -349,6 +349,54 @@ class FormatterService {
     return `Imagem: ${product.imageUrl}\nTítulo: ${product.title}\nValor: R$ ${product.price.toFixed(2)}\nLink: ${link}`;
   }
 
+  generateHeadline(productTitle) {
+    if (!productTitle) return 'ACHADO IMPERDÍVEL';
+    const t = productTitle.toLowerCase();
+
+    if (/câmera|camera|cftv|filmadora|vigilância|segurança/i.test(t)) {
+      if (/4k|dupla lente|visão noturna/i.test(t)) return 'CÂMERA DE SEGURANÇA 4K';
+      return 'CÂMERA DE SEGURANÇA WI-FI';
+    }
+    if (/tricô|trico/i.test(t)) return 'TRICO PRA FICAR NO ESTILO';
+    if (/camiseta|camisa/i.test(t)) return 'CAMISA PRA FICAR NO ESTILO';
+    if (/tênis|tenis|sapato|calçado/i.test(t)) return 'TÊNIS CONFORTÁVEL PRA QUALQUER HORA';
+    if (/geladeira|refrigerador/i.test(t)) {
+      if (/frost free/i.test(t)) return 'GELADEIRA FROST FREE ESPAÇOSA';
+      return 'GELADEIRA PERFEITA PRA SUA COZINHA';
+    }
+    if (/air fryer|fritadeira/i.test(t)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
+    if (/micro-ondas|microondas/i.test(t)) return 'MICRO-ONDAS PRÁTICO E POTENTE';
+    if (/fogão|fogao|cooktop/i.test(t)) return 'COOKTOP MODERNO PRA SUA COZINHA';
+    if (/liquidificador/i.test(t)) return 'LIQUIDIFICADOR POTENTE E RESISTENTE';
+    if (/batedeira/i.test(t)) return 'BATEDEIRA PLANETÁRIA COMPLETA';
+    if (/cafeteira/i.test(t)) return 'CAFETEIRA PRA QUEM AMA CAFÉ';
+    if (/purificador|filtro de água/i.test(t)) return 'PURIFICADOR DE ÁGUA PRÁTICO';
+    if (/panela|panelas/i.test(t)) return 'JOGO DE PANELAS COMPLETO';
+    if (/smart tv|televis[aã]o|\btv\b/i.test(t)) return 'SMART TV COM IMAGEM DE CINEMA';
+    if (/soundbar|caixa de som/i.test(t)) return 'SOUNDBAR COM SOM DE CINEMA';
+    if (/aspirador/i.test(t)) {
+      if (/robô|robo/i.test(t)) return 'ASPIRADOR ROBÔ PRA LIMPAR TUDO';
+      return 'ASPIRADOR DE PÓ POTENTE';
+    }
+    if (/ventilador/i.test(t)) return 'VENTILADOR POTENTE E SILENCIOSO';
+    if (/ar-condicionado|ar condicionado/i.test(t)) return 'AR-CONDICIONADO PRA REFRESCAR';
+    if (/máquina de lavar|maquina de lavar|lava e seca/i.test(t)) return 'MÁQUINA DE LAVAR EFICIENTE';
+    if (/ferro de passar/i.test(t)) return 'FERRO DE PASSAR A VAPOR';
+    if (/adega|cervejeira/i.test(t)) return 'CERVEJEIRA PRA BEBIDAS GELADAS';
+    if (/colchão|colchao/i.test(t)) return 'COLCHÃO PRA DORMIR NAS NUVENS';
+    if (/parafusadeira|furadeira/i.test(t)) return 'PARAFUSADEIRA POTENTE PRA TUDO';
+
+    const cleanWords = productTitle
+      .replace(/[^\w\sÀ-ú]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !/^(com|para|pra|por|dos|das|que|uma|uns|sem|kit|pro|max)$/i.test(w))
+      .slice(0, 4)
+      .join(' ')
+      .toUpperCase();
+
+    return cleanWords || 'PRODUTO EM SUPER OFERTA';
+  }
+
   async generateFormattedMessage(product, finalLink = null) {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
@@ -362,114 +410,108 @@ class FormatterService {
       if (/\s|%|R\$|off|desconto|grátis|gratis/i.test(clean)) {
         return false;
       }
-      return /^[A-Z0-9_-]{3,20}$/i.test(clean);
+      return /^[A-Z0-9_-]{3,25}$/i.test(clean);
     };
 
-    // 🏷️ Enriquece cupom:
-    if (isShopee) {
-      // Para Shopee, apenas mantemos o cupom se já for um código válido
-      if (product.coupon && !isValidCouponCode(product.coupon)) {
-        product.coupon = '';
-      }
-    } else {
-      // Para Mercado Livre:
-      let resolvedCoupon = null;
-      const originalCoupon = product.coupon ? product.coupon.trim() : '';
-
-      if (isValidCouponCode(originalCoupon)) {
-        resolvedCoupon = originalCoupon;
-      } else {
-        // Se for uma etiqueta descritiva (ex: "Cupom 10% OFF"), tenta buscar cupom correspondente no cache diário
-        if (originalCoupon) {
-          const numbers = originalCoupon.match(/\d+/g);
-          if (numbers) {
-            const dailyCoupons = couponFetcher.getCachedCoupons() || [];
-            for (const numStr of numbers) {
-              const num = parseInt(numStr, 10);
-              const matched = dailyCoupons.find(c => {
-                if (!c.discount) return false;
-                const discountNum = parseInt(c.discount, 10);
-                return discountNum === num;
-              });
-              if (matched && matched.code) {
-                logger.debug(`[Formatter] Cupom label "${originalCoupon}" associado ao cupom do dia "${matched.code}" pelo desconto de ${num}%`);
-                resolvedCoupon = matched.code;
-                break;
-              }
-            }
-          }
-        }
-
-        // Se ainda não encontrou cupom correspondente, faz fallback para o melhor cupom do dia
-        if (!resolvedCoupon) {
-          const dailyCoupon = couponFetcher.getBestCouponForMessage();
-          if (dailyCoupon && dailyCoupon.code) {
-            logger.debug(`[Formatter] Injetando melhor cupom do dia: ${dailyCoupon.code}`);
-            resolvedCoupon = dailyCoupon.code;
-          }
-        }
-      }
-
-      product.coupon = resolvedCoupon || '';
-    }
-
-    // Formata preços no padrão brasileiro
+    // Formata preços no padrão brasileiro (inteiro sem centavos desnecessários)
     const formatPrice = (value) => {
       if (value === null || value === undefined) return '';
+      if (Number.isInteger(value)) {
+        return value.toString();
+      }
       return value.toFixed(2).replace('.', ',');
     };
 
-    const shopeeHeaders = [
-      'ACHADO DO DIA SHOPEE 🧡',
-      'PROMOÇÃO EXCLUSIVA SHOPEE 🔥',
-      'SÓ HOJE NA SHOPEE ⚡',
-      'OLHA ESSE PRECINHO NA SHOPEE! 👀',
-      'DESCONTO ARRASADOR SHOPEE 💥',
-      'SHOPEE ARRASA 🧡',
-      'OFERTA IMPERDÍVEL SHOPEE 🔥',
-      'PREÇO BAIXO DE VERDADE SHOPEE 💸',
-      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
-      'ACHADO IMPERDÍVEL SHOPEE 💎'
-    ];
-    const headers = [
-      'MERCADO LIVRE ARRASA 💛',
-      'OFERTA IMPERDÍVEL 🔥',
-      'ACHADO DO DIA 🎯',
-      'PREÇO BAIXO DE VERDADE 💸',
-      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
-      'PROMOÇÃO EXCLUSIVA 🌟',
-      'DESCONTO ARRASADOR 💥',
-      'SÓ HOJE NO MERCADO LIVRE ⚡',
-      'OLHA ESSE PRECINHO! 👀',
-      'ACHADO IMPERDÍVEL 💎'
-    ];
-    const headline = isShopee 
-      ? shopeeHeaders[Math.floor(Math.random() * shopeeHeaders.length)]
-      : headers[Math.floor(Math.random() * headers.length)];
+    if (isShopee) {
+      if (product.coupon && !isValidCouponCode(product.coupon)) {
+        product.coupon = '';
+      }
+
+      const formatShopeePrice = (value) => {
+        if (value === null || value === undefined) return '';
+        return value.toFixed(2).replace('.', ',');
+      };
+
+      const shopeeHeaders = [
+        'ACHADO DO DIA SHOPEE 🧡',
+        'PROMOÇÃO EXCLUSIVA SHOPEE 🔥',
+        'SÓ HOJE NA SHOPEE ⚡',
+        'OLHA ESSE PRECINHO NA SHOPEE! 👀',
+        'DESCONTO ARRASADOR SHOPEE 💥',
+        'SHOPEE ARRASA 🧡',
+        'OFERTA IMPERDÍVEL SHOPEE 🔥',
+        'PREÇO BAIXO DE VERDADE SHOPEE 💸',
+        'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
+        'ACHADO IMPERDÍVEL SHOPEE 💎'
+      ];
+      const headline = shopeeHeaders[Math.floor(Math.random() * shopeeHeaders.length)];
+
+      const lines = [];
+      lines.push(headline);
+      lines.push('');
+      lines.push(`🛍️ ${product.title}`);
+      lines.push('');
+
+      const oldPrice = product.oldPrice !== undefined ? product.oldPrice : product.old_price;
+      if (oldPrice && oldPrice > currentPrice) {
+        lines.push(`De ~R$ ${formatShopeePrice(oldPrice)}~`);
+      }
+
+      lines.push(`💵 Por R$ ${formatShopeePrice(currentPrice)}`);
+
+      let discountPercent = product.discountPercent !== undefined ? product.discountPercent : product.discount_percent;
+      if (!discountPercent && oldPrice && oldPrice > currentPrice) {
+        discountPercent = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
+      }
+
+      if (discountPercent && discountPercent > 0) {
+        lines.push(`😱 ${discountPercent}% OFF`);
+      }
+
+      if (product.coupon) {
+        let cleanCoupon = product.coupon.trim();
+        if (cleanCoupon.toLowerCase().startsWith('cupom ')) {
+          cleanCoupon = cleanCoupon.substring(6).trim();
+        }
+        if (cleanCoupon) {
+          lines.push(`🎟️ Use o Cupom: *${cleanCoupon.toUpperCase()}*`);
+        }
+      }
+
+      lines.push('');
+      lines.push('🛒 Compre aqui:');
+      lines.push(link);
+
+      return lines.join('\n');
+    }
+
+    // 🏷️ MERCADO LIVRE: Título em destaque no topo, título original, preço, cupom em negrito, link na mesma linha
+    let resolvedCoupon = null;
+    try {
+      resolvedCoupon = await couponFetcher.resolveCouponForProduct(product);
+    } catch (e) {
+      logger.debug('[Formatter] Erro ao resolver cupom para produto:', e.message);
+    }
+
+    if (!resolvedCoupon && product.coupon && isValidCouponCode(product.coupon)) {
+      resolvedCoupon = product.coupon.trim().toUpperCase();
+    }
+
+    product.coupon = resolvedCoupon || '';
+
+    const headline = this.generateHeadline(product.title);
 
     const lines = [];
+    // 1. Título / Chamada em destaque no topo (sem negrito)
     lines.push(headline);
-    lines.push(``);
-    lines.push(`🛍️ ${product.title}`);
-    lines.push(``);
+    lines.push('');
+    // 2. Título original do produto sem alterações (sem negrito)
+    lines.push(product.title.trim());
+    lines.push('');
+    // 3. Preço (sem negrito)
+    lines.push(`💸 Por: R$ ${formatPrice(currentPrice)}`);
 
-    const oldPrice = product.oldPrice !== undefined ? product.oldPrice : product.old_price;
-    if (oldPrice && oldPrice > currentPrice) {
-      lines.push(`De ~R$ ${formatPrice(oldPrice)}~`);
-    }
-
-    lines.push(`💵 Por R$ ${formatPrice(currentPrice)}`);
-
-    let discountPercent = product.discountPercent !== undefined ? product.discountPercent : product.discount_percent;
-    if (!discountPercent && oldPrice && oldPrice > currentPrice) {
-      discountPercent = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
-    }
-
-    if (discountPercent && discountPercent > 0) {
-      lines.push(`😱 ${discountPercent}% OFF`);
-    }
-
-    // Adiciona cupom disponível (antes do link)
+    // 4. Cupom em negrito!
     if (product.coupon) {
       let cleanCoupon = product.coupon.trim();
       if (cleanCoupon.toLowerCase().startsWith('cupom ')) {
@@ -480,9 +522,9 @@ class FormatterService {
       }
     }
 
-    lines.push(``);
-    lines.push(`🛒 Compre aqui:`);
-    lines.push(link);
+    lines.push('');
+    // 5. Link de compra (sem negrito)
+    lines.push(`🛒 Compre aqui: ${link}`);
 
     return lines.join('\n');
   }

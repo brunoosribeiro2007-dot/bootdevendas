@@ -58,7 +58,10 @@ const startServer = async () => {
         logger.error('⚠️ Falha ao iniciar WhatsApp:', err.message);
     });
 
-    // ✅ PASSO 4: Jobs agendados
+    // ✅ PASSO 4: Jobs agendados e pré-carregamento de cupons
+    const couponFetcher = require('./services/couponFetcher.service');
+    couponFetcher.fetchDailyCoupons().catch(e => logger.warn('⚠️ Erro ao pré-carregar cupons do dia no boot: ' + e.message));
+
     startCleanupJob();
     startCaptureJob();
     startPublishJob();

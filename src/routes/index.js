@@ -99,7 +99,8 @@ router.get('/coupons/daily', async (req, res) => {
     try {
         const coupons = couponFetcher.getCachedCoupons();
         const cacheInfo = couponFetcher.getCacheInfo();
-        res.json({ coupons, cacheInfo });
+        const activeCoupon = await couponFetcher.getActiveDailyCoupon();
+        res.json({ coupons, cacheInfo, activeCoupon });
     } catch (err) {
         logger.error('Erro ao buscar cupons diários:', err);
         res.status(500).json({ error: err.message });
@@ -110,10 +111,32 @@ router.get('/coupons/daily', async (req, res) => {
 router.get('/coupons/daily/refresh', async (req, res) => {
     try {
         logger.info('[API] Refresh manual de cupons do dia solicitado.');
-        res.json({ message: 'Refresh de cupons iniciado em background.' });
         couponFetcher.fetchDailyCoupons(true).catch(e => logger.warn(`Erro no refresh de cupons: ${e.message}`));
+        res.json({ message: 'Refresh de cupons iniciado em background.' });
     } catch (err) {
         logger.error('Erro ao iniciar refresh de cupons:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Obter cupom ativo atual
+router.get('/coupons/active', async (req, res) => {
+    try {
+        const active = await couponFetcher.getActiveDailyCoupon();
+        res.json({ activeCoupon: active });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Definir manualmente o cupom ativo do dia (ou limpar para modo automático)
+router.post('/coupons/active', async (req, res) => {
+    try {
+        const { coupon } = req.body;
+        await couponFetcher.setActiveDailyCoupon(coupon);
+        const active = await couponFetcher.getActiveDailyCoupon();
+        res.json({ success: true, activeCoupon: active, message: active ? `Cupom ${active} ativado com sucesso!` : 'Modo automático reativado!' });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

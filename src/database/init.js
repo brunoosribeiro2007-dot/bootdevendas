@@ -136,6 +136,12 @@ const DDL = {
             id TEXT PRIMARY KEY,
             data BYTEA NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+    settings: `
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
 };
 
@@ -188,6 +194,7 @@ const runSqliteDDL = () => {
         logger.error('🗃️ SQLite: Erro ao migrar tabela "queue": ' + migErr.message);
     }
     sqliteDb.exec(DDL.sessions);
+    sqliteDb.exec(DDL.settings);
 };
 
 const initializeDB = async () => {
@@ -229,6 +236,7 @@ const initializeDB = async () => {
                 } catch (e) {}
                 await pool.query(DDL.queuePostgres);
                 await pool.query(DDL.sessionsPostgres);
+                await pool.query(DDL.settings);
             } catch (pgErr) {
                 logger.error(`❌ Erro ao conectar/inicializar Postgres (${pgErr.message}). Fazendo fallback para SQLite local...`);
                 USE_POSTGRES = false;

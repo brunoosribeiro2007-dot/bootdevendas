@@ -18,7 +18,7 @@ describe('Formatter Service', () => {
     expect(msg).toContain(mockProduct.description);
   });
 
-  test('generateFormattedMessage should include correct clean message fields', async () => {
+  test('generateFormattedMessage should include correct clean message fields for Mercado Livre', async () => {
     const productWithPromo = {
       ...mockProduct,
       oldPrice: 2499.99,
@@ -27,25 +27,26 @@ describe('Formatter Service', () => {
     };
     
     const msg = await formatterService.generateFormattedMessage(productWithPromo);
-    const headers = [
-      'MERCADO LIVRE ARRASA 💛',
-      'OFERTA IMPERDÍVEL 🔥',
-      'ACHADO DO DIA 🎯',
-      'PREÇO BAIXO DE VERDADE 💸',
-      'CORRE QUE VAI ACABAR! 🏃‍♂️💨',
-      'PROMOÇÃO EXCLUSIVA 🌟',
-      'DESCONTO ARRASADOR 💥',
-      'SÓ HOJE NO MERCADO LIVRE ⚡',
-      'OLHA ESSE PRECINHO! 👀',
-      'ACHADO IMPERDÍVEL 💎'
-    ];
-    const hasHeader = headers.some(h => msg.includes(h));
-    expect(hasHeader).toBe(true);
     expect(msg).toContain(productWithPromo.title);
-    expect(msg).toContain('De ~R$ 2499,99~');
-    expect(msg).toContain('💵 Por R$ 1999,99');
-    expect(msg).toContain('😱 20% OFF');
+    expect(msg).toContain('💸 Por: R$ 1999,99');
     expect(msg).toContain('🎟️ Use o Cupom: *CUPOM50*');
-    expect(msg).toContain('Compre aqui:');
+    expect(msg).toContain('🛒 Compre aqui:');
+  });
+
+  test('generateFormattedMessage should format integer prices and headlines like TRICO PRA FICAR NO ESTILO', async () => {
+    const productIntegerPrice = {
+      title: 'Camiseta Tricô Modal Canelada',
+      price: 55,
+      link: 'https://meli.la/2bsigWb',
+      imageUrl: 'http://image.com/trico.jpg',
+      coupon: 'MELHORCUPOM'
+    };
+
+    const msg = await formatterService.generateFormattedMessage(productIntegerPrice);
+    expect(msg).toContain('TRICO PRA FICAR NO ESTILO');
+    expect(msg).toContain('Camiseta Tricô Modal Canelada');
+    expect(msg).toContain('💸 Por: R$ 55');
+    expect(msg).toContain('🎟️ Use o Cupom: *MELHORCUPOM*');
+    expect(msg).toContain('🛒 Compre aqui: https://meli.la/2bsigWb');
   });
 });
