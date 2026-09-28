@@ -12,16 +12,46 @@ describe('CouponFetcher Service & Daily Expiration', () => {
     expect(active).toBe('CUPOMHOJE10');
   });
 
+  test('deve rejeitar cupons bloqueados como TUDOPARACASA', async () => {
+    const success = await couponFetcher.setActiveDailyCoupon('TUDOPARACASA');
+    expect(success).toBe(false);
+    const active = await couponFetcher.getActiveDailyCoupon();
+    expect(active).toBeNull();
+  });
+
   test('resolveCouponForProduct deve priorizar cupom manual ativo do dia', async () => {
     await couponFetcher.setActiveDailyCoupon('CUPOMTOP20');
     const mockProduct = {
       title: 'Fritadeira Air Fryer',
       price: 299,
-      coupon: 'CUPOMVELHO'
+      coupon: 'MELI10'
     };
 
     const resolved = await couponFetcher.resolveCouponForProduct(mockProduct);
     expect(resolved).toBe('CUPOMTOP20');
+  });
+
+  test('resolveCouponForProduct deve retornar null se não houver cupom manual e produto não tiver cupom', async () => {
+    await couponFetcher.setActiveDailyCoupon(null);
+    const mockProduct = {
+      title: 'Fritadeira Air Fryer',
+      price: 299
+    };
+
+    const resolved = await couponFetcher.resolveCouponForProduct(mockProduct);
+    expect(resolved).toBeNull();
+  });
+
+  test('resolveCouponForProduct deve ignorar se produto tiver TUDOPARACASA', async () => {
+    await couponFetcher.setActiveDailyCoupon(null);
+    const mockProduct = {
+      title: 'Fritadeira Air Fryer',
+      price: 299,
+      coupon: 'TUDOPARACASA'
+    };
+
+    const resolved = await couponFetcher.resolveCouponForProduct(mockProduct);
+    expect(resolved).toBeNull();
   });
 
   test('deve permitir desativar o cupom manual', async () => {
@@ -31,7 +61,6 @@ describe('CouponFetcher Service & Daily Expiration', () => {
 
     await couponFetcher.setActiveDailyCoupon(null);
     active = await couponFetcher.getActiveDailyCoupon();
-    // Sem cupom manual, não deve retornar TESTE123
-    expect(active).not.toBe('TESTE123');
+    expect(active).toBeNull();
   });
 });

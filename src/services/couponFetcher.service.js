@@ -18,6 +18,24 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
 let inMemoryActiveCoupon = null;
 let inMemoryActiveCouponDate = null; // Data (YYYY-MM-DD) em que o cupom foi armazenado em memória
 
+const BLOCKED_COUPON_CODES = new Set([
+  'TUDOPARACASA', 'ILUMINESUACASA', 'CASAESADE', 'MELHORESOFERTAS',
+  'ACESSRIOSPRAVOC', 'ITENSPARASUAMOTO', 'SOPAULOAUTOPEAS', 'VERECOMPRAR2024',
+  'CAMAINBOXLOJAOFICIAL', 'OOCEANDROPSA97032', 'UNIVERSALCASES2', 'BLMOTOPARTS',
+  'SAOPAULOACESSORIOS', 'ANIMAFESTCAMPINAS', 'BRIMPORTSPEAS', 'SHOPFLEXCOM',
+  'CASA', 'LAR', 'ELETRO', 'OFF', 'CUPOM', 'DESCONTO', 'PRODUTO', 'PRODUTOS',
+  'SELECIONADOS', 'COMPRA', 'MINIMA', 'SEMCOMPRA', 'FRETE'
+]);
+
+function isValidRealCouponCode(c) {
+  if (!c || typeof c !== 'string') return false;
+  const clean = c.trim().toUpperCase();
+  if (clean.length < 3 || clean.length > 20) return false;
+  if (BLOCKED_COUPON_CODES.has(clean)) return false;
+  if (/^(OFF|\d+OFF|R\$\d+|DESCONTO|CUPOM)$/i.test(clean)) return false;
+  return /^[A-Z0-9_-]+$/.test(clean);
+}
+
 /**
  * Retorna a data atual no fuso de Brasília (America/Sao_Paulo) no formato YYYY-MM-DD.
  */
@@ -182,24 +200,19 @@ async function fetchFromHtml() {
           title = fullText.substring(0, 40);
         }
 
-        // Extrai código ou termo chave
+        // Código explícito: apenas se houver tag específica de código ou "código: XYZ"
         let code = '';
-        const wordsMatch = fullText.match(/Cupom(?:\s+ativado\s+de)?\s+(?:R\$[\d,.]+|\d+%)?\s*OFF\s*(?:em\s+)?([A-Z0-9_À-Ú\s\.\-]+?)(?:Em produtos|Compra m|Sem compra|$)/i);
-        if (wordsMatch && wordsMatch[1]) {
-          const candidate = wordsMatch[1].trim()
-            .replace(/produtos de\s*/i, '')
-            .replace(/[^A-Za-z0-9]/g, '')
-            .toUpperCase();
-          if (candidate.length >= 3 && candidate.length <= 25) {
-            code = candidate;
+        const explicitCodeEl = $(el).find('.coupon-card__code, [class*="coupon-code"], [class*="coupon__code"]');
+        if (explicitCodeEl.length > 0) {
+          code = explicitCodeEl.text().trim().replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
+        } else {
+          const matchCode = fullText.match(/(?:c[oó]digo|cupom):\s*([A-Za-z0-9_-]{3,20})/i);
+          if (matchCode) {
+            code = matchCode[1].toUpperCase();
           }
         }
 
-        if (!code && discount) {
-          code = discount.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        }
-
-        if (code && !found.find(c => c.code === code)) {
+        if (code && isValidRealCouponCode(code) && !found.find(c => c.code === code)) {
           found.push({
             code,
             title,
@@ -226,11 +239,11 @@ async function fetchFromHtml() {
       for (const sel of pillSelectors) {
         $(sel).each((_, el) => {
           const text = $(el).text().replace(/\s+/g, ' ').trim();
-          const codeMatch = text.match(/\b([A-Z0-9]{4,20})\b/g);
+          const codeMatch = text.match(/\b([A-Z0-9_-]{4,15})\b/g);
           if (codeMatch) {
             for (const code of codeMatch) {
               const cleanCode = code.trim().toUpperCase();
-              if (!found.find(c => c.code === cleanCode)) {
+              if (isValidRealCouponCode(cleanCode) && !found.find(c => c.code === cleanCode)) {
                 found.push({
                   code: cleanCode,
                   title: text,
@@ -310,23 +323,20 @@ function getCachedCoupons() {
 
 /**
  * Retorna o Cupom Ativo do Dia.
- * Prioridade:
- * 1. Cupom definido manualmente em memória / settings / .env
- * 2. Melhor cupom do cache automático do Mercado Livre
+ * Retorna APENAS se houver cupom manual definido pelo usuário ou configurado no ambiente para hoje.
+ * Se nenhum cupom manual estiver ativo, retorna null (modo automático, sem forçar cupons inventados).
  */
 async function getActiveDailyCoupon() {
   const today = getTodayDateStr();
 
-  // Cupom em memória só é válido se foi definido hoje
-  if (inMemoryActiveCoupon && inMemoryActiveCouponDate === today) {
-    return inMemoryActiveCoupon;
-  }
-
-  // Invalida cache de memória se for de outro dia
-  if (inMemoryActiveCouponDate && inMemoryActiveCouponDate !== today) {
-    logger.info('[CouponFetcher] 📅 Novo dia detectado — invalidando cupom manual em memória.');
-    inMemoryActiveCoupon = null;
-    inMemoryActiveCouponDate = null;
+  // Cupom em memória só é válido se foi definido hoje e não estiver na lista de bloqueados
+  if (inMemoryActiveCoupon) {
+    if (BLOCKED_COUPON_CODES.has(inMemoryActiveCoupon) || inMemoryActiveCouponDate !== today) {
+      inMemoryActiveCoupon = null;
+      inMemoryActiveCouponDate = null;
+    } else {
+      return inMemoryActiveCoupon;
+    }
   }
 
   if (process.env.NODE_ENV !== 'test') {
@@ -334,19 +344,23 @@ async function getActiveDailyCoupon() {
       const repository = require('../database/repository');
       const raw = await repository.getSetting('active_daily_coupon');
       if (raw && raw.trim()) {
-        // Formato esperado no banco: "YYYY-MM-DD|CODIGO" (com data) ou código simples (legado)
         const parts = raw.trim().split('|');
+        let codeCandidate = null;
         if (parts.length === 2 && parts[0] === today) {
-          inMemoryActiveCoupon = parts[1].toUpperCase();
+          codeCandidate = parts[1].toUpperCase();
+        } else if (parts.length === 1 && parts[0]) {
+          codeCandidate = parts[0].toUpperCase();
+        }
+
+        if (codeCandidate && !BLOCKED_COUPON_CODES.has(codeCandidate)) {
+          inMemoryActiveCoupon = codeCandidate;
           inMemoryActiveCouponDate = today;
           return inMemoryActiveCoupon;
-        } else if (parts.length === 2 && parts[0] !== today) {
-          logger.info(`[CouponFetcher] 📅 Cupom do banco é de outro dia (${parts[0]}). Ignorando.`);
-        } else if (parts.length === 1) {
-          // Formato legado sem data — usa mas não armazena data para forçar renovação
-          inMemoryActiveCoupon = parts[0].toUpperCase();
-          inMemoryActiveCouponDate = today;
-          return inMemoryActiveCoupon;
+        } else if (codeCandidate && BLOCKED_COUPON_CODES.has(codeCandidate)) {
+          // Limpa do banco se for cupom inválido como TUDOPARACASA
+          await repository.setSetting('active_daily_coupon', '');
+          inMemoryActiveCoupon = null;
+          inMemoryActiveCouponDate = null;
         }
       }
     } catch (e) {
@@ -356,14 +370,16 @@ async function getActiveDailyCoupon() {
 
   const envCoupon = process.env.ML_DAILY_COUPON || env.mlDailyCoupon;
   if (envCoupon && envCoupon.trim()) {
-    inMemoryActiveCoupon = envCoupon.trim().toUpperCase();
-    inMemoryActiveCouponDate = today;
-    return inMemoryActiveCoupon;
+    const cleanEnv = envCoupon.trim().toUpperCase();
+    if (!BLOCKED_COUPON_CODES.has(cleanEnv)) {
+      inMemoryActiveCoupon = cleanEnv;
+      inMemoryActiveCouponDate = today;
+      return inMemoryActiveCoupon;
+    }
   }
 
-  // Fallback para o melhor cupom em cache
-  const best = getBestCouponForMessage();
-  return best ? best.code : null;
+  // ⚠️ Sem cupom manual forçado: retorna null (dashboard exibe modo Automático)
+  return null;
 }
 
 /**
@@ -372,6 +388,20 @@ async function getActiveDailyCoupon() {
 async function setActiveDailyCoupon(code) {
   const clean = code ? String(code).trim().toUpperCase() : null;
   const today = getTodayDateStr();
+
+  if (clean && BLOCKED_COUPON_CODES.has(clean)) {
+    logger.warn(`[CouponFetcher] ⚠️ Tentativa de ativar cupom bloqueado (${clean}). Desativando cupom manual.`);
+    inMemoryActiveCoupon = null;
+    inMemoryActiveCouponDate = null;
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        const repository = require('../database/repository');
+        await repository.setSetting('active_daily_coupon', '');
+      } catch (e) {}
+    }
+    return false;
+  }
+
   inMemoryActiveCoupon = clean;
   inMemoryActiveCouponDate = clean ? today : null;
 
@@ -402,127 +432,45 @@ async function setActiveDailyCoupon(code) {
 function getBestCouponForMessage() {
   if (couponCache.length === 0) return null;
   
-  // Prioriza cupons da categoria Casa/Itens para casa
+  // Prioriza cupons da categoria Casa/Itens para casa válidos
   const homeCoupons = couponCache.filter(c => 
-    (c.title && /casa|lar|eletro|refrigerador|cozinha/i.test(c.title)) ||
-    (c.code && /CASA|LAR|ELETRO/i.test(c.code))
+    isValidRealCouponCode(c.code) &&
+    ((c.title && /casa|lar|eletro|refrigerador|cozinha/i.test(c.title)) ||
+     (c.code && /CASA|LAR|ELETRO/i.test(c.code)))
   );
   if (homeCoupons.length > 0) {
     return homeCoupons[0];
   }
 
-  // Prioriza cupons gerais com desconto
-  const withDiscount = couponCache.filter(c => c.discount);
-  return withDiscount.length > 0 ? withDiscount[0] : couponCache[0];
+  // Prioriza cupons gerais válidos com desconto
+  const validCoupons = couponCache.filter(c => isValidRealCouponCode(c.code));
+  const withDiscount = validCoupons.filter(c => c.discount);
+  return withDiscount.length > 0 ? withDiscount[0] : (validCoupons[0] || null);
 }
 
 /**
  * Resolve o cupom mais apropriado para um produto específico.
- * Analisa o cupom do produto, o cupom ativo manual e os cupons capturados do dia no Mercado Livre.
+ * 1. Prioriza cupom ativo diário configurado manualmente para hoje
+ * 2. Utiliza cupom real legítimo do próprio anúncio do produto (se houver)
+ * 3. Se não houver cupom, retorna null (NÃO inventa cupom falso em produtos)
  */
 async function resolveCouponForProduct(product) {
-  // 1. Verifica se há cupom ativo definido manualmente (tem prioridade máxima)
-  let activeManual = null;
-  const todayStr = getTodayDateStr();
-
-  if (inMemoryActiveCoupon && inMemoryActiveCouponDate === todayStr) {
-    activeManual = inMemoryActiveCoupon;
-  } else {
-    // Invalida cache de memória se for de outro dia
-    if (inMemoryActiveCouponDate && inMemoryActiveCouponDate !== todayStr) {
-      inMemoryActiveCoupon = null;
-      inMemoryActiveCouponDate = null;
-    }
-
-    if (process.env.NODE_ENV !== 'test') {
-      try {
-        const repository = require('../database/repository');
-        const raw = await repository.getSetting('active_daily_coupon');
-        if (raw && raw.trim()) {
-          const parts = raw.trim().split('|');
-          if (parts.length === 2 && parts[0] === todayStr) {
-            activeManual = parts[1].toUpperCase();
-            inMemoryActiveCoupon = activeManual;
-            inMemoryActiveCouponDate = todayStr;
-          } else if (parts.length === 1 && parts[0]) {
-            // Formato legado
-            activeManual = parts[0].toUpperCase();
-            inMemoryActiveCoupon = activeManual;
-            inMemoryActiveCouponDate = todayStr;
-          }
-        }
-      } catch (e) {}
-    }
-    if (!activeManual) {
-      const envCoupon = process.env.ML_DAILY_COUPON || env.mlDailyCoupon;
-      if (envCoupon && envCoupon.trim()) {
-        activeManual = envCoupon.trim().toUpperCase();
-      }
-    }
+  // 1. Verifica se há cupom ativo manual configurado para hoje
+  const activeDaily = await getActiveDailyCoupon();
+  if (activeDaily) {
+    return activeDaily;
   }
 
-  if (activeManual) {
-    return activeManual;
-  }
-
-  // 2. Se o produto veio com cupom específico do anúncio do Mercado Livre
+  // 2. Se o próprio anúncio veio com um cupom real
   if (product && product.coupon) {
-    const raw = String(product.coupon).trim();
-    // Se for código limpo (ex: "MELHORCUPOM", "LIQUIDA15")
-    if (/^[A-Z0-9_-]{3,25}$/i.test(raw) && !/\s|off|desconto|r\$/i.test(raw)) {
-      return raw.toUpperCase();
-    }
-
-    // Se for label tipo "Cupom 10% OFF" ou "R$ 20 OFF"
-    const numbers = raw.match(/\d+/g);
-    if (numbers && couponCache.length > 0) {
-      for (const numStr of numbers) {
-        const num = parseInt(numStr, 10);
-        const matched = couponCache.find(c => {
-          if (!c.discount) return false;
-          return parseInt(c.discount, 10) === num;
-        });
-        if (matched && matched.code) {
-          return matched.code;
-        }
-      }
+    const raw = String(product.coupon).trim().toUpperCase();
+    if (isValidRealCouponCode(raw)) {
+      return raw;
     }
   }
 
-  // 3. Busca o melhor cupom do dia capturado do ML compatível com o produto
-  if (couponCache.length > 0 && product && product.price) {
-    const price = product.price;
-    const title = (product.title || '').toLowerCase();
-
-    // Filtra cupons elegíveis pelo valor mínimo de compra
-    const eligible = couponCache.filter(c => !c.minAmount || price >= c.minAmount);
-    if (eligible.length > 0) {
-      // Tenta casamento por termo do produto (ex: refrigerador, casa, cama, mesa)
-      const categoryMatch = eligible.find(c => {
-        const cText = `${c.title || ''} ${c.code || ''}`.toLowerCase();
-        if (/refrigerador|geladeira/i.test(title) && /refrigerador/i.test(cText)) return true;
-        if (/panela|fogao|forno|air fryer|liquidificador|batedeira|cafeteira/i.test(title) && /casa|cozinha|lar/i.test(cText)) return true;
-        if (/colchao|cama|travesseiro/i.test(title) && /colch|cama|moveis/i.test(cText)) return true;
-        return false;
-      });
-
-      if (categoryMatch && categoryMatch.code) {
-        return categoryMatch.code;
-      }
-
-      // Fallback para cupom geral elegível
-      const general = eligible.find(c => /MELHOR|OFERTA|DESCONTO|CASA/i.test(c.code || c.title || ''));
-      if (general && general.code) {
-        return general.code;
-      }
-
-      return eligible[0].code;
-    }
-  }
-
-  // 4. Último fallback: melhor cupom em cache geral
-  const best = getBestCouponForMessage();
-  return best ? best.code : null;
+  // 3. Sem cupom real: não usa cupom
+  return null;
 }
 
 /**
