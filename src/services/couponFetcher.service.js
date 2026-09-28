@@ -16,6 +16,14 @@ let couponCache = [];
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
 let inMemoryActiveCoupon = null;
+let inMemoryActiveCouponDate = null; // Data (YYYY-MM-DD) em que o cupom foi armazenado em memória
+
+/**
+ * Retorna a data atual no fuso de Brasília (America/Sao_Paulo) no formato YYYY-MM-DD.
+ */
+function getTodayDateStr() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+}
 
 /**
  * Obtém os cookies salvos para autenticação no Mercado Livre.
@@ -307,17 +315,39 @@ function getCachedCoupons() {
  * 2. Melhor cupom do cache automático do Mercado Livre
  */
 async function getActiveDailyCoupon() {
-  if (inMemoryActiveCoupon) {
+  const today = getTodayDateStr();
+
+  // Cupom em memória só é válido se foi definido hoje
+  if (inMemoryActiveCoupon && inMemoryActiveCouponDate === today) {
     return inMemoryActiveCoupon;
+  }
+
+  // Invalida cache de memória se for de outro dia
+  if (inMemoryActiveCouponDate && inMemoryActiveCouponDate !== today) {
+    logger.info('[CouponFetcher] 📅 Novo dia detectado — invalidando cupom manual em memória.');
+    inMemoryActiveCoupon = null;
+    inMemoryActiveCouponDate = null;
   }
 
   if (process.env.NODE_ENV !== 'test') {
     try {
       const repository = require('../database/repository');
-      const dbCoupon = await repository.getSetting('active_daily_coupon');
-      if (dbCoupon && dbCoupon.trim()) {
-        inMemoryActiveCoupon = dbCoupon.trim().toUpperCase();
-        return inMemoryActiveCoupon;
+      const raw = await repository.getSetting('active_daily_coupon');
+      if (raw && raw.trim()) {
+        // Formato esperado no banco: "YYYY-MM-DD|CODIGO" (com data) ou código simples (legado)
+        const parts = raw.trim().split('|');
+        if (parts.length === 2 && parts[0] === today) {
+          inMemoryActiveCoupon = parts[1].toUpperCase();
+          inMemoryActiveCouponDate = today;
+          return inMemoryActiveCoupon;
+        } else if (parts.length === 2 && parts[0] !== today) {
+          logger.info(`[CouponFetcher] 📅 Cupom do banco é de outro dia (${parts[0]}). Ignorando.`);
+        } else if (parts.length === 1) {
+          // Formato legado sem data — usa mas não armazena data para forçar renovação
+          inMemoryActiveCoupon = parts[0].toUpperCase();
+          inMemoryActiveCouponDate = today;
+          return inMemoryActiveCoupon;
+        }
       }
     } catch (e) {
       logger.debug('[CouponFetcher] Erro ao ler active_daily_coupon do banco: ' + e.message);
@@ -327,6 +357,7 @@ async function getActiveDailyCoupon() {
   const envCoupon = process.env.ML_DAILY_COUPON || env.mlDailyCoupon;
   if (envCoupon && envCoupon.trim()) {
     inMemoryActiveCoupon = envCoupon.trim().toUpperCase();
+    inMemoryActiveCouponDate = today;
     return inMemoryActiveCoupon;
   }
 
@@ -340,14 +371,17 @@ async function getActiveDailyCoupon() {
  */
 async function setActiveDailyCoupon(code) {
   const clean = code ? String(code).trim().toUpperCase() : null;
+  const today = getTodayDateStr();
   inMemoryActiveCoupon = clean;
+  inMemoryActiveCouponDate = clean ? today : null;
 
   if (process.env.NODE_ENV !== 'test') {
     try {
       const repository = require('../database/repository');
       if (clean) {
-        await repository.setSetting('active_daily_coupon', clean);
-        logger.info(`[CouponFetcher] 🎯 Cupom diário ativo definido: ${clean}`);
+        // Salva no formato "YYYY-MM-DD|CODIGO" para permitir expiração diária
+        await repository.setSetting('active_daily_coupon', `${today}|${clean}`);
+        logger.info(`[CouponFetcher] 🎯 Cupom diário ativo definido: ${clean} (válido para ${today})`);
       } else {
         await repository.setSetting('active_daily_coupon', '');
         logger.info('[CouponFetcher] ℹ️ Cupom diário manual desativado (modo automático)');
@@ -389,16 +423,33 @@ function getBestCouponForMessage() {
 async function resolveCouponForProduct(product) {
   // 1. Verifica se há cupom ativo definido manualmente (tem prioridade máxima)
   let activeManual = null;
-  if (inMemoryActiveCoupon) {
+  const todayStr = getTodayDateStr();
+
+  if (inMemoryActiveCoupon && inMemoryActiveCouponDate === todayStr) {
     activeManual = inMemoryActiveCoupon;
   } else {
+    // Invalida cache de memória se for de outro dia
+    if (inMemoryActiveCouponDate && inMemoryActiveCouponDate !== todayStr) {
+      inMemoryActiveCoupon = null;
+      inMemoryActiveCouponDate = null;
+    }
+
     if (process.env.NODE_ENV !== 'test') {
       try {
         const repository = require('../database/repository');
-        const dbCoupon = await repository.getSetting('active_daily_coupon');
-        if (dbCoupon && dbCoupon.trim()) {
-          activeManual = dbCoupon.trim().toUpperCase();
-          inMemoryActiveCoupon = activeManual;
+        const raw = await repository.getSetting('active_daily_coupon');
+        if (raw && raw.trim()) {
+          const parts = raw.trim().split('|');
+          if (parts.length === 2 && parts[0] === todayStr) {
+            activeManual = parts[1].toUpperCase();
+            inMemoryActiveCoupon = activeManual;
+            inMemoryActiveCouponDate = todayStr;
+          } else if (parts.length === 1 && parts[0]) {
+            // Formato legado
+            activeManual = parts[0].toUpperCase();
+            inMemoryActiveCoupon = activeManual;
+            inMemoryActiveCouponDate = todayStr;
+          }
         }
       } catch (e) {}
     }
