@@ -1,4 +1,4 @@
-﻿const env = require('../config/env');
+const env = require('../config/env');
 const axios = require('axios');
 const logger = require('../config/logger');
 const couponFetcher = require('./couponFetcher.service');
@@ -350,74 +350,75 @@ class FormatterService {
   }
 
   generateHeadline(productTitle) {
-    if (!productTitle) return 'ACHADO IMPERD\u00CDVEL';
+    if (!productTitle) return 'ACHADO IMPERDÍVEL';
     const t = productTitle.toLowerCase();
+    const tNorm = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // C\u00e2mera de seguran\u00e7a \u2014 exige c\u00e2mera/filmadora + contexto de seguran\u00e7a
-    if (/filmadora|cftv/.test(t)) return 'C\u00c2MERA DE SEGURAN\u00c7A WI-FI';
-    if (/c[a\u00e2]mera/.test(t) && /seguran[\u00e7c]a|vigil[\u00e2a]ncia|monitoramento/.test(t)) {
-      if (/4k|dupla lente|vis[\u00e3a]o noturna/.test(t)) return 'C\u00c2MERA DE SEGURAN\u00c7A 4K';
-      return 'C\u00c2MERA DE SEGURAN\u00c7A WI-FI';
+    // Câmera de segurança — exige câmera/filmadora + contexto de segurança
+    if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';
+    if (/\bcameras?\b/.test(tNorm) && /\b(seguranca|vigilancia|monitoramento)\b/.test(tNorm)) {
+      if (/\b(4k|dupla lente|visao noturna)\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA 4K';
+      return 'CÂMERA DE SEGURANÇA WI-FI';
     }
 
     // Moda
-    if (/tric[o\u00f4]/.test(t)) return 'TRICO PRA FICAR NO ESTILO';
-    if (/camiseta/.test(t)) return 'CAMISA PRA FICAR NO ESTILO';
-    if (/\bcamisa\b/.test(t)) return 'CAMISA PRA FICAR NO ESTILO';
-    if (/t[e\u00ea]nis|tenis|sapato|cal[\u00e7c]ado/.test(t)) return 'T\u00caNIS CONFORT\u00c1VEL PRA QUALQUER HORA';
+    if (/\b(trico|sueter|cardigan)s?\b/.test(tNorm)) return 'TRICO PRA FICAR NO ESTILO';
+    if (/\bcamisetas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
+    if (/\bcamisas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
+    if (/\b(tenis|sapato|sapatos|calcado|calcados)\b/.test(tNorm)) return 'TÊNIS CONFORTÁVEL PRA QUALQUER HORA';
 
     // Geladeira
-    if (/geladeira|refrigerador/.test(t)) {
-      if (/frost free/.test(t)) return 'GELADEIRA FROST FREE ESPA\u00c7OSA';
+    if (/\b(geladeira|refrigerador)s?\b/.test(tNorm)) {
+      if (/frost free/i.test(tNorm)) return 'GELADEIRA FROST FREE ESPAÇOSA';
       return 'GELADEIRA PERFEITA PRA SUA COZINHA';
     }
 
-    // Air fryer \u2014 antes de fritadeira gen\u00e9rica
-    if (/air fryer/.test(t)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
-    if (/fritadeira/.test(t) && /sem [o\u00f3]leo|el[\u00e9e]trica/.test(t)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
+    // Air fryer — antes de fritadeira genérica
+    if (/\bair fryer\b/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
+    if (/\bfritadeiras?\b/.test(tNorm) && /sem oleo|eletrica/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
 
-    // Micro-ondas e fog\u00e3o
-    if (/micro[- ]?ondas|microondas/.test(t)) return 'MICRO-ONDAS PR\u00c1TICO E POTENTE';
-    if (/fog[\u00e3a]o|cooktop/.test(t)) return 'COOKTOP MODERNO PRA SUA COZINHA';
+    // Micro-ondas e fogão
+    if (/\b(micro[- ]?ondas|microondas)\b/.test(tNorm)) return 'MICRO-ONDAS PRÁTICO E POTENTE';
+    if (/\b(fogao|fogoes|cooktop|cooktops)\b/.test(tNorm)) return 'COOKTOP MODERNO PRA SUA COZINHA';
 
     // Liquidificador, batedeira, cafeteira
-    if (/liquidificador/.test(t)) return 'LIQUIDIFICADOR POTENTE E RESISTENTE';
-    if (/batedeira/.test(t)) return 'BATEDEIRA PLANET\u00c1RIA COMPLETA';
-    if (/cafeteira/.test(t)) return 'CAFETEIRA PRA QUEM AMA CAF\u00c9';
+    if (/\bliquidificador(es)?\b/.test(tNorm)) return 'LIQUIDIFICADOR POTENTE E RESISTENTE';
+    if (/\bbatedeiras?\b/.test(tNorm)) return 'BATEDEIRA PLANETÁRIA COMPLETA';
+    if (/\bcafeteiras?\b/.test(tNorm)) return 'CAFETEIRA PRA QUEM AMA CAFÉ';
 
-    // Purificador/filtro (antes de panela)
-    if (/purificador|filtro de [\u00e1a]gua/.test(t)) return 'PURIFICADOR DE \u00c1GUA PR\u00c1TICO';
+    // Purificador / filtro / bebedouro (antes de panela)
+    if (/\b(purificador|purificadores|bebedouro|bebedouros)\b|\bfiltro de agua\b/.test(tNorm)) return 'PURIFICADOR DE ÁGUA PRÁTICO';
 
-    // Panelas \u2014 do mais espec\u00edfico ao mais gen\u00e9rico
-    if (/panela de press[\u00e3a]o/.test(t)) return 'PANELA DE PRESS\u00c3O PR\u00c1TICA';
-    if (/frigideira/.test(t)) return 'FRIGIDEIRA ANTIADERENTE DE QUALIDADE';
-    if (/panela/.test(t)) return 'JOGO DE PANELAS COMPLETO';
+    // Panelas — do mais específico ao mais genérico
+    if (/\bpanela de pressao\b/.test(tNorm)) return 'PANELA DE PRESSÃO PRÁTICA';
+    if (/\bfrigideiras?\b/.test(tNorm)) return 'FRIGIDEIRA ANTIADERENTE DE QUALIDADE';
+    if (/\bpanelas?\b/.test(tNorm)) return 'JOGO DE PANELAS COMPLETO';
 
-    // TV \u2014 exige "smart" ou tamanho em polegadas para n\u00e3o capturar "TV" gen\u00e9rico
-    if (/smart tv|televis[\u00e3a]o/.test(t) || (/\btv\b/.test(t) && /\d{2,3}['"]\s*(polegada|pol\b)/.test(t))) {
+    // TV — exige "smart" ou tamanho em polegadas para não capturar "TV" genérico
+    if (/\bsmart tv\b|\btelevisao\b/.test(tNorm) || (/\btv\b/.test(tNorm) && /\d{2,3}['"]\s*(polegada|pol\b)/.test(tNorm))) {
       return 'SMART TV COM IMAGEM DE CINEMA';
     }
-    if (/soundbar|caixa de som/.test(t)) return 'SOUNDBAR COM SOM DE CINEMA';
+    if (/\b(soundbar|caixa de som)\b/.test(tNorm)) return 'SOUNDBAR COM SOM DE CINEMA';
 
     // Aspirador
-    if (/aspirador/.test(t)) {
-      if (/rob[o\u00f4]/.test(t)) return 'ASPIRADOR ROB\u00d4 PRA LIMPAR TUDO';
-      return 'ASPIRADOR DE P\u00d3 POTENTE';
+    if (/\baspirador(es)?\b/.test(tNorm)) {
+      if (/\brobos?\b/.test(tNorm)) return 'ASPIRADOR ROBÔ PRA LIMPAR TUDO';
+      return 'ASPIRADOR DE PÓ POTENTE';
     }
 
     // Demais categorias originais
-    if (/ventilador/.test(t)) return 'VENTILADOR POTENTE E SILENCIOSO';
-    if (/ar[- ]condicionado/.test(t)) return 'AR-CONDICIONADO PRA REFRESCAR';
-    if (/m[\u00e1a]quina de lavar|lava e seca/.test(t)) return 'M\u00c1QUINA DE LAVAR EFICIENTE';
-    if (/ferro de passar/.test(t)) return 'FERRO DE PASSAR A VAPOR';
-    if (/adega|cervejeira/.test(t)) return 'CERVEJEIRA PRA BEBIDAS GELADAS';
-    if (/colch[\u00e3a]o/.test(t)) return 'COLCH\u00c3O PRA DORMIR NAS NUVENS';
-    if (/parafusadeira|furadeira/.test(t)) return 'PARAFUSADEIRA POTENTE PRA TUDO';
+    if (/\bventilador(es)?\b/.test(tNorm)) return 'VENTILADOR POTENTE E SILENCIOSO';
+    if (/\bar[- ]condicionado\b/.test(tNorm)) return 'AR-CONDICIONADO PRA REFRESCAR';
+    if (/\bmaquina de lavar\b|\blava e seca\b/.test(tNorm)) return 'MÁQUINA DE LAVAR EFICIENTE';
+    if (/\bferro de passar\b/.test(tNorm)) return 'FERRO DE PASSAR A VAPOR';
+    if (/\b(adega|adegas|cervejeira|cervejeiras)\b/.test(tNorm)) return 'CERVEJEIRA PRA BEBIDAS GELADAS';
+    if (/\bcolchao\b|\bcolchoes\b/.test(tNorm)) return 'COLCHÃO PRA DORMIR NAS NUVENS';
+    if (/\b(parafusadeira|parafusadeiras|furadeira|furadeiras)\b/.test(tNorm)) return 'PARAFUSADEIRA POTENTE PRA TUDO';
 
-    // Fallback: palavras relevantes do pr\u00f3prio t\u00edtulo
+    // Fallback: palavras relevantes do próprio título
     const stopWords = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para', 'pra', 'por', 'em',
       'no', 'na', 'nos', 'nas', 'um', 'uma', 'uns', 'umas', 'e', 'ou', 'que', 'sem',
-      'kit', 'pro', 'max', 'bivolt', 'volts', 'unidade', 'unidades']);
+      'kit', 'pro', 'max', 'bivolt', 'volts', 'unidade', 'unidades', 'modelo', 'cor', 'marca']);
 
     const cleanWords = productTitle
       .replace(/[^\w\sÀ-ú]/g, ' ')
@@ -457,7 +458,8 @@ class FormatterService {
 
     if (isShopee) {
       if (product.coupon && !isValidCouponCode(product.coupon)) {
-        product.coupon = '';
+        const extracted = couponFetcher.extractCouponCode ? couponFetcher.extractCouponCode(product.coupon) : null;
+        product.coupon = extracted || '';
       }
 
       const formatShopeePrice = (value) => {
@@ -526,8 +528,8 @@ class FormatterService {
       logger.debug('[Formatter] Erro ao resolver cupom para produto:', e.message);
     }
 
-    if (!resolvedCoupon && product.coupon && isValidCouponCode(product.coupon)) {
-      resolvedCoupon = product.coupon.trim().toUpperCase();
+    if (!resolvedCoupon && product.coupon) {
+      resolvedCoupon = couponFetcher.extractCouponCode ? couponFetcher.extractCouponCode(product.coupon) : (isValidCouponCode(product.coupon) ? product.coupon.trim().toUpperCase() : null);
     }
 
     product.coupon = resolvedCoupon || '';

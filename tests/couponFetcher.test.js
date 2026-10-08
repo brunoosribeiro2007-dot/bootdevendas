@@ -63,4 +63,12 @@ describe('CouponFetcher Service & Daily Expiration', () => {
     active = await couponFetcher.getActiveDailyCoupon();
     expect(active).toBeNull();
   });
+
+  test('extractCouponCode deve extrair cupons de strings complexas', () => {
+    expect(couponFetcher.extractCouponCode('Cupom OBA10')).toBe('OBA10');
+    expect(couponFetcher.extractCouponCode('código: FESTA20')).toBe('FESTA20');
+    expect(couponFetcher.extractCouponCode('PROMO50')).toBe('PROMO50');
+    expect(couponFetcher.extractCouponCode('TUDOPARACASA')).toBeNull();
+    expect(couponFetcher.extractCouponCode('R$ 20 OFF')).toBeNull();
+  });
 });

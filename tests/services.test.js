@@ -49,4 +49,26 @@ describe('Formatter Service', () => {
     expect(msg).toContain('🎟️ Use o Cupom: *MELHORCUPOM*');
     expect(msg).toContain('🛒 Compre aqui: https://meli.la/2bsigWb');
   });
+
+  test('generateHeadline should not misclassify "elétrico" as tricô', () => {
+    const title = 'Bebedouro de mesa Cadence gela água refrigerado elétrico galão aguô BEB110 branco';
+    const headline = formatterService.generateHeadline(title);
+    expect(headline).not.toBe('TRICO PRA FICAR NO ESTILO');
+    expect(headline).toBe('PURIFICADOR DE ÁGUA PRÁTICO');
+  });
+
+  test('generateFormattedMessage should extract and link coupon code from text like "Cupom DESCONTO10"', async () => {
+    const productWithTextCoupon = {
+      title: 'Bebedouro de mesa Cadence gela água refrigerado elétrico galão aguô BEB110 branco',
+      price: 348.23,
+      link: 'https://meli.la/2cvajqho',
+      imageUrl: 'http://image.com/bebedouro.jpg',
+      coupon: 'Cupom DESCONTO10'
+    };
+
+    const msg = await formatterService.generateFormattedMessage(productWithTextCoupon);
+    expect(msg).not.toContain('TRICO PRA FICAR NO ESTILO');
+    expect(msg).toContain('PURIFICADOR DE ÁGUA PRÁTICO');
+    expect(msg).toContain('🎟️ Use o Cupom: *DESCONTO10*');
+  });
 });

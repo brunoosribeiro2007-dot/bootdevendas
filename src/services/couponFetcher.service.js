@@ -426,33 +426,89 @@ async function setActiveDailyCoupon(code) {
 }
 
 /**
+ * Extrai um código de cupom limpo a partir de qualquer string (ex: "Cupom ABC10", "10% OFF com cupom MEUCUPOM", etc).
+ */
+function extractCouponCode(input) {
+  if (!input || typeof input !== 'string') return null;
+  const cleanStr = input.trim().toUpperCase();
+
+  // Se a string direta já for um código válido
+  if (isValidRealCouponCode(cleanStr)) {
+    return cleanStr;
+  }
+
+  // Tenta extrair usando regex de prefixos comuns "cupom MEUCUPOM", "código: ABC10"
+  const matchPrefix = input.match(/(?:cupom|c[oó]digo)\s*:?\s*([A-Za-z0-9_-]{3,25})/i);
+  if (matchPrefix) {
+    const candidate = matchPrefix[1].trim().toUpperCase();
+    if (isValidRealCouponCode(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Procura por tokens na string que sejam códigos válidos
+  const tokens = input.split(/[\s,.:;!?"'()\[\]{}–—-]+/);
+  for (const token of tokens) {
+    const cleanToken = token.trim().toUpperCase();
+    if (isValidRealCouponCode(cleanToken)) {
+      return cleanToken;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Retorna o cupom mais relevante do cache para ser exibido na mensagem.
  * Prioriza cupons de Casa/Eletro e cupons com desconto definido.
  */
-function getBestCouponForMessage() {
+function getBestCouponForMessage(product = null) {
   if (couponCache.length === 0) return null;
   
-  // Prioriza cupons da categoria Casa/Itens para casa válidos
-  const homeCoupons = couponCache.filter(c => 
-    isValidRealCouponCode(c.code) &&
-    ((c.title && /casa|lar|eletro|refrigerador|cozinha/i.test(c.title)) ||
-     (c.code && /CASA|LAR|ELETRO/i.test(c.code)))
-  );
-  if (homeCoupons.length > 0) {
-    return homeCoupons[0];
+  const validCoupons = couponCache.filter(c => {
+    if (!c.code || !isValidRealCouponCode(c.code)) return false;
+    if (product && product.price && c.minAmount && product.price < c.minAmount) {
+      return false;
+    }
+    return true;
+  });
+
+  if (validCoupons.length === 0) return null;
+
+  // Se houver produto, busca se algum cupom se aplica à categoria
+  if (product && product.title) {
+    const titleLower = product.title.toLowerCase();
+    const categoryCoupon = validCoupons.find(c => {
+      if (!c.title) return false;
+      const cTitle = c.title.toLowerCase();
+      return (
+        (titleLower.includes('geladeira') || titleLower.includes('refrigerador') || titleLower.includes('cozinha') || titleLower.includes('eletro')) &&
+        (cTitle.includes('eletro') || cTitle.includes('cozinha') || cTitle.includes('casa') || cTitle.includes('lar'))
+      );
+    });
+    if (categoryCoupon) return categoryCoupon.code;
   }
 
-  // Prioriza cupons gerais válidos com desconto
-  const validCoupons = couponCache.filter(c => isValidRealCouponCode(c.code));
+  // Prioriza cupons da categoria Casa/Itens para casa válidos
+  const homeCoupon = validCoupons.find(c => 
+    (c.title && /casa|lar|eletro|refrigerador|cozinha/i.test(c.title)) ||
+    (c.code && /CASA|LAR|ELETRO/i.test(c.code))
+  );
+  if (homeCoupon) {
+    return homeCoupon.code;
+  }
+
+  // Senão, pega o primeiro cupom válido
   const withDiscount = validCoupons.filter(c => c.discount);
-  return withDiscount.length > 0 ? withDiscount[0] : (validCoupons[0] || null);
+  const best = withDiscount.length > 0 ? withDiscount[0] : validCoupons[0];
+  return best ? (typeof best === 'string' ? best : best.code) : null;
 }
 
 /**
  * Resolve o cupom mais apropriado para um produto específico.
  * 1. Prioriza cupom ativo diário configurado manualmente para hoje
  * 2. Utiliza cupom real legítimo do próprio anúncio do produto (se houver)
- * 3. Se não houver cupom, retorna null (NÃO inventa cupom falso em produtos)
+ * 3. Utiliza o melhor cupom diário capturado no cache (se disponível)
  */
 async function resolveCouponForProduct(product) {
   // 1. Verifica se há cupom ativo manual configurado para hoje
@@ -461,15 +517,20 @@ async function resolveCouponForProduct(product) {
     return activeDaily;
   }
 
-  // 2. Se o próprio anúncio veio com um cupom real
+  // 2. Se o próprio anúncio veio com um cupom real ou texto com cupom
   if (product && product.coupon) {
-    const raw = String(product.coupon).trim().toUpperCase();
-    if (isValidRealCouponCode(raw)) {
-      return raw;
+    const extracted = extractCouponCode(product.coupon);
+    if (extracted) {
+      return extracted;
     }
   }
 
-  // 3. Sem cupom real: não usa cupom
+  // 3. Tenta vincular o melhor cupom diário capturado do Mercado Livre no cache
+  const bestDaily = getBestCouponForMessage(product);
+  if (bestDaily) {
+    return typeof bestDaily === 'string' ? bestDaily : bestDaily.code;
+  }
+
   return null;
 }
 
@@ -495,5 +556,6 @@ module.exports = {
   getActiveDailyCoupon,
   setActiveDailyCoupon,
   resolveCouponForProduct,
+  extractCouponCode,
   getCacheInfo
 };
