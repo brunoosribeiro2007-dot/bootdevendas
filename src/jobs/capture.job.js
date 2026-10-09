@@ -147,11 +147,11 @@ const captureTask = async () => {
         try {
             // 1. Gerar o link oficial de afiliado e validar
             const finalLink = await formatterService.formatLink(product.link);
-            const isMeliLink = finalLink && finalLink.includes('meli.la');
-            const isShopeeLink = finalLink && (finalLink.includes('shope.ee') || finalLink.includes('shopee.com.br') || finalLink.includes('tinyurl.com') || finalLink.includes('is.gd') || finalLink.includes('v.gd'));
+            const isMeliLink = finalLink && (finalLink.includes('meli.la') || finalLink.includes('mercadolivre.com') || finalLink.includes('mercadolivre.com.br'));
+            const isShopeeLink = finalLink && (finalLink.includes('shope.ee') || finalLink.includes('shopee.com.br'));
             
             if (!finalLink || (!isMeliLink && !isShopeeLink)) {
-                logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar um link oficial ou encurtado.`);
+                logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar um link oficial.`);
                 continue;
             }
 

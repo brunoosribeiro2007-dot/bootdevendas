@@ -125,19 +125,14 @@ describe('Formatter Service - Shopee', () => {
     expect(link).toBe('https://shope.ee/xyz123');
   });
 
-  test('formatLink should fall back to UTM parameters and generic shortener if API fails', async () => {
+  test('formatLink should fall back to UTM parameters if API fails', async () => {
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     try {
       axios.post.mockRejectedValueOnce(new Error('Network error'));
-      axios.get.mockResolvedValueOnce({ data: 'https://tinyurl.com/mock-shortened' });
 
       const link = await formatterService.formatLink('https://shopee.com.br/product/67890/12345');
-      expect(link).toBe('https://tinyurl.com/mock-shortened');
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('https://tinyurl.com/api-create.php?url=https%3A%2F%2Fshopee.com.br%2Fproduct%2F67890%2F12345%3Futm_campaign%3D-%26utm_content%3D-%26utm_medium%3Daffiliates%26utm_source%3Dan_spp%26utm_term%3Dmock_tag'),
-        expect.any(Object)
-      );
+      expect(link).toBe('https://shopee.com.br/product/67890/12345?utm_campaign=-&utm_content=-&utm_medium=affiliates&utm_source=an_spp&utm_term=mock_tag');
     } finally {
       process.env.NODE_ENV = originalEnv;
     }

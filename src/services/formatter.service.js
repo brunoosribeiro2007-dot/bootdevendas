@@ -8,42 +8,6 @@ if (env.useMlAffiliateUi) {
 }
 
 class FormatterService {
-  /**
-   * Fallback: encurta qualquer URL usando serviço gratuito (is.gd)
-   */
-  async shortenUrl(longUrl) {
-    // Tentativa 1: TinyURL (mais confiável)
-    try {
-      const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via TinyURL: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`TinyURL shortener failed: ${e.message}`);
-    }
-    // Tentativa 2: is.gd
-    try {
-      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via is.gd: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`is.gd shortener failed: ${e.message}`);
-    }
-    // Tentativa 3: v.gd
-    try {
-      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 8000 });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        logger.info(`✅ URL encurtada via v.gd: ${res.data}`);
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`v.gd shortener failed: ${e.message}`);
-    }
-    return null;
-  }
 
   async formatLinkViaDirectApi(baseLink, tag) {
     const fs = require('fs');
@@ -222,11 +186,6 @@ class FormatterService {
       const trackingParam = env.shopeeAffiliateTag ? `?utm_campaign=-&utm_content=-&utm_medium=affiliates&utm_source=an_spp&utm_term=${env.shopeeAffiliateTag}` : '';
       const longAffLink = `${baseLink}${trackingParam}`;
 
-      if (process.env.NODE_ENV !== 'test') {
-        logger.warn('⚠️ Nenhum método oficial da Shopee funcionou. Tentando encurtador genérico...');
-        const shortened = await this.shortenUrl(longAffLink);
-        if (shortened) return shortened;
-      }
       return longAffLink;
     }
 
@@ -330,17 +289,7 @@ class FormatterService {
     // Fallback: anexa parâmetro compatível (matt_tool)
     const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
     
-    // Tenta encurtar o link longo usando serviço genérico para não enviar URL gigante
-    if (process.env.NODE_ENV !== 'test') {
-      logger.warn('⚠️ Nenhum método meli.la funcionou. Tentando encurtador genérico...');
-      const shortened = await this.shortenUrl(longAffiliateLink);
-      if (shortened) {
-        logger.info(`✅ Link encurtado via serviço genérico: ${shortened}`);
-        return shortened;
-      }
-    }
-    
-    logger.warn('⚠️ FALLBACK FINAL: Retornando link longo sem encurtamento.');
+    logger.warn('⚠️ FALLBACK: Retornando link oficial do Mercado Livre com tag de afiliado.');
     return longAffiliateLink;
   }
 
