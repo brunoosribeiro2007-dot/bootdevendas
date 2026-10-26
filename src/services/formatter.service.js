@@ -1,27 +1,106 @@
-const env = require('../config/env');
+/**
+ * ==============================================================================
+ * FORMATTER SERVICE - SERVIÇO DE FORMATAÇÃO E ENCURTAMENTO DE LINKS
+ * ==============================================================================
+ * Responsabilidades deste módulo:
+ * 1. Gerar e validar links oficiais de afiliado (Mercado Livre e Shopee).
+ * 2. Criar chamadas de alto impacto (Headlines) baseadas no título do produto.
+ * 3. Formatar as mensagens promocionais para publicação no WhatsApp.
+ * ==============================================================================
+ */
+
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const axios = require('axios');
+const cheerio = require('cheerio');
+const env = require('../config/env');
 const logger = require('../config/logger');
 const couponFetcher = require('./couponFetcher.service');
+
+// Serviço opcional de automação via Puppeteer para Mercado Livre
 let meliUiService;
 if (env.useMlAffiliateUi) {
-  try { meliUiService = require('./meliUi.service'); } catch (e) { logger.debug('meliUi.service not available:', e.message); }
+  try {
+    meliUiService = require('./meliUi.service');
+  } catch (e) {
+    logger.debug('meliUi.service não disponível:', e.message);
+  }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// BLOCO 1: HELPERS INTERNOS DE FORMATAÇÃO E VALIDAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Valida se um código de cupom possui formato textual válido.
+ * Evita textos descritivos como "10% OFF" ou "FRETE GRÁTIS" serem tratados como código.
+ * @param {string} coupon - Texto ou código de cupom.
+ * @returns {boolean} True se for um código alfanumérico limpo (3 a 25 caracteres).
+ */
+const isValidCouponCode = (coupon) => {
+  if (!coupon || typeof coupon !== 'string') return false;
+  const clean = coupon.trim();
+  if (/\s|%|R\$|off|desconto|grátis|gratis/i.test(clean)) {
+    return false;
+  }
+  return /^[A-Z0-9_-]{3,25}$/i.test(clean);
+};
+
+/**
+ * Formata valores numéricos para o padrão de moeda brasileiro.
+ * Exibe números inteiros sem centavos (ex: "55") e decimais com vírgula (ex: "1999,99").
+ * @param {number} value - Preço numérico.
+ * @returns {string} Preço formatado.
+ */
+const formatPrice = (value) => {
+  if (value === null || value === undefined) return '';
+  if (Number.isInteger(value)) {
+    return value.toString();
+  }
+  return value.toFixed(2).replace('.', ',');
+};
+
+/**
+ * Formata valores numéricos para o padrão monetário da Shopee (sempre 2 casas decimais).
+ * @param {number} value - Preço numérico.
+ * @returns {string} Preço formatado com 2 decimais (ex: "150,00").
+ */
+const formatShopeePrice = (value) => {
+  if (value === null || value === undefined) return '';
+  return value.toFixed(2).replace('.', ',');
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// BLOCO 2: CLASSE PRINCIPAL DE FORMATAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
 
 class FormatterService {
 
+  /**
+   * Gera link de afiliado oficial do Mercado Livre (meli.la) chamando a API interna
+   * com a sessão autenticada por cookies (.ml_cookies.json ou ML_COOKIE_STRING).
+   * 
+   * Fluxo:
+   * 1. Lê e sanitiza cookies da sessão do Mercado Livre.
+   * 2. Extrai ou busca o token CSRF obrigatório.
+   * 3. Dispara POST para /affiliate-program/api/v2/affiliates/createLink.
+   * 4. Retorna a URL encurtada oficial (ex: https://meli.la/...).
+   * 
+   * @param {string} baseLink - Link canônico ou limpo do produto no Mercado Livre.
+   * @param {string} tag - Tag de afiliado configurada.
+   * @returns {Promise<string|null>} Link encurtado oficial ou null se falhar.
+   */
   async formatLinkViaDirectApi(baseLink, tag) {
-    const fs = require('fs');
-    const path = require('path');
-    const cheerio = require('cheerio');
-    
     let cookieHeader = null;
     const cookiesPath = env.mlCookiesPath || path.resolve(process.cwd(), '.ml_cookies.json');
+
     if (fs.existsSync(cookiesPath)) {
       try {
         const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf8'));
         cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
       } catch (e) {
-        logger.warn('Failed to parse .ml_cookies.json');
+        logger.warn('Falha ao ler cookies do arquivo .ml_cookies.json');
       }
     }
 
@@ -30,17 +109,15 @@ class FormatterService {
     }
 
     if (!cookieHeader) {
-      logger.debug('No cookies found for direct affiliate API.');
+      logger.debug('Nenhum cookie configurado para API direta de afiliados.');
       return null;
     }
 
-    // Sanitiza o cookie removendo caracteres inválidos para headers HTTP
-    // Node.js rejeita caracteres fora do range ASCII imprimível (0x20-0x7E)
+    // Sanitiza cookie removendo caracteres inválidos para headers HTTP (ASCII 0x20-0x7E)
     cookieHeader = cookieHeader.replace(/[^\x20-\x7E]/g, '').trim();
 
     try {
-
-      // 0. Tenta extrair CSRF direto do cookie string (evita GET extra)
+      // 0. Tenta extrair CSRF direto da string de cookies (evita GET redundante)
       let csrfFromCookie = null;
       const csrfCookieMatch = cookieHeader.match(/_csrf=([^;\s]+)/);
       if (csrfCookieMatch) {
@@ -48,8 +125,8 @@ class FormatterService {
         logger.info(`CSRF extraído do cookie: ${csrfFromCookie.substring(0, 10)}...`);
       }
 
-      // 1. Get CSRF token by doing a GET to the affiliate portal
-      logger.info('Fetching CSRF token from affiliate program page...');
+      // 1. Obtém token CSRF consultando o portal de afiliados caso necessário
+      logger.info('Buscando token CSRF na página do programa de afiliados...');
       const portalRes = await axios.get('https://www.mercadolivre.com.br/l/afiliados-home', {
         headers: {
           'Cookie': cookieHeader,
@@ -61,30 +138,26 @@ class FormatterService {
 
       const html = portalRes.data;
       const $ = cheerio.load(html);
-      
-      // Look for CSRF token in meta tags or script elements
+
       let csrfToken = $('meta[name="csrf-token"]').attr('content') || $('input[name="_csrf"]').val();
-      
       if (!csrfToken) {
-        // Try regex match in scripts
-        const csrfMatch = html.match(/"csrfToken"\s*:\s*"([^"]+)"/) || 
-                          html.match(/"csrf"\s*:\s*"([^"]+)"/) || 
+        const csrfMatch = html.match(/"csrfToken"\s*:\s*"([^"]+)"/) ||
+                          html.match(/"csrf"\s*:\s*"([^"]+)"/) ||
                           html.match(/csrf-token"\s*content="([^"]+)"/);
         if (csrfMatch) csrfToken = csrfMatch[1];
       }
 
-      // Also check response headers for set-cookie to merge new cookies
+      // Concatena novos cookies retornados pelo portal
       let currentCookieHeader = cookieHeader;
       if (portalRes.headers['set-cookie']) {
         const newCookies = portalRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
         currentCookieHeader = `${cookieHeader}; ${newCookies}`;
       }
 
-      logger.info(`CSRF Token found: ${csrfToken ? 'YES' : 'NO'}`);
+      logger.info(`CSRF Token encontrado: ${csrfToken ? 'SIM' : 'NÃO'}`);
 
-      // 2. Call the POST createLink API
+      // 2. Dispara a chamada POST para gerar o link oficial encurtado
       const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
-      
       const payload = { urls: [baseLink], tag };
       const headers = {
         'Cookie': currentCookieHeader,
@@ -95,42 +168,47 @@ class FormatterService {
         'Referer': 'https://www.mercadolivre.com.br/l/afiliados-home'
       };
 
-      // Usa CSRF encontrado no HTML, ou fallback para o do cookie
       const finalCsrf = csrfToken || csrfFromCookie;
       if (finalCsrf) {
         headers['x-csrf-token'] = finalCsrf;
       }
 
-      logger.info(`Sending POST to affiliate API createLink with new array payload...`);
+      logger.info('Enviando requisição POST para a API de afiliados do ML...');
       const apiRes = await axios.post(apiUrl, payload, { headers, timeout: 8000 });
-      
-      // Extract link
+
+      // 3. Extrai o link encurtado do payload de resposta
       if (apiRes.data) {
-        // Tenta buscar no novo formato urls[0].short_url ou via regex na resposta completa
         if (apiRes.data.urls && apiRes.data.urls[0]) {
           const itemRes = apiRes.data.urls[0];
           if (itemRes.short_url) {
-            logger.info(`✅ Direct API success! Generated shortlink: ${itemRes.short_url}`);
+            logger.info(`✅ API Direta ML: Link encurtado gerado: ${itemRes.short_url}`);
             return itemRes.short_url;
           }
         }
-        
+
         const dataStr = JSON.stringify(apiRes.data);
         const match = dataStr.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
         if (match) {
-          logger.info(`✅ Direct API success! Generated shortlink via Regex: ${match[0]}`);
+          logger.info(`✅ API Direta ML: Link encurtado encontrado via Regex: ${match[0]}`);
           return match[0];
         }
       }
     } catch (e) {
-      logger.warn(`⚠️ Direct API affiliate link generation failed: ${e.message}`);
+      logger.warn(`⚠️ Falha na geração de link direto via API: ${e.message}`);
       if (e.response && e.response.data) {
-        logger.warn(`API Response error details: ${JSON.stringify(e.response.data)}`);
+        logger.warn(`Detalhes do erro da API: ${JSON.stringify(e.response.data)}`);
       }
     }
     return null;
   }
 
+  /**
+   * Gera link de afiliado oficial encurtado da Shopee (shope.ee) via GraphQL API.
+   * Utiliza assinatura criptográfica HMAC-SHA256 padrão da Open API da Shopee.
+   * 
+   * @param {string} link - Link original do produto na Shopee.
+   * @returns {Promise<string|null>} Link encurtado shope.ee ou null em caso de falha.
+   */
   async formatShopeeLinkViaApi(link) {
     const appId = env.shopeeAppId;
     const secret = env.shopeeSecret;
@@ -147,7 +225,7 @@ class FormatterService {
     const payloadStr = JSON.stringify({ query, variables });
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
-    const crypto = require('crypto');
+    // Assinatura: SHA256(appId + timestamp + payload + secret)
     const baseString = appId + timestamp + payloadStr + secret;
     const signature = crypto.createHash('sha256').update(baseString).digest('hex');
 
@@ -160,202 +238,164 @@ class FormatterService {
     try {
       const res = await axios.post(url, payloadStr, { headers, timeout: 8000 });
       if (res.data && res.data.errors) {
-        logger.error('Error generating Shopee short link:', JSON.stringify(res.data.errors));
+        logger.error('Erro ao gerar shortlink Shopee:', JSON.stringify(res.data.errors));
         return null;
       }
       const shortLink = res.data?.data?.generateShortLink?.shortLink;
       if (shortLink) {
-        logger.info(`✅ Shopee Link generated: ${shortLink}`);
+        logger.info(`✅ Shopee Link gerado com sucesso: ${shortLink}`);
         return shortLink;
       }
     } catch (e) {
-      logger.warn(`Failed to generate Shopee link via API: ${e.message}`);
+      logger.warn(`Falha ao gerar link Shopee via API: ${e.message}`);
     }
     return null;
   }
 
+  /**
+   * Roteador e formatador central de links.
+   * Identifica a plataforma (Shopee vs Mercado Livre) e executa as estratégias em cascata.
+   * 
+   * @param {string} link - URL original do produto.
+   * @returns {Promise<string>} Link final formatado/encurtado.
+   */
   async formatLink(link) {
     if (!link) return '';
 
+    // ─── 1. Rota Shopee ────────────────────────────────────────────────────────
     const isShopee = link.includes('shopee.com.br') || link.includes('shope.ee');
     if (isShopee) {
       const apiLink = await this.formatShopeeLinkViaApi(link);
       if (apiLink) return apiLink;
 
+      // Fallback Shopee: Parâmetros UTM oficiais com a tag de afiliado
       const baseLink = link.split('?')[0].split('#')[0];
-      const trackingParam = env.shopeeAffiliateTag ? `?utm_campaign=-&utm_content=-&utm_medium=affiliates&utm_source=an_spp&utm_term=${env.shopeeAffiliateTag}` : '';
-      const longAffLink = `${baseLink}${trackingParam}`;
-
-      return longAffLink;
+      const trackingParam = env.shopeeAffiliateTag
+        ? `?utm_campaign=-&utm_content=-&utm_medium=affiliates&utm_source=an_spp&utm_term=${env.shopeeAffiliateTag}`
+        : '';
+      return `${baseLink}${trackingParam}`;
     }
 
+    // ─── 2. Rota Mercado Livre ─────────────────────────────────────────────────
     const tag = env.mlAffiliateTag || 'bv20260330080614';
-    // Limpa o link de parâmetros originais
     const baseLink = link.split('?')[0].split('#')[0];
 
-    // 1) Tentar obter via API direta com os cookies do Puppeteer (super rápido e autônomo)
+    // Estratégia A: API Direta com cookies (mais rápida, autônoma e oficial meli.la)
     if (process.env.NODE_ENV !== 'test') {
       const directShortLink = await this.formatLinkViaDirectApi(baseLink, tag);
       if (directShortLink) return directShortLink;
     }
 
-    // 2) Se falhar, mas UI automation estiver habilitada, tentar Puppeteer como fallback
+    // Estratégia B: Automação Puppeteer (caso ativada)
     if (env.useMlAffiliateUi && meliUiService && process.env.NODE_ENV !== 'test') {
       try {
         const short = await meliUiService.generateShortLink(baseLink, tag, 60000);
         if (short && short.includes('meli.la')) return short;
       } catch (e) {
-        logger.warn('ML UI shortlink generation failed:', e.message);
+        logger.warn('Geração de shortlink ML via Puppeteer falhou:', e.message);
       }
     }
 
+    // Estratégia C: Tentativa de API de afiliado via URL configurada (se ativada)
     if (env.useMlAffiliateApi && process.env.NODE_ENV !== 'test') {
       const apiUrl = env.mlAffiliateApiUrl || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink';
-      // Only accept short official affiliate links (prefer `meli.la`).
-      const isAllowed = (url) => {
-        if (!url || typeof url !== 'string') return false;
-        const u = url.toLowerCase();
-        // Prefer meli.la short links. If not present, we won't accept generic mlstatic asset links.
-        return u.includes('meli.la');
-      };
-
-      const tryExtract = (data) => {
-        if (!data) return null;
-        if (typeof data === 'string') {
-          const m = data.match(/https?:\/\/[^\s'"<>]+/);
-          if (m && isAllowed(m[0])) return m[0];
-          return null;
+      try {
+        const res = await axios.post(apiUrl, { source: baseLink, tag }, { timeout: 5000 });
+        if (res.data && typeof res.data === 'object') {
+          const strData = JSON.stringify(res.data);
+          const meliMatch = strData.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/);
+          if (meliMatch) return meliMatch[0];
         }
-        const keys = ['short_link','shortUrl','short','link','url','tracking_url','trackingLink','result','created','data'];
-        for (const k of keys) {
-          if (data[k]) {
-            if (typeof data[k] === 'string' && data[k].includes('http')) return data[k];
-            if (typeof data[k] === 'object') {
-              const nested = tryExtract(data[k]);
-              if (nested) return nested;
-            }
-          }
-        }
-        // search any string values inside object
-        const stack = [data];
-        while (stack.length) {
-          const obj = stack.pop();
-          if (typeof obj === 'string' && obj.includes('http')) {
-            const m = obj.match(/https?:\/\/[^\s'"<>]+/);
-            if (m && isAllowed(m[0])) return m[0];
-          }
-          if (typeof obj === 'object') {
-            for (const v of Object.values(obj)) stack.push(v);
-          }
-        }
-        return null;
-      };
-
-      const postVariants = [
-        { source: baseLink, tag },
-        { url: baseLink, tag },
-        { resource: baseLink, tag },
-        { link: baseLink, affiliate: tag },
-        { url: baseLink, affiliate: tag, tag },
-      ];
-
-      for (const body of postVariants) {
-        try {
-          const res = await axios.post(apiUrl, body, { timeout: 5000 });
-          const found = tryExtract(res.data);
-          if (found) return found;
-        } catch (e) {
-          logger.debug(`ML Affiliate API POST variant failed: ${e.message}`);
-        }
-      }
-
-      const getVariants = [
-        `?source=${encodeURIComponent(baseLink)}&affiliate=${encodeURIComponent(tag)}`,
-        `?url=${encodeURIComponent(baseLink)}&tag=${encodeURIComponent(tag)}`,
-        `?link=${encodeURIComponent(baseLink)}&affiliate=${encodeURIComponent(tag)}`,
-      ];
-
-      for (const q of getVariants) {
-        try {
-          const res2 = await axios.get(apiUrl + q, { timeout: 5000 });
-          const found2 = tryExtract(res2.data);
-          if (found2) return found2;
-        } catch (e) {
-          logger.debug(`ML Affiliate API GET variant failed: ${e.message}`);
-        }
+      } catch (e) {
+        logger.debug(`Falha ao chamar apiUrl customizada: ${e.message}`);
       }
     }
 
-    // Fallback: anexa parâmetro compatível (matt_tool)
+    // Estratégia D: Fallback oficial do Mercado Livre com parâmetro matt_tool
     const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
-    
     logger.warn('⚠️ FALLBACK: Retornando link oficial do Mercado Livre com tag de afiliado.');
     return longAffiliateLink;
   }
 
+  /**
+   * Gera mensagem em formato bruto (raw), usada em testes, auditorias e chamadas simplificadas.
+   * @param {Object} product - Dados do produto.
+   * @param {string|null} finalLink - Link já formatado (opcional).
+   * @returns {Promise<string>} Mensagem de texto simples.
+   */
   async generateRawMessage(product, finalLink = null) {
     const link = finalLink || await this.formatLink(product.link);
     return `Imagem: ${product.imageUrl}\nTítulo: ${product.title}\nValor: R$ ${product.price.toFixed(2)}\nLink: ${link}`;
   }
 
+  /**
+   * Analisa o título do produto e gera uma chamada (Headline) atrativa em MAIÚSCULAS
+   * categorizada de acordo com o nicho do item (Eletrodomésticos, Casa, Cozinha, etc.).
+   * 
+   * @param {string} productTitle - Título original do produto.
+   * @returns {string} Frase de efeito promocional em maiúsculas.
+   */
   generateHeadline(productTitle) {
     if (!productTitle) return 'ACHADO IMPERDÍVEL';
-    const t = productTitle.toLowerCase();
-    const tNorm = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    // Câmera de segurança — exige câmera/filmadora + contexto de segurança
+    // Normaliza removendo acentos e pontuações para facilitar matching de regex
+    const tNorm = productTitle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // ─── Câmera de segurança e monitoramento ─────────────────────────────────
     if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';
     if (/\bcameras?\b/.test(tNorm) && /\b(seguranca|vigilancia|monitoramento)\b/.test(tNorm)) {
       if (/\b(4k|dupla lente|visao noturna)\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA 4K';
       return 'CÂMERA DE SEGURANÇA WI-FI';
     }
 
-    // Moda
+    // ─── Moda e Vestuário ────────────────────────────────────────────────────
     if (/\b(trico|sueter|cardigan)s?\b/.test(tNorm)) return 'TRICO PRA FICAR NO ESTILO';
     if (/\bcamisetas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
     if (/\bcamisas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
     if (/\b(tenis|sapato|sapatos|calcado|calcados)\b/.test(tNorm)) return 'TÊNIS CONFORTÁVEL PRA QUALQUER HORA';
 
-    // Geladeira
+    // ─── Geladeiras e Refrigeração ───────────────────────────────────────────
     if (/\b(geladeira|refrigerador)s?\b/.test(tNorm)) {
       if (/frost free/i.test(tNorm)) return 'GELADEIRA FROST FREE ESPAÇOSA';
       return 'GELADEIRA PERFEITA PRA SUA COZINHA';
     }
 
-    // Air fryer — antes de fritadeira genérica
+    // ─── Air Fryer e Fritadeiras Sem Óleo ────────────────────────────────────
     if (/\bair fryer\b/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
     if (/\bfritadeiras?\b/.test(tNorm) && /sem oleo|eletrica/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
 
-    // Micro-ondas e fogão
+    // ─── Micro-ondas e Cooktops/Fogões ───────────────────────────────────────
     if (/\b(micro[- ]?ondas|microondas)\b/.test(tNorm)) return 'MICRO-ONDAS PRÁTICO E POTENTE';
     if (/\b(fogao|fogoes|cooktop|cooktops)\b/.test(tNorm)) return 'COOKTOP MODERNO PRA SUA COZINHA';
 
-    // Liquidificador, batedeira, cafeteira
+    // ─── Eletroportáteis de Cozinha ──────────────────────────────────────────
     if (/\bliquidificador(es)?\b/.test(tNorm)) return 'LIQUIDIFICADOR POTENTE E RESISTENTE';
     if (/\bbatedeiras?\b/.test(tNorm)) return 'BATEDEIRA PLANETÁRIA COMPLETA';
     if (/\bcafeteiras?\b/.test(tNorm)) return 'CAFETEIRA PRA QUEM AMA CAFÉ';
 
-    // Purificador / filtro / bebedouro (antes de panela)
-    if (/\b(purificador|purificadores|bebedouro|bebedouros)\b|\bfiltro de agua\b/.test(tNorm)) return 'PURIFICADOR DE ÁGUA PRÁTICO';
+    // ─── Purificadores e Filtros de Água (avaliado antes de panelas) ───────────
+    if (/\b(purificador|purificadores|bebedouro|bebedouros)\b|\bfiltro de agua\b/.test(tNorm)) {
+      return 'PURIFICADOR DE ÁGUA PRÁTICO';
+    }
 
-    // Panelas — do mais específico ao mais genérico
+    // ─── Panelas e Frigideiras ───────────────────────────────────────────────
     if (/\bpanela de pressao\b/.test(tNorm)) return 'PANELA DE PRESSÃO PRÁTICA';
     if (/\bfrigideiras?\b/.test(tNorm)) return 'FRIGIDEIRA ANTIADERENTE DE QUALIDADE';
     if (/\bpanelas?\b/.test(tNorm)) return 'JOGO DE PANELAS COMPLETO';
 
-    // TV — exige "smart" ou tamanho em polegadas para não capturar "TV" genérico
+    // ─── Televisores e Áudio ─────────────────────────────────────────────────
     if (/\bsmart tv\b|\btelevisao\b/.test(tNorm) || (/\btv\b/.test(tNorm) && /\d{2,3}['"]\s*(polegada|pol\b)/.test(tNorm))) {
       return 'SMART TV COM IMAGEM DE CINEMA';
     }
     if (/\b(soundbar|caixa de som)\b/.test(tNorm)) return 'SOUNDBAR COM SOM DE CINEMA';
 
-    // Aspirador
+    // ─── Limpeza e Aspiradores ───────────────────────────────────────────────
     if (/\baspirador(es)?\b/.test(tNorm)) {
       if (/\brobos?\b/.test(tNorm)) return 'ASPIRADOR ROBÔ PRA LIMPAR TUDO';
       return 'ASPIRADOR DE PÓ POTENTE';
     }
 
-    // Demais categorias originais
+    // ─── Climatização, Lavanderia e Outros Itens de Casa ─────────────────────
     if (/\bventilador(es)?\b/.test(tNorm)) return 'VENTILADOR POTENTE E SILENCIOSO';
     if (/\bar[- ]condicionado\b/.test(tNorm)) return 'AR-CONDICIONADO PRA REFRESCAR';
     if (/\bmaquina de lavar\b|\blava e seca\b/.test(tNorm)) return 'MÁQUINA DE LAVAR EFICIENTE';
@@ -364,10 +404,12 @@ class FormatterService {
     if (/\bcolchao\b|\bcolchoes\b/.test(tNorm)) return 'COLCHÃO PRA DORMIR NAS NUVENS';
     if (/\b(parafusadeira|parafusadeiras|furadeira|furadeiras)\b/.test(tNorm)) return 'PARAFUSADEIRA POTENTE PRA TUDO';
 
-    // Fallback: palavras relevantes do próprio título
-    const stopWords = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para', 'pra', 'por', 'em',
+    // ─── Fallback inteligente: Extrai termos significativos do próprio título ─
+    const stopWords = new Set([
+      'de', 'da', 'do', 'das', 'dos', 'com', 'para', 'pra', 'por', 'em',
       'no', 'na', 'nos', 'nas', 'um', 'uma', 'uns', 'umas', 'e', 'ou', 'que', 'sem',
-      'kit', 'pro', 'max', 'bivolt', 'volts', 'unidade', 'unidades', 'modelo', 'cor', 'marca']);
+      'kit', 'pro', 'max', 'bivolt', 'volts', 'unidade', 'unidades', 'modelo', 'cor', 'marca'
+    ]);
 
     const cleanWords = productTitle
       .replace(/[^\w\sÀ-ú]/g, ' ')
@@ -380,41 +422,36 @@ class FormatterService {
     return cleanWords || 'PRODUTO EM SUPER OFERTA';
   }
 
+  /**
+   * Constrói a mensagem promocional final no padrão do WhatsApp.
+   * Formata os dados de acordo com a origem do produto (Shopee ou Mercado Livre):
+   * 
+   * Padrão Mercado Livre:
+   * 1. Headline no topo
+   * 2. Título original do produto
+   * 3. Preço formatado (💸 Por: R$ ...)
+   * 4. Cupom em destaque negrito (🎟️ Use o Cupom: *CODIGO*)
+   * 5. Link oficial de compra (🛒 Compre aqui: URL)
+   * 
+   * @param {Object} product - Objeto com os dados do produto.
+   * @param {string|null} finalLink - Link encurtado oficial (opcional).
+   * @returns {Promise<string>} Mensagem formatada completa para envio.
+   */
   async generateFormattedMessage(product, finalLink = null) {
     const link = finalLink || await this.formatLink(product.link);
     const currentPrice = product.price;
 
-    const isShopee = String(product.id || '').startsWith('SP-') || (link && (link.includes('shopee') || link.includes('shope.ee')));
+    const isShopee = String(product.id || '').startsWith('SP-') ||
+                     (link && (link.includes('shopee') || link.includes('shope.ee')));
 
-    // Helper to validate if a string is a clean/valid coupon code
-    const isValidCouponCode = (c) => {
-      if (!c) return false;
-      const clean = c.trim();
-      if (/\s|%|R\$|off|desconto|grátis|gratis/i.test(clean)) {
-        return false;
-      }
-      return /^[A-Z0-9_-]{3,25}$/i.test(clean);
-    };
-
-    // Formata preços no padrão brasileiro (inteiro sem centavos desnecessários)
-    const formatPrice = (value) => {
-      if (value === null || value === undefined) return '';
-      if (Number.isInteger(value)) {
-        return value.toString();
-      }
-      return value.toFixed(2).replace('.', ',');
-    };
-
+    // ──────────────────────────────────────────────────────────────────────────
+    // FLUXO SHOPEE
+    // ──────────────────────────────────────────────────────────────────────────
     if (isShopee) {
       if (product.coupon && !isValidCouponCode(product.coupon)) {
         const extracted = couponFetcher.extractCouponCode ? couponFetcher.extractCouponCode(product.coupon) : null;
         product.coupon = extracted || '';
       }
-
-      const formatShopeePrice = (value) => {
-        if (value === null || value === undefined) return '';
-        return value.toFixed(2).replace('.', ',');
-      };
 
       const shopeeHeaders = [
         'ACHADO DO DIA SHOPEE 🧡',
@@ -469,7 +506,9 @@ class FormatterService {
       return lines.join('\n');
     }
 
-    // 🏷️ MERCADO LIVRE: Título em destaque no topo, título original, preço, cupom em negrito, link na mesma linha
+    // ──────────────────────────────────────────────────────────────────────────
+    // FLUXO MERCADO LIVRE
+    // ──────────────────────────────────────────────────────────────────────────
     let resolvedCoupon = null;
     try {
       resolvedCoupon = await couponFetcher.resolveCouponForProduct(product);
@@ -478,11 +517,12 @@ class FormatterService {
     }
 
     if (!resolvedCoupon && product.coupon) {
-      resolvedCoupon = couponFetcher.extractCouponCode ? couponFetcher.extractCouponCode(product.coupon) : (isValidCouponCode(product.coupon) ? product.coupon.trim().toUpperCase() : null);
+      resolvedCoupon = couponFetcher.extractCouponCode
+        ? couponFetcher.extractCouponCode(product.coupon)
+        : (isValidCouponCode(product.coupon) ? product.coupon.trim().toUpperCase() : null);
     }
 
     product.coupon = resolvedCoupon || '';
-
     const headline = this.generateHeadline(product.title);
 
     const lines = [];
@@ -492,10 +532,10 @@ class FormatterService {
     // 2. Título original do produto sem alterações (sem negrito)
     lines.push(product.title.trim());
     lines.push('');
-    // 3. Preço (sem negrito)
+    // 3. Preço formatado no padrão brasileiro (sem negrito)
     lines.push(`💸 Por: R$ ${formatPrice(currentPrice)}`);
 
-    // 4. Cupom em negrito!
+    // 4. Cupom em negrito caso exista
     if (product.coupon) {
       let cleanCoupon = product.coupon.trim();
       if (cleanCoupon.toLowerCase().startsWith('cupom ')) {
@@ -507,7 +547,7 @@ class FormatterService {
     }
 
     lines.push('');
-    // 5. Link de compra (sem negrito)
+    // 5. Link de compra na mesma linha
     lines.push(`🛒 Compre aqui: ${link}`);
 
     return lines.join('\n');
@@ -515,4 +555,3 @@ class FormatterService {
 }
 
 module.exports = new FormatterService();
-
