@@ -136,10 +136,55 @@ router.post('/coupons/active', async (req, res) => {
         await couponFetcher.setActiveDailyCoupon(coupon);
         const active = await couponFetcher.getActiveDailyCoupon();
         res.json({ success: true, activeCoupon: active, message: active ? `Cupom ${active} ativado com sucesso!` : 'Modo automático reativado!' });
+// ──────────────────────────────────────────────────────────────────────────────
+// ENDPOINTS DO NOVO MOTOR DE PROMOÇÕES (EXTRATOR, MARCA D'ÁGUA, AFILIADO E ENVIO)
+// ──────────────────────────────────────────────────────────────────────────────
+const promoParser = require('../services/promoParser.service');
+const whatsappSender = require('../services/whatsappSender.service');
+
+// 1. Extrair e raspar promoção a partir de texto bruto ou URL
+router.post('/promo/parse', async (req, res) => {
+    try {
+        const { text, url } = req.body;
+        if (!text && !url) {
+            return res.status(400).json({ error: 'Informe "text" ou "url" no corpo da requisição.' });
+        }
+        if (text) {
+            const result = await promoParser.parsePromotion(text);
+            return res.json(result);
+        }
+        const cleanUrl = await promoParser.unshortenUrl(url);
+        const product = await promoParser.scrapeProductData(cleanUrl);
+        return res.json({ found: true, cleanUrl, product });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        logger.error('[API /promo/parse] Erro:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Gerar pré-visualização completa (legenda oficial + link meli.la + imagem com marca d'água)
+router.post('/promo/preview', async (req, res) => {
+    try {
+        const preview = await whatsappSender.previewPromotion(req.body);
+        return res.json(preview);
+    } catch (err) {
+        logger.error('[API /promo/preview] Erro:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// 3. Processar e publicar imediatamente no grupo do WhatsApp
+router.post('/promo/publish', async (req, res) => {
+    try {
+        const { targetChatId, ...input } = req.body;
+        const result = await whatsappSender.sendPromotion(input, targetChatId);
+        return res.json(result);
+    } catch (err) {
+        logger.error('[API /promo/publish] Erro:', err);
+        return res.status(500).json({ error: err.message });
     }
 });
 
 module.exports = router;
+
 

@@ -12,6 +12,8 @@ module.exports = {
 
   whatsappTargetNumber: process.env.WHATSAPP_TARGET_NUMBER || '5569984520192',
   whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || 'OfertaLar #17',
+  whatsappApiUrl: process.env.WHATSAPP_API_URL || '',
+
   mlAffiliateTag: process.env.ML_AFFILIATE_TAG || 'bv20260330080614',
   useMlAffiliateApi: (process.env.ML_USE_AFFILIATE_API || 'false').toLowerCase() === 'true',
   mlAffiliateApiUrl: process.env.ML_AFFILIATE_API_URL || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink',
@@ -23,10 +25,16 @@ module.exports = {
   publishEndTime: process.env.PUBLISH_END_TIME || '22:00',
   renderExternalUrl: process.env.RENDER_EXTERNAL_URL || null,
 
+  // Configurações do Módulo de IA Gemini
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+
+  // Configurações do Módulo de Marca d'Água e Postagem
+  watermarkPath: process.env.WATERMARK_PATH || '',
+  defaultStoreName: process.env.DEFAULT_STORE_NAME || 'Oferta no Mercado Livre',
+
   shopeeAppId: process.env.SHOPEE_APP_ID || '',
   shopeeSecret: process.env.SHOPEE_SECRET || '',
   shopeeAffiliateTag: process.env.SHOPEE_AFFILIATE_TAG || '',
   useShopee: (process.env.USE_SHOPEE || 'true').toLowerCase() === 'true',
   historyPruneDays: parseInt(process.env.HISTORY_PRUNE_DAYS || '3', 10),
 };
-

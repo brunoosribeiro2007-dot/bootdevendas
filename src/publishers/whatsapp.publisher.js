@@ -366,6 +366,35 @@ class WhatsappPublisher {
     }
   }
 
+  async sendImageMessage(imageBuffer, caption, customChatId = null) {
+    if (!this.isReady || !this.sock) {
+      logger.warn('⚠️ Envio de imagem abortado: WhatsApp não está conectado.');
+      return false;
+    }
+    try {
+      const chatId = customChatId || await this.getChatId();
+      if (!chatId) {
+        logger.error('❌ Não foi possível determinar o destino para envio de imagem.');
+        return false;
+      }
+      await promiseTimeout(
+        this.sock.sendMessage(chatId, {
+          image: imageBuffer,
+          caption: caption || ''
+        }),
+        35000,
+        'Timeout ao enviar imagem no WhatsApp'
+      );
+      return true;
+    } catch (error) {
+      logger.error('❌ Erro ao enviar imagem no WhatsApp:', error.message || error);
+      if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
+        this.handleTimeoutOrConnectionIssue();
+      }
+      return false;
+    }
+  }
+
   async publish(item) {
     if (!this.isReady || !this.sock) {
         logger.warn(`⚠️ Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
