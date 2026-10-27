@@ -136,6 +136,11 @@ router.post('/coupons/active', async (req, res) => {
         await couponFetcher.setActiveDailyCoupon(coupon);
         const active = await couponFetcher.getActiveDailyCoupon();
         res.json({ success: true, activeCoupon: active, message: active ? `Cupom ${active} ativado com sucesso!` : 'Modo automático reativado!' });
+    } catch (err) {
+        logger.error('Erro ao definir cupom ativo:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 // ──────────────────────────────────────────────────────────────────────────────
 // ENDPOINTS DO NOVO MOTOR DE PROMOÇÕES (EXTRATOR, MARCA D'ÁGUA, AFILIADO E ENVIO)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -185,6 +190,37 @@ router.post('/promo/publish', async (req, res) => {
     }
 });
 
-module.exports = router;
+// 4. Listar canais do WhatsApp aos quais o bot tem acesso
+router.get('/whatsapp/channels', async (req, res) => {
+    const whatsappPublisher = require('../publishers/whatsapp.publisher');
+    try {
+        const channels = await whatsappPublisher.getSubscribedChannels();
+        const currentDest = await whatsappPublisher.getDestinationInfo();
+        return res.json({ success: true, currentDestination: currentDest, channels });
+    } catch (err) {
+        logger.error('[API /whatsapp/channels] Erro:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
 
+// 5. Testar envio de mensagem no canal/grupo configurado
+router.post('/whatsapp/test', async (req, res) => {
+    const whatsappPublisher = require('../publishers/whatsapp.publisher');
+    const { target, message } = req.body;
+    try {
+        const testText = message || '🚀 *OfertaLar Bot:* Teste de envio realizado com sucesso no canal do WhatsApp!';
+        const sent = await whatsappPublisher.sendTextMessage(testText, target || null);
+        const dest = await whatsappPublisher.getDestinationInfo();
+        if (sent) {
+            return res.json({ success: true, message: 'Mensagem de teste enviada com sucesso!', destination: dest });
+        } else {
+            return res.status(500).json({ success: false, error: 'Falha ao enviar mensagem de teste. Verifique se o WhatsApp está conectado e se o canal foi encontrado.', destination: dest });
+        }
+    } catch (err) {
+        logger.error('[API /whatsapp/test] Erro:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+module.exports = router;
 

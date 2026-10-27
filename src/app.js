@@ -166,6 +166,11 @@ app.get('/api/status', async (req, res) => {
     }
   }
 
+  let destination = null;
+  try {
+    destination = await whatsappPublisher.getDestinationInfo();
+  } catch (e) {}
+
   res.json({
     isReady: whatsappPublisher.isReady,
     initStatus: whatsappPublisher.initStatus,
@@ -174,6 +179,10 @@ app.get('/api/status', async (req, res) => {
     qrDataUrl: qrDataUrl,
     publishStartTime: env.publishStartTime || '08:00',
     publishEndTime: env.publishEndTime || '22:00',
+    destination: destination || {
+      name: env.whatsappTargetChannel || env.whatsappTargetGroup || env.whatsappTargetNumber || 'Não definido',
+      type: env.whatsappTargetChannel ? 'channel' : (env.whatsappTargetGroup ? 'group' : 'number')
+    }
   });
 });
 

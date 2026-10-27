@@ -23,6 +23,7 @@ class WhatsappPublisher {
     this.sessionFilesMtime = new Map(); // Cache local dos tempos de modificação dos arquivos
     this.isInitializing = false; // Controle de concorrência na inicialização
     this.reconnectTimeout = null; // Referência para evitar agendamentos paralelos
+    this._cachedDestination = null; // { id, name, type: 'channel' | 'group' | 'number' }
     
     if (!fs.existsSync(this.authPath)) {
         try { fs.mkdirSync(this.authPath, { recursive: true }); } catch (e) {}
@@ -145,6 +146,7 @@ class WhatsappPublisher {
         this.latestQr = null;
         this.latestPairingCode = null;
         this._cachedGroupId = null; // Reset cache do grupo no reconnect
+        this._cachedDestination = null; // Reset cache de destino (canal/grupo)
 
         // Cancela qualquer agendamento de reconexão pendente
         if (this.reconnectTimeout) {
@@ -269,6 +271,7 @@ class WhatsappPublisher {
   handleTimeoutOrConnectionIssue() {
       this.isReady = false;
       this._cachedGroupId = null;
+      this._cachedDestination = null;
       this.addLog('⚠️ Instabilidade ou timeout detectado. Forçando reinicialização da conexão do WhatsApp...');
       if (this.sock) {
           try {
@@ -297,56 +300,267 @@ class WhatsappPublisher {
     }
   }
 
-  async getChatId() {
-    const targetNumber = env.whatsappTargetNumber;
-    const targetGroup = env.whatsappTargetGroup;
-    let chatId = null;
+  // ─── RESOLUÇÃO INTELIGENTE DE DESTINO (CANAIS, GRUPOS E NÚMEROS) ─────────────
 
-    if (targetGroup) {
-        if (targetGroup.endsWith('@g.us')) {
-            chatId = targetGroup;
-        } else if (this._cachedGroupId) {
-            chatId = this._cachedGroupId;
-        } else {
-            try {
-                const groups = await promiseTimeout(
-                    this.sock.groupFetchAllParticipating(),
-                    20000,
-                    'Timeout ao buscar lista de grupos'
-                );
-                const groupName = targetGroup.toLowerCase().trim();
-                let group = Object.values(groups).find(g => g.subject.toLowerCase().trim() === groupName);
-                if (!group) {
-                    group = Object.values(groups).find(g => g.subject.toLowerCase().includes(groupName) || groupName.includes(g.subject.toLowerCase()));
-                }
-                if (group) {
-                    chatId = group.id;
-                    this._cachedGroupId = chatId;
-                    logger.info(`✅ Grupo encontrado: "${group.subject}" (${chatId})`);
-                } else {
-                    const availableGroups = Object.values(groups).map(g => `"${g.subject}" (ID: ${g.id})`).join(', ');
-                    logger.warn(`❌ Grupo "${targetGroup}" não encontrado. Grupos disponíveis: ${availableGroups}`);
-                }
-            } catch (gErr) {
-                logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
+  /**
+   * Consulta canais (newsletters) aos quais a conta conectada tem acesso
+   * utilizando a query GraphQL MEX interna do WhatsApp.
+   */
+  async getSubscribedChannels() {
+    if (!this.sock) return [];
+    try {
+      const baileys = await import('@whiskeysockets/baileys');
+      const getBinaryNodeChild = baileys.getBinaryNodeChild;
+
+      const result = await promiseTimeout(
+        this.sock.query({
+          tag: 'iq',
+          attrs: {
+            id: this.sock.generateMessageTag(),
+            type: 'get',
+            to: 's.whatsapp.net',
+            xmlns: 'w:mex'
+          },
+          content: [
+            {
+              tag: 'query',
+              attrs: { query_id: '6388546374527196' },
+              content: Buffer.from(JSON.stringify({ variables: {} }), 'utf-8')
             }
-        }
-    }
+          ]
+        }),
+        15000,
+        'Timeout ao consultar canais do WhatsApp'
+      );
 
-    if (!chatId && targetNumber) {
-        chatId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
+      const child = getBinaryNodeChild ? getBinaryNodeChild(result, 'result') : null;
+      if (child?.content) {
+        const parsed = JSON.parse(child.content.toString());
+        const list = parsed?.data?.xwa2_newsletter_subscribed || [];
+        return list.map(item => ({
+          id: item.id,
+          name: item.thread_metadata?.name?.text || item.name || 'Canal sem nome',
+          subscribers: item.thread_metadata?.subscribers_count || 0,
+          role: item.viewer_metadata?.role || 'SUBSCRIBER',
+          invite: item.thread_metadata?.invite || null
+        }));
+      }
+    } catch (e) {
+      logger.warn(`⚠️ Não foi possível listar canais via MEX query: ${e.message}`);
     }
-
-    return chatId;
+    return [];
   }
 
-  async sendTextMessage(text) {
+  /**
+   * Resolve um alvo para Canal (Newsletter) do WhatsApp.
+   * Suporta:
+   * 1. JID direto (...@newsletter)
+   * 2. Link de convite oficial (https://whatsapp.com/channel/0029Va... ou whatsapp.com/channel/...)
+   * 3. Código de convite alfanumérico (ex: 0029Va...)
+   * 4. Nome do canal (ex: "OfertaLar") via busca nos canais administrados/inscritos
+   */
+  async resolveChannel(target) {
+    if (!target) return null;
+    const clean = String(target).trim();
+
+    // 1. Já é JID de canal direto
+    if (clean.endsWith('@newsletter')) {
+      return { id: clean, name: clean, type: 'channel' };
+    }
+
+    if (!this.sock) return null;
+
+    // 2. Link de convite ou código de canal
+    const linkMatch = clean.match(/whatsapp\.com\/channel\/([a-zA-Z0-9_-]+)/i);
+    const inviteCode = linkMatch ? linkMatch[1] : (clean.startsWith('0029') ? clean : null);
+
+    if (inviteCode && typeof this.sock.newsletterMetadata === 'function') {
+      try {
+        this.addLog(`🔍 Resolvendo canal via link/código de convite: ${inviteCode}...`);
+        const meta = await promiseTimeout(
+          this.sock.newsletterMetadata('invite', inviteCode),
+          15000,
+          'Timeout ao consultar metadados do canal'
+        );
+        if (meta?.id) {
+          const channelName = meta.thread_metadata?.name?.text || meta.name || clean;
+          this.addLog(`✅ Canal identificado via link: "${channelName}" (${meta.id})`);
+          return { id: meta.id, name: channelName, type: 'channel' };
+        }
+      } catch (err) {
+        logger.warn(`Falha ao resolver canal por convite (${inviteCode}): ${err.message}`);
+      }
+    }
+
+    // 3. Busca por nome na lista de canais da conta
+    try {
+      const channels = await this.getSubscribedChannels();
+      if (channels && channels.length > 0) {
+        const searchName = clean.toLowerCase();
+        let found = channels.find(c => (c.name || '').toLowerCase().trim() === searchName);
+        if (!found) {
+          found = channels.find(c => (c.name || '').toLowerCase().includes(searchName) || searchName.includes((c.name || '').toLowerCase()));
+        }
+        if (found) {
+          this.addLog(`✅ Canal encontrado por nome: "${found.name}" (${found.id})`);
+          return { id: found.id, name: found.name, type: 'channel' };
+        }
+      }
+    } catch (err) {
+      logger.warn(`Erro ao buscar canal por nome na conta: ${err.message}`);
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve um alvo para Grupo do WhatsApp (@g.us).
+   */
+  async resolveGroup(target) {
+    if (!target || !this.sock) return null;
+    const clean = String(target).trim();
+
+    if (clean.endsWith('@g.us')) {
+      return { id: clean, name: clean, type: 'group' };
+    }
+
+    try {
+      const groups = await promiseTimeout(
+        this.sock.groupFetchAllParticipating(),
+        20000,
+        'Timeout ao buscar lista de grupos'
+      );
+      const groupName = clean.toLowerCase();
+      let group = Object.values(groups).find(g => (g.subject || '').toLowerCase().trim() === groupName);
+      if (!group) {
+        group = Object.values(groups).find(g => (g.subject || '').toLowerCase().includes(groupName) || groupName.includes((g.subject || '').toLowerCase()));
+      }
+      if (group) {
+        this.addLog(`✅ Grupo encontrado: "${group.subject}" (${group.id})`);
+        return { id: group.id, name: group.subject, type: 'group' };
+      } else {
+        const availableGroups = Object.values(groups).map(g => `"${g.subject}"`).join(', ');
+        logger.warn(`❌ Grupo "${clean}" não encontrado. Grupos disponíveis: ${availableGroups}`);
+      }
+    } catch (gErr) {
+      logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
+    }
+
+    return null;
+  }
+
+  /**
+   * Converte qualquer identificador ou alvo avulso em um JID de destino válido.
+   */
+  async resolveChatId(idOrTarget) {
+    if (!idOrTarget) return await this.getChatId();
+    const clean = String(idOrTarget).trim();
+    if (clean.endsWith('@newsletter') || clean.endsWith('@g.us') || clean.endsWith('@s.whatsapp.net')) {
+      return clean;
+    }
+    const resolved = (await this.resolveChannel(clean)) || (await this.resolveGroup(clean));
+    if (resolved?.id) return resolved.id;
+    if (/^\d{8,15}$/.test(clean.replace(/\D/g, ''))) {
+      return `${clean.replace(/\D/g, '')}@s.whatsapp.net`;
+    }
+    return clean;
+  }
+
+  /**
+   * Retorna informações do destino atual configurado (Canal, Grupo ou Número).
+   */
+  async getDestinationInfo() {
+    if (this._cachedDestination) {
+      return this._cachedDestination;
+    }
+    const chatId = await this.getChatId();
+    return this._cachedDestination || (chatId ? { id: chatId, name: chatId, type: 'unknown' } : null);
+  }
+
+  /**
+   * Determina o ID de destino prioritário para envio das mensagens.
+   * Ordem de prioridade:
+   * 1. Canal do WhatsApp (WHATSAPP_TARGET_CHANNEL)
+   * 2. Grupo ou Canal configurado em WHATSAPP_TARGET_GROUP
+   * 3. Número privado (WHATSAPP_TARGET_NUMBER)
+   */
+  async getChatId() {
+    if (this._cachedDestination?.id) {
+      return this._cachedDestination.id;
+    }
+
+    const targetChannel = env.whatsappTargetChannel;
+    const targetGroup = env.whatsappTargetGroup;
+    const targetNumber = env.whatsappTargetNumber;
+
+    // 1. Tenta Canal explícito
+    if (targetChannel) {
+      const channel = await this.resolveChannel(targetChannel);
+      if (channel) {
+        this._cachedDestination = channel;
+        this._cachedGroupId = channel.id;
+        logger.info(`📢 Destino ativo: [CANAL] "${channel.name}" (${channel.id})`);
+        return channel.id;
+      }
+    }
+
+    // 2. Tenta Grupo ou Canal via targetGroup
+    if (targetGroup) {
+      // Se tiver formato característico de canal (@newsletter ou link de canal)
+      if (targetGroup.endsWith('@newsletter') || targetGroup.includes('whatsapp.com/channel/') || targetGroup.startsWith('0029')) {
+        const channel = await this.resolveChannel(targetGroup);
+        if (channel) {
+          this._cachedDestination = channel;
+          this._cachedGroupId = channel.id;
+          logger.info(`📢 Destino ativo: [CANAL] "${channel.name}" (${channel.id})`);
+          return channel.id;
+        }
+      }
+
+      // Se for JID de grupo explícito (@g.us)
+      if (targetGroup.endsWith('@g.us')) {
+        this._cachedDestination = { id: targetGroup, name: targetGroup, type: 'group' };
+        this._cachedGroupId = targetGroup;
+        return targetGroup;
+      }
+
+      // Tenta primeiro como canal (ex: usuário colocou "OfertaLar" que é canal)
+      const maybeChannel = await this.resolveChannel(targetGroup);
+      if (maybeChannel) {
+        this._cachedDestination = maybeChannel;
+        this._cachedGroupId = maybeChannel.id;
+        logger.info(`📢 Destino ativo: [CANAL] "${maybeChannel.name}" (${maybeChannel.id})`);
+        return maybeChannel.id;
+      }
+
+      // Tenta como grupo tradicional
+      const group = await this.resolveGroup(targetGroup);
+      if (group) {
+        this._cachedDestination = group;
+        this._cachedGroupId = group.id;
+        logger.info(`👥 Destino ativo: [GRUPO] "${group.name}" (${group.id})`);
+        return group.id;
+      }
+    }
+
+    // 3. Fallback para número privado
+    if (targetNumber) {
+      const numId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
+      this._cachedDestination = { id: numId, name: targetNumber, type: 'number' };
+      logger.info(`📱 Destino ativo: [NÚMERO PRIVADO] ${targetNumber}`);
+      return numId;
+    }
+
+    return null;
+  }
+
+  async sendTextMessage(text, customChatId = null) {
     if (!this.isReady || !this.sock) {
         logger.warn('⚠️ Envio de mensagem abortado: WhatsApp não está pronto');
         return false;
     }
     try {
-      const chatId = await this.getChatId();
+      const chatId = customChatId ? await this.resolveChatId(customChatId) : await this.getChatId();
       if (!chatId) {
           logger.error('❌ Não foi possível determinar o destino para envio de texto.');
           return false;
@@ -372,7 +586,7 @@ class WhatsappPublisher {
       return false;
     }
     try {
-      const chatId = customChatId || await this.getChatId();
+      const chatId = customChatId ? await this.resolveChatId(customChatId) : await this.getChatId();
       if (!chatId) {
         logger.error('❌ Não foi possível determinar o destino para envio de imagem.');
         return false;
@@ -404,7 +618,7 @@ class WhatsappPublisher {
     try {
       const chatId = await this.getChatId();
       if (!chatId) {
-          logger.error('❌ Não foi possível determinar o destino (Grupo ou Número).');
+          logger.error('❌ Não foi possível determinar o destino (Canal, Grupo ou Número).');
           return false;
       }
 

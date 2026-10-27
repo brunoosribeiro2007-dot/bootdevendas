@@ -106,7 +106,7 @@ class WhatsappSenderService {
         sent = await whatsappPublisher.sendImageMessage(imageBuffer, caption, targetChatId);
       } else {
         // Fallback de texto caso a imagem falhe totalmente
-        sent = await whatsappPublisher.sendTextMessage(caption);
+        sent = await whatsappPublisher.sendTextMessage(caption, targetChatId);
       }
 
       if (sent) {

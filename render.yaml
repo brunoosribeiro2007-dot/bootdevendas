@@ -29,9 +29,13 @@ services:
       - key: WHATSAPP_TARGET_NUMBER
         value: "5569984520192"
 
+      # Canal do WhatsApp onde as ofertas serão postadas
+      - key: WHATSAPP_TARGET_CHANNEL
+        value: "OfertaLar"
+
       # Nome exato do grupo do WhatsApp onde as ofertas serão postadas
       - key: WHATSAPP_TARGET_GROUP
-        value: "OfertaLar #17"
+        value: "OfertaLar"
 
       # Tag de afiliado do Mercado Livre - configurada nas secrets do Render
       - key: ML_AFFILIATE_TAG

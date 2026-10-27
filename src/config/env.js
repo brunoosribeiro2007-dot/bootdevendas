@@ -11,7 +11,8 @@ module.exports = {
   cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/3 * * * *',
 
   whatsappTargetNumber: process.env.WHATSAPP_TARGET_NUMBER || '5569984520192',
-  whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || 'OfertaLar #17',
+  whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || '',
+  whatsappTargetChannel: process.env.WHATSAPP_TARGET_CHANNEL || '',
   whatsappApiUrl: process.env.WHATSAPP_API_URL || '',
 
   mlAffiliateTag: process.env.ML_AFFILIATE_TAG || 'bv20260330080614',
