@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const repository = require('../database/repository');
 const logger = require('../config/logger');
-const { db } = require('../database/init');
 const { captureTask } = require('../jobs/capture.job');
 const { publishTask } = require('../jobs/publisher.job');
 const couponFetcher = require('../services/couponFetcher.service');
@@ -64,35 +63,6 @@ router.get('/database/clear', async (req, res) => {
     }
 });
 
-// Listar cupons capturados do Mercado Livre com produtos
-router.get('/coupons', async (req, res) => {
-    try {
-        const query = "SELECT id, title, price, link, image_url as imageUrl, coupon FROM products WHERE coupon IS NOT NULL AND coupon != ''";
-        const rows = await db.all(query);
-        
-        const groups = {};
-        for (const row of rows) {
-            const couponTrimmed = row.coupon.trim();
-            if (!groups[couponTrimmed]) {
-                groups[couponTrimmed] = {
-                    coupon: couponTrimmed,
-                    products: []
-                };
-            }
-            groups[couponTrimmed].products.push({
-                id: row.id,
-                title: row.title,
-                price: row.price,
-                link: row.link,
-                imageUrl: row.imageUrl
-            });
-        }
-        res.json({ coupons: Object.values(groups) });
-    } catch (err) {
-        logger.error('Erro ao buscar cupons do banco:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // Cupons do dia (busca do banco de dados com fallback para cache em memória)
 router.get('/coupons/daily', async (req, res) => {

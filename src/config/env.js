@@ -38,4 +38,9 @@ module.exports = {
   shopeeAffiliateTag: process.env.SHOPEE_AFFILIATE_TAG || '',
   useShopee: (process.env.USE_SHOPEE || 'true').toLowerCase() === 'true',
   historyPruneDays: parseInt(process.env.HISTORY_PRUNE_DAYS || '3', 10),
+
+  // Credenciais de Acesso ao Painel Administrativo
+  adminUser: process.env.ADMIN_USER || process.env.DASHBOARD_USERNAME || 'admin',
+  adminPass: process.env.ADMIN_PASS || process.env.DASHBOARD_PASSWORD || 'admin123',
+  sessionSecret: process.env.SESSION_SECRET || 'affiliate_secret_hmac_key_2026',
 };

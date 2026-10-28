@@ -21,6 +21,12 @@ services:
       - key: NODE_ENV
         value: production
 
+      # Credenciais de acesso ao Painel Web (Dashboard)
+      - key: ADMIN_USER
+        value: "admin"
+      - key: ADMIN_PASS
+        sync: false
+
       # URL de conexão do PostgreSQL (Supabase) - configurado nas secrets do Render
       - key: DATABASE_URL
         sync: false
