@@ -1,3 +1,16 @@
+/**
+ * ==============================================================================
+ * COUPON FETCHER SERVICE - MÓDULO DE CAPTURA E GERENCIAMENTO DE CUPONS DIÁRIOS
+ * ==============================================================================
+ * Responsabilidades:
+ * 1. Web Scraper e Collector de cupons vigentes no Mercado Livre (/cupons e /ofertas).
+ * 2. Extração de código, regra/descrição, compra mínima e categoria/elegibilidade.
+ * 3. Persistência e atualização contínua no banco de dados (SQLite/PostgreSQL).
+ * 4. Associação inteligente do melhor cupom diário aplicável a cada produto.
+ * 5. Cache em memória com renovação periódica e tolerância total a falhas de rede.
+ * ==============================================================================
+ */
+
 const axios = require('axios');
 const cheerio = require('cheerio');
 const https = require('https');
@@ -5,46 +18,55 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
+const repository = require('../database/repository');
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 /**
- * Cache em memória de cupons do dia do Mercado Livre.
- * Renovado a cada ciclo de captura (TTL de 1 hora).
+ * Cache em memória de cupons do dia.
+ * Renovado a cada ciclo ou a cada 1 hora.
  */
 let couponCache = [];
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
 let inMemoryActiveCoupon = null;
-let inMemoryActiveCouponDate = null; // Data (YYYY-MM-DD) em que o cupom foi armazenado em memória
+let inMemoryActiveCouponDate = null;
 
+// Termos e falsos positivos bloqueados
 const BLOCKED_COUPON_CODES = new Set([
   'TUDOPARACASA', 'ILUMINESUACASA', 'CASAESADE', 'MELHORESOFERTAS',
   'ACESSRIOSPRAVOC', 'ITENSPARASUAMOTO', 'SOPAULOAUTOPEAS', 'VERECOMPRAR2024',
   'CAMAINBOXLOJAOFICIAL', 'OOCEANDROPSA97032', 'UNIVERSALCASES2', 'BLMOTOPARTS',
   'SAOPAULOACESSORIOS', 'ANIMAFESTCAMPINAS', 'BRIMPORTSPEAS', 'SHOPFLEXCOM',
   'CASA', 'LAR', 'ELETRO', 'OFF', 'CUPOM', 'DESCONTO', 'PRODUTO', 'PRODUTOS',
-  'SELECIONADOS', 'COMPRA', 'MINIMA', 'SEMCOMPRA', 'FRETE'
+  'SELECIONADOS', 'COMPRA', 'MINIMA', 'SEMCOMPRA', 'FRETE', 'FRETEGRATIS',
+  'CONFIRA', 'OFERTA', 'MELI', 'BR', 'MERCADOLIVRE'
 ]);
 
+/**
+ * Valida se a string tem formato aceitável para ser código de cupom real.
+ * @param {string} c
+ * @returns {boolean}
+ */
 function isValidRealCouponCode(c) {
   if (!c || typeof c !== 'string') return false;
   const clean = c.trim().toUpperCase();
-  if (clean.length < 3 || clean.length > 20) return false;
+  if (clean.length < 3 || clean.length > 25) return false;
   if (BLOCKED_COUPON_CODES.has(clean)) return false;
-  if (/^(OFF|\d+OFF|R\$\d+|DESCONTO|CUPOM)$/i.test(clean)) return false;
+  // Bloqueia termos que são apenas palavras-chave soltas
+  if (/^(OFF|DESCONTO|CUPOM|FRETE|REAIS)$/i.test(clean)) return false;
   return /^[A-Z0-9_-]+$/.test(clean);
 }
 
 /**
- * Retorna a data atual no fuso de Brasília (America/Sao_Paulo) no formato YYYY-MM-DD.
+ * Retorna a data atual no fuso de Brasília (YYYY-MM-DD).
  */
 function getTodayDateStr() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 }
 
 /**
- * Obtém os cookies salvos para autenticação no Mercado Livre.
+ * Recupera cookies autenticados salvos do Mercado Livre.
  */
 function getAuthCookies() {
   let cookieHeader = null;
@@ -69,10 +91,109 @@ function getAuthCookies() {
 }
 
 /**
- * Busca cupons do dia via API pública do Mercado Livre (MLB/promotions e search).
+ * Detecta a categoria de restrição do cupom a partir do texto ou título do card.
+ * @param {string} text
+ * @returns {string|null} 'casa', 'eletro', 'tech', 'moda', etc. ou null se geral.
+ */
+function detectCouponCategory(text) {
+  if (!text || typeof text !== 'string') return null;
+  const t = text.toLowerCase();
+
+  // Eletrodomésticos
+  if (/eletro|refrigera|geladeira|fog[aã]o|micro-?ondas|ar-condicionado|lavadora|liquidificador|air\s*fryer/i.test(t)) {
+    return 'eletro';
+  }
+  // Casa / Decoração / Móveis
+  if (/casa|m[oó]veis|decora|cozinha|cama|mesa|banho|colch[aã]o|sala|quarto|ilumina/i.test(t)) {
+    return 'casa';
+  }
+  // Informática / Tecnologia / Celulares
+  if (/inform[aá]tica|computador|notebook|celular|smartphone|tablet|tecnologia|gamer/i.test(t)) {
+    return 'tech';
+  }
+  // Moda / Calçados
+  if (/moda|roupas?|cal[cç]ados?|vestu[aá]rio|t[eê]nis/i.test(t)) {
+    return 'moda';
+  }
+  // Beleza / Cuidados
+  if (/beleza|perfumaria|cosm[eé]tico|cabelo/i.test(t)) {
+    return 'beleza';
+  }
+  // Automotivo
+  if (/auto|ve[ií]culo|moto|pe[cç]as/i.test(t)) {
+    return 'auto';
+  }
+
+  return null;
+}
+
+/**
+ * Identifica a categoria de um produto a partir do título para casar com o cupom.
+ * @param {string} title
+ * @returns {string|null}
+ */
+function detectProductCategory(title) {
+  if (!title || typeof title !== 'string') return null;
+  const t = title.toLowerCase();
+
+  if (/geladeira|refrigerador|fog[aã]o|micro-?ondas|cooktop|lavadora|m[aá]quina de lavar|lava e seca|ar-condicionado|climatizador|ventilador|aspirador|air\s*fryer|fritadeira|liquidificador|batedeira|cafeteira|sanduicheira|mixer|eletro/i.test(t)) {
+    return 'eletro';
+  }
+  if (/guarda-roupa|cama|mesa|cadeira|sof[aá]|sofa|colch[aã]o|travesseiro|arm[aá]rio|estante|rack|painel|cortina|tapete|decora|panela|jogo de panelas|faqueiro|edredom|len[cç]ol|toalha|cozinha|casa|banho/i.test(t)) {
+    return 'casa';
+  }
+  if (/celular|smartphone|iphone|galaxy|xiaomi|notebook|computador|pc|tablet|ipad|monitor|teclado|mouse|headset|fone de ouvido|impressora/i.test(t)) {
+    return 'tech';
+  }
+  if (/t[eê]nis|sapato|sand[aá]lia|bota|camisa|camiseta|cal[cç]a|jaqueta|casaco|bermuda|vestido|bolsa|mochila/i.test(t)) {
+    return 'moda';
+  }
+  return null;
+}
+
+/**
+ * Normaliza um cupom em um objeto rico com método toString() compatível com strings.
+ */
+function createCouponObject(data) {
+  const code = String(data.code).trim().toUpperCase();
+  const rule = data.rule || data.discount || '';
+  const description = data.description || data.title || rule || '';
+  const minAmount = typeof data.minAmount === 'number' ? data.minAmount : (typeof data.min_amount === 'number' ? data.min_amount : 0);
+  const discountValue = data.discountValue !== undefined ? data.discountValue : (data.discount_value !== undefined ? data.discount_value : null);
+  const discountType = data.discountType || data.discount_type || 'unknown';
+  const category = data.category || null;
+  const source = data.source || 'collector';
+
+  const couponObj = {
+    code,
+    rule,
+    description,
+    minAmount,
+    min_amount: minAmount,
+    discountValue,
+    discount_value: discountValue,
+    discountType,
+    discount_type: discountType,
+    category,
+    source,
+    capturedAt: data.capturedAt || data.captured_at || new Date().toISOString(),
+    // Garante que se for interpolado como string (ex: `${coupon}`), retorna o código do cupom
+    toString: () => code
+  };
+
+  return couponObj;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// BLOCO 1: ROTINAS DE CAPTURA (WEB SCRAPING & APIS DO MERCADO LIVRE)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Busca cupons via API pública do Mercado Livre (MLB search e promotions).
  */
 async function fetchFromApi() {
   const found = [];
+
   try {
     const res = await axios.get('https://api.mercadolibre.com/sites/MLB/search?tag=best_seller&has_discount=true&limit=50&sort=relevance', {
       headers: {
@@ -88,22 +209,22 @@ async function fetchFromApi() {
       for (const item of res.data.results) {
         const couponLabel = item.discount_label || (item.attributes && item.attributes.find(a => a.id === 'COUPON_CODE'));
         if (couponLabel) {
-          const code = typeof couponLabel === 'string' ? couponLabel : couponLabel.value_name || couponLabel.value_id;
-          if (code && !found.find(c => c.code === code)) {
-            found.push({
-              code: code.trim().toUpperCase(),
-              title: `Cupom ${code}`,
+          const rawCode = typeof couponLabel === 'string' ? couponLabel : couponLabel.value_name || couponLabel.value_id;
+          const cleanCode = rawCode ? rawCode.trim().toUpperCase() : null;
+          if (cleanCode && isValidRealCouponCode(cleanCode) && !found.some(c => c.code === cleanCode)) {
+            found.push(createCouponObject({
+              code: cleanCode,
+              description: `Cupom ${cleanCode}`,
+              rule: 'Desconto no anúncio',
               source: 'api_search',
-              discount: null,
-              minAmount: 0,
-              capturedAt: new Date().toISOString()
-            });
+              minAmount: 0
+            }));
           }
         }
       }
     }
   } catch (e) {
-    logger.debug(`[CouponFetcher] API source 1 failed: ${e.message}`);
+    logger.debug(`[CouponFetcher] API source 1 indisponível: ${e.message}`);
   }
 
   try {
@@ -116,32 +237,55 @@ async function fetchFromApi() {
       httpsAgent,
       timeout: 8000
     });
+
     if (res2.data && Array.isArray(res2.data)) {
       for (const promo of res2.data) {
         const code = promo.code || promo.coupon_code || promo.id;
-        const discount = promo.discount_percent ? `${promo.discount_percent}% OFF` : (promo.amount ? `R$ ${promo.amount} OFF` : null);
-        if (code && !found.find(c => c.code === code)) {
-          found.push({
-            code: String(code).trim().toUpperCase(),
-            title: promo.title || promo.name || `Cupom ${code}`,
-            source: 'api_promotions',
-            discount,
-            minAmount: promo.min_amount || 0,
-            capturedAt: new Date().toISOString()
-          });
+        if (!code) continue;
+        const cleanCode = String(code).trim().toUpperCase();
+        if (!isValidRealCouponCode(cleanCode)) continue;
+
+        let discountRule = null;
+        let discountValue = null;
+        let discountType = 'unknown';
+
+        if (promo.discount_percent) {
+          discountRule = `${promo.discount_percent}% de desconto`;
+          discountValue = parseFloat(promo.discount_percent);
+          discountType = 'percentage';
+        } else if (promo.amount) {
+          discountRule = `R$ ${promo.amount} OFF`;
+          discountValue = parseFloat(promo.amount);
+          discountType = 'fixed';
+        }
+
+        const minAmount = promo.min_amount || 0;
+        const ruleWithMin = minAmount > 0 && discountRule ? `${discountRule} acima de R$ ${minAmount}` : (discountRule || `Cupom ${cleanCode}`);
+
+        if (!found.some(c => c.code === cleanCode)) {
+          found.push(createCouponObject({
+            code: cleanCode,
+            description: promo.title || promo.name || ruleWithMin,
+            rule: ruleWithMin,
+            category: detectCouponCategory(promo.title || promo.name || ''),
+            discountValue,
+            discountType,
+            minAmount,
+            source: 'api_promotions'
+          }));
         }
       }
     }
   } catch (e) {
-    logger.debug(`[CouponFetcher] API source 2 failed: ${e.message}`);
+    logger.debug(`[CouponFetcher] API source 2 indisponível: ${e.message}`);
   }
 
   return found;
 }
 
 /**
- * Busca cupons via scraping da página oficial de cupons e ofertas do Mercado Livre.
- * Utiliza cookies salvos da conta para acessar a página completa de cupons ativos.
+ * Raspa a página oficial de cupons (https://www.mercadolivre.com.br/cupons)
+ * e a central de ofertas do Mercado Livre.
  */
 async function fetchFromHtml() {
   const found = [];
@@ -167,64 +311,94 @@ async function fetchFromHtml() {
       const res = await axios.get(url, {
         headers,
         httpsAgent,
-        timeout: 10000
+        timeout: 10000,
+        validateStatus: (status) => status >= 200 && status < 400
       });
 
       const html = res.data;
       if (!html || typeof html !== 'string') continue;
       const $ = cheerio.load(html);
 
-      // 1. Processa cards de cupons (.coupon-card) da página /cupons do ML
-      $('.coupon-card').each((_, el) => {
+      // ─── 1. Cards de Cupons (.coupon-card e variações) ───────────────────────
+      $('.coupon-card, [class*="coupon-card"], [class*="poly-coupon"], [class*="coupon-item"]').each((_, el) => {
         const fullText = $(el).text().replace(/\s+/g, ' ').trim();
         if (!fullText) return;
 
-        // Extrai desconto
-        const discountMatch = fullText.match(/(\d+%\s*OFF|R\$\s*[\d,.]+\s*OFF)/i);
-        const discount = discountMatch ? discountMatch[1].replace(/\s+/g, ' ').trim() : null;
-
-        // Extrai compra mínima
-        const minMatch = fullText.match(/Compra m[ií]nima\s*R\$\s*([\d,.]+)/i);
-        let minAmount = 0;
-        if (minMatch) {
-          minAmount = parseFloat(minMatch[1].replace(/\./g, '').replace(',', '.'));
-        }
-
-        // Título / escopo
-        let title = '';
-        const titleEl = $(el).find('span, p, h2, h3').first();
-        if (titleEl.length > 0) {
-          title = titleEl.text().replace(/\s+/g, ' ').trim();
-        }
-        if (!title && discount) {
-          title = fullText.substring(0, 40);
-        }
-
-        // Código explícito: apenas se houver tag específica de código ou "código: XYZ"
+        // Extrai código explícito
         let code = '';
-        const explicitCodeEl = $(el).find('.coupon-card__code, [class*="coupon-code"], [class*="coupon__code"]');
+        const explicitCodeEl = $(el).find('.coupon-card__code, [class*="coupon-code"], [class*="coupon__code"], [class*="coupon-pill"]');
         if (explicitCodeEl.length > 0) {
-          code = explicitCodeEl.text().trim().replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
+          code = explicitCodeEl.first().text().trim().replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
         } else {
-          const matchCode = fullText.match(/(?:c[oó]digo|cupom):\s*([A-Za-z0-9_-]{3,20})/i);
+          const matchCode = fullText.match(/(?:c[oó]digo|cupom|use o cupom|c[oó]d\.?)\s*[:=-]?\s*([A-Za-z0-9_-]{3,20})/i);
           if (matchCode) {
             code = matchCode[1].toUpperCase();
           }
         }
 
-        if (code && isValidRealCouponCode(code) && !found.find(c => c.code === code)) {
-          found.push({
+        if (!code || !isValidRealCouponCode(code)) return;
+
+        // Extrai desconto
+        let discountRule = '';
+        let discountValue = null;
+        let discountType = 'unknown';
+
+        const percentMatch = fullText.match(/(\d+)\s*%\s*(?:OFF|de desconto)/i);
+        const fixedMatch = fullText.match(/R\$\s*([\d,.]+)\s*(?:OFF|de desconto)/i);
+
+        if (percentMatch) {
+          discountValue = parseInt(percentMatch[1], 10);
+          discountType = 'percentage';
+          discountRule = `${discountValue}% de desconto`;
+        } else if (fixedMatch) {
+          discountValue = parseFloat(fixedMatch[1].replace(/\./g, '').replace(',', '.'));
+          discountType = 'fixed';
+          discountRule = `R$ ${discountValue} OFF`;
+        }
+
+        // Extrai compra mínima
+        let minAmount = 0;
+        const minMatch = fullText.match(/(?:compra m[ií]nima|acima de|a partir de)\s*(?:de)?\s*R\$\s*([\d,.]+)/i);
+        if (minMatch) {
+          minAmount = parseFloat(minMatch[1].replace(/\./g, '').replace(',', '.'));
+        }
+
+        // Constrói regra descritiva completa (ex: "R$ 20 OFF acima de R$ 100")
+        let fullRule = discountRule;
+        if (discountRule && minAmount > 0) {
+          fullRule = `${discountRule} acima de R$ ${minAmount}`;
+        } else if (!fullRule && minAmount > 0) {
+          fullRule = `Compra mínima de R$ ${minAmount}`;
+        }
+
+        // Título / descrição do escopo
+        let title = '';
+        const titleEl = $(el).find('h2, h3, p, span').first();
+        if (titleEl.length > 0) {
+          title = titleEl.text().replace(/\s+/g, ' ').trim();
+        }
+        if (!title) {
+          title = fullRule || `Cupom ${code}`;
+        }
+
+        // Categoria / elegibilidade
+        const category = detectCouponCategory(fullText);
+
+        if (!found.some(c => c.code === code)) {
+          found.push(createCouponObject({
             code,
-            title,
-            discount,
+            description: title,
+            rule: fullRule || title,
+            category,
             minAmount,
-            source: 'ml_cupons_page',
-            capturedAt: new Date().toISOString()
-          });
+            discountValue,
+            discountType,
+            source: 'ml_cupons_page'
+          }));
         }
       });
 
-      // 2. Extrai códigos explícitos em tags e pills
+      // ─── 2. Pills e tags isoladas de cupom ──────────────────────────────────
       const pillSelectors = [
         '.coupon-card__code',
         '[class*="coupon-code"]',
@@ -241,17 +415,17 @@ async function fetchFromHtml() {
           const text = $(el).text().replace(/\s+/g, ' ').trim();
           const codeMatch = text.match(/\b([A-Z0-9_-]{4,15})\b/g);
           if (codeMatch) {
-            for (const code of codeMatch) {
-              const cleanCode = code.trim().toUpperCase();
-              if (isValidRealCouponCode(cleanCode) && !found.find(c => c.code === cleanCode)) {
-                found.push({
+            for (const c of codeMatch) {
+              const cleanCode = c.trim().toUpperCase();
+              if (isValidRealCouponCode(cleanCode) && !found.some(item => item.code === cleanCode)) {
+                found.push(createCouponObject({
                   code: cleanCode,
-                  title: text,
-                  discount: null,
+                  description: `Cupom ${cleanCode}`,
+                  rule: text !== cleanCode ? text : `Cupom ${cleanCode}`,
+                  category: detectCouponCategory(text),
                   minAmount: 0,
-                  source: 'html_pill',
-                  capturedAt: new Date().toISOString()
-                });
+                  source: 'html_pill'
+                }));
               }
             }
           }
@@ -259,7 +433,7 @@ async function fetchFromHtml() {
       }
 
     } catch (e) {
-      logger.debug(`[CouponFetcher] Scraping falhou para ${url}: ${e.message}`);
+      logger.debug(`[CouponFetcher] Scraping HTML falhou para ${url}: ${e.message}`);
     }
   }
 
@@ -267,8 +441,14 @@ async function fetchFromHtml() {
 }
 
 /**
- * Busca cupons do dia combinando API e scraping autenticado do Mercado Livre.
- * Usa cache de 1 hora para evitar requisições repetidas.
+ * Orquestra o ciclo de coleta diária de cupons:
+ * 1. Dispara scrapers e APIs em paralelo.
+ * 2. Salva e atualiza os cupons capturados no Banco de Dados.
+ * 3. Alimenta o cache em memória para resposta instantânea.
+ * 4. Fallback: Se a internet/ML falhar, carrega os cupons ativos já salvos no banco.
+ * 
+ * @param {boolean} forceRefresh - Força renovação imediata ignorando TTL do cache.
+ * @returns {Promise<Array>} Lista de cupons ativos.
  */
 async function fetchDailyCoupons(forceRefresh = false) {
   const now = Date.now();
@@ -279,57 +459,218 @@ async function fetchDailyCoupons(forceRefresh = false) {
     return couponCache;
   }
 
-  logger.info('[CouponFetcher] 🔄 Buscando cupons do dia no Mercado Livre...');
+  logger.info('🔄 [CouponFetcher] Buscando cupons vigentes no Mercado Livre...');
 
-  const [apiCoupons, htmlCoupons] = await Promise.allSettled([
-    fetchFromApi(),
-    fetchFromHtml()
-  ]);
+  try {
+    const [apiResults, htmlResults] = await Promise.allSettled([
+      fetchFromApi(),
+      fetchFromHtml()
+    ]);
 
-  const all = [];
-  if (apiCoupons.status === 'fulfilled') all.push(...(apiCoupons.value || []));
-  if (htmlCoupons.status === 'fulfilled') all.push(...(htmlCoupons.value || []));
-
-  // Deduplicar por código
-  const unique = [];
-  const seen = new Set();
-  for (const c of all) {
-    if (c.code && !seen.has(c.code)) {
-      seen.add(c.code);
-      unique.push(c);
+    const collected = [];
+    if (apiResults.status === 'fulfilled' && Array.isArray(apiResults.value)) {
+      collected.push(...apiResults.value);
     }
-  }
+    if (htmlResults.status === 'fulfilled' && Array.isArray(htmlResults.value)) {
+      collected.push(...htmlResults.value);
+    }
 
-  if (unique.length > 0) {
-    couponCache = unique;
-    cacheTimestamp = now;
-    logger.info(`[CouponFetcher] ✅ ${unique.length} cupons do dia capturados e armazenados no cache.`);
-  } else {
-    logger.info('[CouponFetcher] ℹ️ Nenhum cupom encontrado nas fontes.');
-    if (couponCache.length === 0) {
+    // Deduplica por código
+    const uniqueMap = new Map();
+    for (const c of collected) {
+      if (c && c.code && !uniqueMap.has(c.code)) {
+        uniqueMap.set(c.code, c);
+      }
+    }
+
+    const uniqueCoupons = Array.from(uniqueMap.values());
+
+    // ─── Salva / atualiza no Banco de Dados ─────────────────────────────────
+    if (uniqueCoupons.length > 0) {
+      try {
+        await repository.saveCouponsBatch(uniqueCoupons);
+        logger.info(`✅ [CouponFetcher] ${uniqueCoupons.length} cupons capturados e persistidos no banco de dados.`);
+      } catch (dbErr) {
+        logger.warn(`⚠️ [CouponFetcher] Falha ao persistir cupons no banco: ${dbErr.message}`);
+      }
+    }
+
+    // Carrega todos os cupons ativos diretamente do banco de dados
+    let dbActiveCoupons = [];
+    try {
+      dbActiveCoupons = await repository.getActiveCoupons();
+    } catch (dbReadErr) {
+      logger.warn(`⚠️ [CouponFetcher] Falha ao ler cupons do banco: ${dbReadErr.message}`);
+    }
+
+    if (dbActiveCoupons && dbActiveCoupons.length > 0) {
+      couponCache = dbActiveCoupons.map(createCouponObject);
       cacheTimestamp = now;
+      logger.info(`🎯 [CouponFetcher] Cache atualizado com ${couponCache.length} cupons ativos do banco.`);
+    } else if (uniqueCoupons.length > 0) {
+      couponCache = uniqueCoupons;
+      cacheTimestamp = now;
+    } else {
+      logger.info('[CouponFetcher] ℹ️ Nenhum cupom público encontrado nesta rodada.');
+      if (couponCache.length === 0) {
+        cacheTimestamp = now;
+      }
     }
-  }
 
-  return couponCache;
+    return couponCache;
+
+  } catch (error) {
+    logger.error(`❌ [CouponFetcher] Erro inesperado na captura de cupons: ${error.message}`);
+    // Fallback: tenta recuperar do banco
+    try {
+      const fallbackCoupons = await repository.getActiveCoupons();
+      if (fallbackCoupons && fallbackCoupons.length > 0) {
+        couponCache = fallbackCoupons.map(createCouponObject);
+        return couponCache;
+      }
+    } catch (e) {}
+
+    return couponCache;
+  }
 }
 
 /**
- * Retorna os cupons atualmente em cache (sem disparar fetch).
+ * Retorna os cupons atualmente em cache (síncrono, sem fetch).
  */
 function getCachedCoupons() {
   return couponCache;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// BLOCO 2: LÓGICA DE ASSOCIAÇÃO DO MELHOR CUPOM AO PRODUTO
+// ──────────────────────────────────────────────────────────────────────────────
+
 /**
- * Retorna o Cupom Ativo do Dia.
- * Retorna APENAS se houver cupom manual definido pelo usuário ou configurado no ambiente para hoje.
- * Se nenhum cupom manual estiver ativo, retorna null (modo automático, sem forçar cupons inventados).
+ * Avalia todos os cupons ativos no banco e seleciona o mais vantajoso ou o mais
+ * geral para o produto especificado.
+ * 
+ * Regras:
+ * 1. Preço do produto deve ser maior ou igual a compra mínima (min_amount) do cupom.
+ * 2. Se o cupom tiver restrição de categoria, valida com as palavras-chave do título.
+ * 3. Calcula a vantagem financeira real em R$ (desconto fixo ou percentual sobre o preço).
+ * 4. Desempate: Maior economia > Cupom de categoria específica > Menor compra mínima.
+ * 
+ * @param {Object} product - Produto contendo { title, price, category, ... }
+ * @returns {Promise<Object|null>} Cupom selecionado ou null.
+ */
+async function findBestCouponForProduct(product) {
+  if (!product) return null;
+
+  const price = typeof product.price === 'number' ? product.price : parseFloat(product.price) || 0;
+  const title = (product.title || '').trim();
+  const productCategory = detectProductCategory(title);
+
+  // Busca cupons ativos: primeiro do banco, fallback para cache
+  let activeList = [];
+  try {
+    const fromDb = await repository.getActiveCoupons();
+    if (fromDb && fromDb.length > 0) {
+      activeList = fromDb.map(createCouponObject);
+    }
+  } catch (e) {
+    logger.debug('[CouponFetcher] Erro ao buscar cupons ativos do banco: ' + e.message);
+  }
+
+  if (activeList.length === 0) {
+    activeList = couponCache;
+  }
+
+  if (!activeList || activeList.length === 0) {
+    return null;
+  }
+
+  // 1. Filtragem por elegibilidade
+  const eligibleCoupons = activeList.filter(c => {
+    if (!c.code || !isValidRealCouponCode(c.code)) return false;
+
+    // Regra de valor mínimo de compra
+    const min = c.minAmount || c.min_amount || 0;
+    if (min > 0 && price > 0 && price < min) {
+      return false;
+    }
+
+    // Regra de categoria / elegibilidade
+    if (c.category && c.category !== 'geral') {
+      // Se o cupom for restrito a uma categoria e identificamos a categoria do produto
+      if (productCategory && c.category !== productCategory) {
+        // Exceção de compatibilidade: Eletrodomésticos e Casa frequentemente compartilham campanhas
+        const isHomeEletroCross = (c.category === 'casa' && productCategory === 'eletro') || (c.category === 'eletro' && productCategory === 'casa');
+        if (!isHomeEletroCross) {
+          return false;
+        }
+      } else if (!productCategory) {
+        // Produto sem categoria clara: não arrisca associar cupom estritamente restrito
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (eligibleCoupons.length === 0) {
+    return null;
+  }
+
+  // 2. Cálculo da vantagem financeira de cada cupom para ordenação
+  const scoredCoupons = eligibleCoupons.map(c => {
+    let savings = 0;
+    const val = c.discountValue !== undefined ? c.discountValue : c.discount_value;
+    const type = c.discountType || c.discount_type;
+
+    if (type === 'percentage' && val && price > 0) {
+      savings = price * (val / 100);
+    } else if (type === 'fixed' && val) {
+      savings = val;
+    } else if (c.rule) {
+      const pMatch = c.rule.match(/(\d+)\s*%/);
+      const fMatch = c.rule.match(/R\$\s*([\d,.]+)/i);
+      if (pMatch && price > 0) {
+        savings = price * (parseInt(pMatch[1], 10) / 100);
+      } else if (fMatch) {
+        savings = parseFloat(fMatch[1].replace(/\./g, '').replace(',', '.'));
+      }
+    }
+
+    const isCategorySpecific = (c.category && c.category === productCategory) ? 1 : 0;
+    const minAmount = c.minAmount || c.min_amount || 0;
+
+    return {
+      coupon: c,
+      savings,
+      isCategorySpecific,
+      minAmount
+    };
+  });
+
+  // Ordena pelo melhor benefício:
+  // 1) Maior economia em R$
+  // 2) Cupom de categoria específica antes de cupom genérico
+  // 3) Menor valor de compra mínima
+  scoredCoupons.sort((a, b) => {
+    if (b.savings !== a.savings) {
+      return b.savings - a.savings;
+    }
+    if (b.isCategorySpecific !== a.isCategorySpecific) {
+      return b.isCategorySpecific - a.isCategorySpecific;
+    }
+    return a.minAmount - b.minAmount;
+  });
+
+  const best = scoredCoupons[0].coupon;
+  return createCouponObject(best);
+}
+
+/**
+ * Retorna o Cupom Ativo do Dia configurado manualmente pelo usuário.
  */
 async function getActiveDailyCoupon() {
   const today = getTodayDateStr();
 
-  // Cupom em memória só é válido se foi definido hoje e não estiver na lista de bloqueados
   if (inMemoryActiveCoupon) {
     if (BLOCKED_COUPON_CODES.has(inMemoryActiveCoupon) || inMemoryActiveCouponDate !== today) {
       inMemoryActiveCoupon = null;
@@ -341,7 +682,6 @@ async function getActiveDailyCoupon() {
 
   if (process.env.NODE_ENV !== 'test') {
     try {
-      const repository = require('../database/repository');
       const raw = await repository.getSetting('active_daily_coupon');
       if (raw && raw.trim()) {
         const parts = raw.trim().split('|');
@@ -357,7 +697,6 @@ async function getActiveDailyCoupon() {
           inMemoryActiveCouponDate = today;
           return inMemoryActiveCoupon;
         } else if (codeCandidate && BLOCKED_COUPON_CODES.has(codeCandidate)) {
-          // Limpa do banco se for cupom inválido como TUDOPARACASA
           await repository.setSetting('active_daily_coupon', '');
           inMemoryActiveCoupon = null;
           inMemoryActiveCouponDate = null;
@@ -378,7 +717,6 @@ async function getActiveDailyCoupon() {
     }
   }
 
-  // ⚠️ Sem cupom manual forçado: retorna null (dashboard exibe modo Automático)
   return null;
 }
 
@@ -390,12 +728,11 @@ async function setActiveDailyCoupon(code) {
   const today = getTodayDateStr();
 
   if (clean && BLOCKED_COUPON_CODES.has(clean)) {
-    logger.warn(`[CouponFetcher] ⚠️ Tentativa de ativar cupom bloqueado (${clean}). Desativando cupom manual.`);
+    logger.warn(`[CouponFetcher] ⚠️ Tentativa de ativar cupom bloqueado (${clean}).`);
     inMemoryActiveCoupon = null;
     inMemoryActiveCouponDate = null;
     if (process.env.NODE_ENV !== 'test') {
       try {
-        const repository = require('../database/repository');
         await repository.setSetting('active_daily_coupon', '');
       } catch (e) {}
     }
@@ -407,9 +744,7 @@ async function setActiveDailyCoupon(code) {
 
   if (process.env.NODE_ENV !== 'test') {
     try {
-      const repository = require('../database/repository');
       if (clean) {
-        // Salva no formato "YYYY-MM-DD|CODIGO" para permitir expiração diária
         await repository.setSetting('active_daily_coupon', `${today}|${clean}`);
         logger.info(`[CouponFetcher] 🎯 Cupom diário ativo definido: ${clean} (válido para ${today})`);
       } else {
@@ -426,19 +761,17 @@ async function setActiveDailyCoupon(code) {
 }
 
 /**
- * Extrai um código de cupom limpo a partir de qualquer string (ex: "Cupom ABC10", "10% OFF com cupom MEUCUPOM", etc).
+ * Extrai um código de cupom limpo a partir de qualquer string promocional.
  */
 function extractCouponCode(input) {
   if (!input || typeof input !== 'string') return null;
   const cleanStr = input.trim().toUpperCase();
 
-  // Se a string direta já for um código válido
   if (isValidRealCouponCode(cleanStr)) {
     return cleanStr;
   }
 
-  // Tenta extrair usando regex de prefixos comuns "cupom MEUCUPOM", "código: ABC10"
-  const matchPrefix = input.match(/(?:cupom|c[oó]digo)\s*:?\s*([A-Za-z0-9_-]{3,25})/i);
+  const matchPrefix = input.match(/(?:cupom|c[oó]digo|use o cupom|c[oó]d\.?)\s*[:=-]?\s*([A-Za-z0-9_-]{3,25})/i);
   if (matchPrefix) {
     const candidate = matchPrefix[1].trim().toUpperCase();
     if (isValidRealCouponCode(candidate)) {
@@ -446,7 +779,6 @@ function extractCouponCode(input) {
     }
   }
 
-  // Procura por tokens na string que sejam códigos válidos
   const tokens = input.split(/[\s,.:;!?"'()\[\]{}–—-]+/);
   for (const token of tokens) {
     const cleanToken = token.trim().toUpperCase();
@@ -459,83 +791,88 @@ function extractCouponCode(input) {
 }
 
 /**
- * Retorna o cupom mais relevante do cache para ser exibido na mensagem.
- * Prioriza cupons de Casa/Eletro e cupons com desconto definido.
+ * Resolve o cupom mais apropriado para o produto (fluxo de postagem).
+ * Prioridade:
+ * 1. Cupom diário ativo configurado manualmente pelo usuário.
+ * 2. Cupom próprio do produto se veio com código explícito.
+ * 3. Melhor cupom diário ativo encontrado no Banco de Dados.
+ * 
+ * @param {Object} product
+ * @returns {Promise<Object|null>} Objeto com { code, rule, description } ou null.
+ */
+async function resolveCouponForProduct(product) {
+  try {
+    // 1. Verifica se há cupom ativo manual configurado para hoje
+    const activeDailyCode = await getActiveDailyCoupon();
+    if (activeDailyCode) {
+      // Busca dados complementares do cupom no banco (regra/descrição) se existirem
+      let rule = '';
+      let description = '';
+      try {
+        const found = await repository.getCouponByCode(activeDailyCode);
+        if (found) {
+          rule = found.rule || found.description || '';
+          description = found.description || '';
+        }
+      } catch (e) {}
+
+      return createCouponObject({
+        code: activeDailyCode,
+        rule,
+        description,
+        source: 'manual_active'
+      });
+    }
+
+    // 2. Se o próprio anúncio já veio com um cupom real
+    if (product && product.coupon) {
+      const rawCoupon = typeof product.coupon === 'object' ? product.coupon.code : product.coupon;
+      const extracted = extractCouponCode(rawCoupon);
+      if (extracted) {
+        // Tenta obter descrição da base
+        let rule = (typeof product.coupon === 'object' && product.coupon.rule) ? product.coupon.rule : '';
+        let description = (typeof product.coupon === 'object' && product.coupon.description) ? product.coupon.description : '';
+        try {
+          const found = await repository.getCouponByCode(extracted);
+          if (found) {
+            rule = rule || found.rule || '';
+            description = description || found.description || '';
+          }
+        } catch (e) {}
+
+        return createCouponObject({
+          code: extracted,
+          rule,
+          description,
+          source: 'product_announcement'
+        });
+      }
+    }
+
+    // 3. Busca o melhor cupom ativo no banco de dados aplicável ao produto
+    const best = await findBestCouponForProduct(product);
+    if (best) {
+      return best;
+    }
+
+    return null;
+  } catch (error) {
+    logger.warn(`⚠️ [CouponFetcher] Erro ao resolver cupom para produto: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Helper de compatibilidade: retorna o código do melhor cupom em string.
  */
 function getBestCouponForMessage(product = null) {
   if (couponCache.length === 0) return null;
-  
-  const validCoupons = couponCache.filter(c => {
-    if (!c.code || !isValidRealCouponCode(c.code)) return false;
-    if (product && product.price && c.minAmount && product.price < c.minAmount) {
-      return false;
-    }
-    return true;
-  });
-
-  if (validCoupons.length === 0) return null;
-
-  // Se houver produto, busca se algum cupom se aplica à categoria
-  if (product && product.title) {
-    const titleLower = product.title.toLowerCase();
-    const categoryCoupon = validCoupons.find(c => {
-      if (!c.title) return false;
-      const cTitle = c.title.toLowerCase();
-      return (
-        (titleLower.includes('geladeira') || titleLower.includes('refrigerador') || titleLower.includes('cozinha') || titleLower.includes('eletro')) &&
-        (cTitle.includes('eletro') || cTitle.includes('cozinha') || cTitle.includes('casa') || cTitle.includes('lar'))
-      );
-    });
-    if (categoryCoupon) return categoryCoupon.code;
-  }
-
-  // Prioriza cupons da categoria Casa/Itens para casa válidos
-  const homeCoupon = validCoupons.find(c => 
-    (c.title && /casa|lar|eletro|refrigerador|cozinha/i.test(c.title)) ||
-    (c.code && /CASA|LAR|ELETRO/i.test(c.code))
-  );
-  if (homeCoupon) {
-    return homeCoupon.code;
-  }
-
-  // Senão, pega o primeiro cupom válido
-  const withDiscount = validCoupons.filter(c => c.discount);
-  const best = withDiscount.length > 0 ? withDiscount[0] : validCoupons[0];
-  return best ? (typeof best === 'string' ? best : best.code) : null;
+  const best = couponCache.find(c => isValidRealCouponCode(c.code));
+  return best ? best.code : null;
 }
 
 /**
- * Resolve o cupom mais apropriado para um produto específico.
- * 1. Prioriza cupom ativo diário configurado manualmente para hoje
- * 2. Utiliza cupom real legítimo do próprio anúncio do produto (se houver)
- * 3. Utiliza o melhor cupom diário capturado no cache (se disponível)
- */
-async function resolveCouponForProduct(product) {
-  // 1. Verifica se há cupom ativo manual configurado para hoje
-  const activeDaily = await getActiveDailyCoupon();
-  if (activeDaily) {
-    return activeDaily;
-  }
-
-  // 2. Se o próprio anúncio veio com um cupom real ou texto com cupom
-  if (product && product.coupon) {
-    const extracted = extractCouponCode(product.coupon);
-    if (extracted) {
-      return extracted;
-    }
-  }
-
-  // 3. Tenta vincular o melhor cupom diário capturado do Mercado Livre no cache
-  const bestDaily = getBestCouponForMessage(product);
-  if (bestDaily) {
-    return typeof bestDaily === 'string' ? bestDaily : bestDaily.code;
-  }
-
-  return null;
-}
-
-/**
- * Retorna a idade do cache formatada para exibição.
+ * Retorna metadados do cache para exibição no dashboard.
  */
 function getCacheInfo() {
   if (cacheTimestamp === 0) return { age: null, count: 0, lastUpdate: null };
@@ -556,6 +893,9 @@ module.exports = {
   getActiveDailyCoupon,
   setActiveDailyCoupon,
   resolveCouponForProduct,
+  findBestCouponForProduct,
   extractCouponCode,
+  isValidRealCouponCode,
+  createCouponObject,
   getCacheInfo
 };

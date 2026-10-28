@@ -107,13 +107,15 @@ Exemplos de tom desejado:
    * @param {Object} params
    * @param {string} params.title - Título do produto.
    * @param {number} params.price - Preço numérico.
+   * @param {number|null} [params.oldPrice] - Preço original antes do desconto (opcional).
+   * @param {number|null} [params.discountPercent] - Percentual de desconto (opcional).
    * @param {string|null} [params.coupon] - Código de cupom (opcional).
    * @param {string} params.affiliateLink - Link meli.la gerado.
    * @param {string} [params.storeName] - Nome da loja (padrão: "Oferta no Mercado Livre").
    * @param {string} [params.customHeadline] - Chamada criativa pré-gerada (opcional).
    * @returns {Promise<string>} Legenda completa formatada.
    */
-  async formatPost({ title, price, coupon, affiliateLink, storeName, customHeadline }) {
+  async formatPost({ title, price, oldPrice, discountPercent, coupon, affiliateLink, storeName, customHeadline }) {
     // 1. Gera ou utiliza a chamada criativa
     const headline = customHeadline || await this.generateCreativeHeadline(title);
 
@@ -123,36 +125,65 @@ Exemplos de tom desejado:
     // 3. Loja
     const storeLabel = storeName || this.defaultStoreName;
 
-    // 4. Montagem das linhas conforme o template exato
+    // 4. Extrai código e regra do cupom se disponível
+    let couponCode = null;
+    let couponRule = '';
+
+    if (coupon) {
+      if (typeof coupon === 'object') {
+        couponCode = coupon.code ? String(coupon.code).trim().toUpperCase() : null;
+        couponRule = coupon.rule || coupon.description || '';
+      } else if (typeof coupon === 'string' && coupon.trim().length > 0) {
+        let clean = coupon.trim().toUpperCase();
+        if (clean.startsWith('CUPOM ')) clean = clean.substring(6).trim();
+        couponCode = clean;
+      }
+    }
+
+    // 5. Montagem das linhas conforme o template
     const lines = [];
 
     // *[CHAMADA CRIATIVA EM MAIÚSCULO]*
     lines.push(`*${headline}*`);
     lines.push('');
 
-    // 🧙‍♂️ [Título do Produto]
-    lines.push(`🧙‍♂️ ${title.trim()}`);
+    // 🔥 [Título do Produto]
+    lines.push(`🔥 *${title.trim()}*`);
     lines.push('');
 
-    // 💸 *Por R$ [Preço]*
-    lines.push(`💸 *Por R$ ${formattedPrice}*`);
+    // 💰 Preço antigo riscado (se houver)
+    if (oldPrice && oldPrice > price) {
+      lines.push(`De ~R$ ${this.formatPrice(oldPrice)}~`);
+    }
 
-    // 🎟️ Use o cupom: [CUPOM] (só exibe se houver cupom)
-    if (coupon && typeof coupon === 'string' && coupon.trim().length > 0) {
-      let cleanCoupon = coupon.trim().toUpperCase();
-      if (cleanCoupon.startsWith('CUPOM ')) {
-        cleanCoupon = cleanCoupon.substring(6).trim();
-      }
-      lines.push(`🎟️ Use o cupom: *${cleanCoupon}*`);
+    // 💰 Por apenas: R$ [Preço]
+    lines.push(`💰 Por apenas: R$ ${formattedPrice}`);
+
+    // 😱 Percentual de desconto
+    let discount = discountPercent;
+    if (!discount && oldPrice && oldPrice > price) {
+      discount = Math.round(((oldPrice - price) / oldPrice) * 100);
+    }
+    if (discount && discount > 0) {
+      lines.push(`😱 ${discount}% OFF`);
+    }
+
+    // 🎟️ Cupom diário: *[CÓDIGO]* ([Regra]) (só exibe se houver cupom ativo)
+    if (couponCode && couponCode.length > 0) {
+      const ruleText = couponRule && couponRule.trim().length > 0 ? ` (${couponRule.trim()})` : '';
+      lines.push(`🎟️ Cupom diário: *${couponCode}*${ruleText}`);
     }
 
     lines.push('');
 
-    // [Nome da Loja ou "Oferta no Mercado Livre"]:
-    lines.push(`${storeLabel}:`);
+    // 🛒 Link de Afiliado
+    lines.push(`🛒 Link: ${affiliateLink}`);
 
-    // [Meu Link Afiliado meli.la]
-    lines.push(affiliateLink);
+    // ⚠️ Aviso de limite de resgate (apenas se houver cupom)
+    if (couponCode && couponCode.length > 0) {
+      lines.push('');
+      lines.push('⚠️ *Cupons possuem limite de resgate.*');
+    }
 
     return lines.join('\n');
   }

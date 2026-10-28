@@ -94,10 +94,13 @@ router.get('/coupons', async (req, res) => {
     }
 });
 
-// Cupons do dia (cache em memória — fontes externas, não banco de dados)
+// Cupons do dia (busca do banco de dados com fallback para cache em memória)
 router.get('/coupons/daily', async (req, res) => {
     try {
-        const coupons = couponFetcher.getCachedCoupons();
+        let coupons = await repository.getActiveCoupons();
+        if (!coupons || coupons.length === 0) {
+            coupons = couponFetcher.getCachedCoupons();
+        }
         const cacheInfo = couponFetcher.getCacheInfo();
         const activeCoupon = await couponFetcher.getActiveDailyCoupon();
         res.json({ coupons, cacheInfo, activeCoupon });
@@ -107,7 +110,37 @@ router.get('/coupons/daily', async (req, res) => {
     }
 });
 
-// Força atualização imediata do cache de cupons do dia
+// Cadastrar ou atualizar cupom manualmente no banco de dados
+router.post('/coupons', async (req, res) => {
+    try {
+        const { code, description, rule, category, minAmount, discountValue, discountType } = req.body;
+        if (!code || typeof code !== 'string') {
+            return res.status(400).json({ error: 'O campo "code" é obrigatório.' });
+        }
+
+        const saved = await repository.saveCoupon({
+            code: code.trim().toUpperCase(),
+            description: description || `Cupom ${code}`,
+            rule: rule || description || '',
+            category: category || null,
+            minAmount: minAmount !== undefined ? parseFloat(minAmount) : 0,
+            discountValue: discountValue !== undefined ? parseFloat(discountValue) : null,
+            discountType: discountType || 'unknown',
+            source: 'manual_api',
+            isActive: 1
+        });
+
+        // Atualiza cache em memória
+        await couponFetcher.fetchDailyCoupons(true);
+
+        res.json({ success: true, message: `Cupom ${code.trim().toUpperCase()} salvo com sucesso no banco de dados!` });
+    } catch (err) {
+        logger.error('Erro ao cadastrar cupom via API:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Força atualização imediata do cache e banco de cupons do dia
 router.get('/coupons/daily/refresh', async (req, res) => {
     try {
         logger.info('[API] Refresh manual de cupons do dia solicitado.');
@@ -138,6 +171,27 @@ router.post('/coupons/active', async (req, res) => {
         res.json({ success: true, activeCoupon: active, message: active ? `Cupom ${active} ativado com sucesso!` : 'Modo automático reativado!' });
     } catch (err) {
         logger.error('Erro ao definir cupom ativo:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Testar associação de cupom para um produto (preview do melhor cupom)
+router.get('/coupons/match', async (req, res) => {
+    try {
+        const { price, title } = req.query;
+        if (!title && !price) {
+            return res.status(400).json({ error: 'Forneça ao menos "title" ou "price" na query string.' });
+        }
+        const matched = await couponFetcher.findBestCouponForProduct({
+            title: title || 'Produto Teste',
+            price: price ? parseFloat(price) : 100
+        });
+        res.json({
+            product: { title: title || 'Produto Teste', price: price ? parseFloat(price) : 100 },
+            matchedCoupon: matched
+        });
+    } catch (err) {
+        logger.error('Erro ao testar match de cupom:', err);
         res.status(500).json({ error: err.message });
     }
 });

@@ -142,6 +142,20 @@ const DDL = {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+    coupons: `
+        CREATE TABLE IF NOT EXISTS coupons (
+            code TEXT PRIMARY KEY,
+            description TEXT,
+            rule TEXT,
+            category TEXT,
+            min_amount REAL DEFAULT 0,
+            discount_value REAL,
+            discount_type TEXT,
+            is_active INTEGER DEFAULT 1,
+            source TEXT,
+            captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
 };
 
@@ -195,6 +209,10 @@ const runSqliteDDL = () => {
     }
     sqliteDb.exec(DDL.sessions);
     sqliteDb.exec(DDL.settings);
+    sqliteDb.exec(DDL.coupons);
+    try {
+        sqliteDb.exec('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
+    } catch (e) {}
 };
 
 const initializeDB = async () => {
@@ -237,6 +255,10 @@ const initializeDB = async () => {
                 await pool.query(DDL.queuePostgres);
                 await pool.query(DDL.sessionsPostgres);
                 await pool.query(DDL.settings);
+                await pool.query(DDL.coupons);
+                try {
+                    await pool.query('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
+                } catch (e) {}
             } catch (pgErr) {
                 logger.error(`❌ Erro ao conectar/inicializar Postgres (${pgErr.message}). Fazendo fallback para SQLite local...`);
                 USE_POSTGRES = false;

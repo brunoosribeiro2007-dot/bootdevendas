@@ -507,6 +507,7 @@ class FormatterService {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────────
     // FLUXO MERCADO LIVRE
     // ──────────────────────────────────────────────────────────────────────────
     let resolvedCoupon = null;
@@ -517,12 +518,30 @@ class FormatterService {
     }
 
     if (!resolvedCoupon && product.coupon) {
-      resolvedCoupon = couponFetcher.extractCouponCode
-        ? couponFetcher.extractCouponCode(product.coupon)
+      const extracted = couponFetcher.extractCouponCode
+        ? couponFetcher.extractCouponCode(typeof product.coupon === 'object' ? product.coupon.code : product.coupon)
         : (isValidCouponCode(product.coupon) ? product.coupon.trim().toUpperCase() : null);
+      if (extracted) {
+        resolvedCoupon = { code: extracted, rule: '', description: '' };
+      }
     }
 
-    product.coupon = resolvedCoupon || '';
+    // Extrai código limpo e regra do cupom
+    let couponCode = null;
+    let couponRule = '';
+
+    if (resolvedCoupon) {
+      if (typeof resolvedCoupon === 'object') {
+        couponCode = resolvedCoupon.code ? String(resolvedCoupon.code).trim().toUpperCase() : null;
+        couponRule = resolvedCoupon.rule || resolvedCoupon.description || '';
+      } else if (typeof resolvedCoupon === 'string' && resolvedCoupon.trim().length > 0) {
+        let clean = resolvedCoupon.trim().toUpperCase();
+        if (clean.startsWith('CUPOM ')) clean = clean.substring(6).trim();
+        couponCode = clean;
+      }
+    }
+
+    product.coupon = couponCode || '';
     const headline = this.generateHeadline(product.title);
 
     const lines = [];
@@ -532,23 +551,38 @@ class FormatterService {
     // 2. Título original do produto sem alterações (sem negrito)
     lines.push(product.title.trim());
     lines.push('');
-    // 3. Preço formatado no padrão brasileiro (sem negrito)
-    lines.push(`💸 Por: R$ ${formatPrice(currentPrice)}`);
 
-    // 4. Cupom em negrito caso exista
-    if (product.coupon) {
-      let cleanCoupon = product.coupon.trim();
-      if (cleanCoupon.toLowerCase().startsWith('cupom ')) {
-        cleanCoupon = cleanCoupon.substring(6).trim();
-      }
-      if (cleanCoupon) {
-        lines.push(`🎟️ Use o Cupom: *${cleanCoupon.toUpperCase()}*`);
-      }
+    // 3. Preço antigo riscado (se houver) + Preço atual formatado
+    const oldPrice = product.oldPrice !== undefined ? product.oldPrice : product.old_price;
+    if (oldPrice && oldPrice > currentPrice) {
+      lines.push(`De ~R$ ${formatPrice(oldPrice)}~`);
+    }
+    lines.push(`💰 Por apenas: R$ ${formatPrice(currentPrice)}`);
+
+    // 3.1 Percentual de desconto (se houver)
+    let discountPercent = product.discountPercent !== undefined ? product.discountPercent : product.discount_percent;
+    if (!discountPercent && oldPrice && oldPrice > currentPrice) {
+      discountPercent = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
+    }
+    if (discountPercent && discountPercent > 0) {
+      lines.push(`😱 ${discountPercent}% OFF`);
+    }
+
+    // 4. Cupom diário com regra (apenas se houver cupom ativo)
+    if (couponCode && couponCode.length > 0) {
+      const ruleText = couponRule && couponRule.trim().length > 0 ? ` (${couponRule.trim()})` : '';
+      lines.push(`🎟️ Cupom diário: *${couponCode}*${ruleText}`);
     }
 
     lines.push('');
     // 5. Link de compra na mesma linha
-    lines.push(`🛒 Compre aqui: ${link}`);
+    lines.push(`🛒 Link: ${link}`);
+
+    // 6. Aviso de resgate limitado (apenas se houver cupom diário)
+    if (couponCode && couponCode.length > 0) {
+      lines.push('');
+      lines.push('⚠️ *Cupons possuem limite de resgate.*');
+    }
 
     return lines.join('\n');
   }

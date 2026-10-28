@@ -196,9 +196,38 @@ class PromoParserService {
         }
       }
 
+      // ─── 4. PREÇO ANTIGO (ORIGINAL) ────────────────────────────────────
+      let oldPrice = null;
+
+      // Seletor do preço riscado (primeira linha de preço) do Mercado Livre
+      const oldFractionText = $('.ui-pdp-price__second-line .andes-money-amount--previous .andes-money-amount__fraction, .ui-pdp-price__original-value .andes-money-amount__fraction').first().text().replace(/\./g, '').trim();
+      const oldCentsText = $('.ui-pdp-price__second-line .andes-money-amount--previous .andes-money-amount__cents, .ui-pdp-price__original-value .andes-money-amount__cents').first().text().trim();
+
+      if (oldFractionText) {
+        const fullOldPriceStr = oldCentsText ? `${oldFractionText}.${oldCentsText}` : oldFractionText;
+        oldPrice = parseFloat(fullOldPriceStr);
+      }
+
+      // Fallback: Regex procurando original_price na estrutura JSON da página
+      if (!oldPrice || isNaN(oldPrice)) {
+        const oldPriceMatch = html.match(/"original_price"\s*:\s*(\d+(?:\.\d+)?)/);
+        if (oldPriceMatch && oldPriceMatch[1]) {
+          oldPrice = parseFloat(oldPriceMatch[1]);
+        }
+      }
+
+      // Calcula percentual de desconto
+      let discountPercent = null;
+      const finalPrice = (price && !isNaN(price)) ? price : 0;
+      if (oldPrice && !isNaN(oldPrice) && finalPrice > 0 && oldPrice > finalPrice) {
+        discountPercent = Math.round(((oldPrice - finalPrice) / oldPrice) * 100);
+      }
+
       return {
         title: title || 'Produto Mercado Livre',
-        price: (price && !isNaN(price)) ? price : 0,
+        price: finalPrice,
+        oldPrice: (oldPrice && !isNaN(oldPrice)) ? oldPrice : null,
+        discountPercent: discountPercent,
         imageUrl: imageUrl || '',
         cleanUrl: this.cleanProductUrl(productUrl)
       };

@@ -39,6 +39,8 @@ class WhatsappSenderService {
     const caption = await postFormatter.formatPost({
       title: resolved.title,
       price: resolved.price,
+      oldPrice: resolved.oldPrice,
+      discountPercent: resolved.discountPercent,
       coupon: resolved.coupon,
       affiliateLink: affiliateLink,
       storeName: resolved.storeName,
@@ -87,6 +89,8 @@ class WhatsappSenderService {
       const caption = await postFormatter.formatPost({
         title: resolved.title,
         price: resolved.price,
+        oldPrice: resolved.oldPrice,
+        discountPercent: resolved.discountPercent,
         coupon: resolved.coupon,
         affiliateLink: affiliateLink,
         storeName: resolved.storeName,
@@ -153,11 +157,30 @@ class WhatsappSenderService {
         throw new Error(parsed.error || 'Não foi possível extrair um link válido do texto fornecido.');
       }
 
+      const finalTitle = input.title || parsed.product.title;
+      const finalPrice = input.price !== undefined ? input.price : parsed.product.price;
+      let finalCoupon = input.coupon || parsed.coupon;
+
+      // Se nenhum cupom foi fornecido, tenta associar automaticamente o melhor cupom diário ativo do banco
+      if (!finalCoupon) {
+        try {
+          const couponFetcher = require('./couponFetcher.service');
+          finalCoupon = await couponFetcher.resolveCouponForProduct({
+            title: finalTitle,
+            price: finalPrice
+          });
+        } catch (e) {
+          logger.debug('[WhatsappSender] Não foi possível resolver cupom diário:', e.message);
+        }
+      }
+
       return {
-        title: input.title || parsed.product.title,
-        price: input.price !== undefined ? input.price : parsed.product.price,
+        title: finalTitle,
+        price: finalPrice,
+        oldPrice: input.oldPrice || parsed.product.oldPrice || null,
+        discountPercent: input.discountPercent || parsed.product.discountPercent || null,
         imageUrl: input.imageUrl || parsed.product.imageUrl,
-        coupon: input.coupon || parsed.coupon,
+        coupon: finalCoupon,
         cleanUrl: parsed.cleanUrl,
         storeName: input.storeName,
         customHeadline: input.customHeadline
@@ -168,25 +191,42 @@ class WhatsappSenderService {
     if (input.url) {
       const cleanUrl = await promoParser.unshortenUrl(input.url);
 
+      let finalTitle = input.title;
+      let finalPrice = input.price;
+      let finalOldPrice = input.oldPrice || null;
+      let finalDiscountPercent = input.discountPercent || null;
+      let finalImageUrl = input.imageUrl;
+
       // Se os dados do produto não foram preenchidos manualmente, faz o scraping
       if (!input.title || input.price === undefined || !input.imageUrl) {
         const scraped = await promoParser.scrapeProductData(cleanUrl);
-        return {
-          title: input.title || scraped.title,
-          price: input.price !== undefined ? input.price : scraped.price,
-          imageUrl: input.imageUrl || scraped.imageUrl,
-          coupon: input.coupon || null,
-          cleanUrl,
-          storeName: input.storeName,
-          customHeadline: input.customHeadline
-        };
+        finalTitle = input.title || scraped.title;
+        finalPrice = input.price !== undefined ? input.price : scraped.price;
+        finalOldPrice = input.oldPrice || scraped.oldPrice || null;
+        finalDiscountPercent = input.discountPercent || scraped.discountPercent || null;
+        finalImageUrl = input.imageUrl || scraped.imageUrl;
+      }
+
+      let finalCoupon = input.coupon || null;
+      if (!finalCoupon) {
+        try {
+          const couponFetcher = require('./couponFetcher.service');
+          finalCoupon = await couponFetcher.resolveCouponForProduct({
+            title: finalTitle,
+            price: finalPrice
+          });
+        } catch (e) {
+          logger.debug('[WhatsappSender] Não foi possível resolver cupom diário:', e.message);
+        }
       }
 
       return {
-        title: input.title,
-        price: input.price,
-        imageUrl: input.imageUrl,
-        coupon: input.coupon || null,
+        title: finalTitle,
+        price: finalPrice,
+        oldPrice: finalOldPrice,
+        discountPercent: finalDiscountPercent,
+        imageUrl: finalImageUrl,
+        coupon: finalCoupon,
         cleanUrl,
         storeName: input.storeName,
         customHeadline: input.customHeadline

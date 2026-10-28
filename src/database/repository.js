@@ -448,6 +448,116 @@ const setSetting = async (key, value) => {
     }
 };
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GESTÃO DE CUPONS DIÁRIOS
+// ──────────────────────────────────────────────────────────────────────────────
+
+const saveCoupon = async (coupon) => {
+    try {
+        if (!coupon || !coupon.code) return 0;
+        const code = String(coupon.code).trim().toUpperCase();
+        const description = coupon.description || coupon.title || '';
+        const rule = coupon.rule || coupon.discount || '';
+        const category = coupon.category || null;
+        const minAmount = typeof coupon.minAmount === 'number' ? coupon.minAmount : (typeof coupon.min_amount === 'number' ? coupon.min_amount : 0);
+        const discountValue = coupon.discountValue !== undefined ? coupon.discountValue : (coupon.discount_value !== undefined ? coupon.discount_value : null);
+        const discountType = coupon.discountType || coupon.discount_type || 'unknown';
+        const isActive = coupon.isActive !== undefined ? (coupon.isActive ? 1 : 0) : 1;
+        const source = coupon.source || 'scraper';
+
+        const query = `
+            INSERT INTO coupons (code, description, rule, category, min_amount, discount_value, discount_type, is_active, source, captured_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (code) DO UPDATE SET
+                description = EXCLUDED.description,
+                rule = EXCLUDED.rule,
+                category = EXCLUDED.category,
+                min_amount = EXCLUDED.min_amount,
+                discount_value = EXCLUDED.discount_value,
+                discount_type = EXCLUDED.discount_type,
+                is_active = EXCLUDED.is_active,
+                source = EXCLUDED.source,
+                updated_at = CURRENT_TIMESTAMP
+        `;
+        const res = await db.run(query, [code, description, rule, category, minAmount, discountValue, discountType, isActive, source]);
+        return res.rowCount;
+    } catch (err) {
+        logger.error(`[Repository] Erro ao salvar cupom ${coupon?.code}: ${err.message}`);
+        return 0;
+    }
+};
+
+const saveCouponsBatch = async (coupons = []) => {
+    if (!Array.isArray(coupons) || coupons.length === 0) return 0;
+    let saved = 0;
+    for (const c of coupons) {
+        const count = await saveCoupon(c);
+        if (count > 0) saved++;
+    }
+    return saved;
+};
+
+const getActiveCoupons = async () => {
+    try {
+        const query = 'SELECT * FROM coupons WHERE is_active = 1 ORDER BY min_amount ASC, updated_at DESC';
+        return await db.all(query, []);
+    } catch (err) {
+        logger.error(`[Repository] Erro ao listar cupons ativos: ${err.message}`);
+        return [];
+    }
+};
+
+const getCouponByCode = async (code) => {
+    try {
+        if (!code) return null;
+        const query = 'SELECT * FROM coupons WHERE code = ?';
+        return await db.get(query, [code.trim().toUpperCase()]);
+    } catch (err) {
+        logger.error(`[Repository] Erro ao buscar cupom ${code}: ${err.message}`);
+        return null;
+    }
+};
+
+const deactivateExpiredCoupons = async (maxHours = 24) => {
+    try {
+        const USE_POSTGRES = isPostgres();
+        let query;
+        if (USE_POSTGRES) {
+            query = `UPDATE coupons SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE is_active = 1 AND updated_at < NOW() - INTERVAL '${maxHours} hours'`;
+        } else {
+            query = `UPDATE coupons SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE is_active = 1 AND updated_at < datetime('now', '-${maxHours} hours')`;
+        }
+        const res = await db.run(query, []);
+        if (res.rowCount > 0) {
+            logger.info(`🧹 Limpeza: ${res.rowCount} cupons com mais de ${maxHours}h foram desativados.`);
+        }
+        return res.rowCount;
+    } catch (err) {
+        logger.warn('Erro ao desativar cupons expirados:', err.message);
+        return 0;
+    }
+};
+
+const pruneOldCoupons = async (days = 7) => {
+    try {
+        const USE_POSTGRES = isPostgres();
+        let query;
+        if (USE_POSTGRES) {
+            query = `DELETE FROM coupons WHERE updated_at < NOW() - INTERVAL '${days} days'`;
+        } else {
+            query = `DELETE FROM coupons WHERE updated_at < datetime('now', '-${days} days')`;
+        }
+        const res = await db.run(query, []);
+        if (res.rowCount > 0) {
+            logger.info(`🧹 Limpeza: ${res.rowCount} cupons antigos com mais de ${days} dias foram removidos.`);
+        }
+        return res.rowCount;
+    } catch (err) {
+        logger.warn('Erro ao limpar cupons antigos:', err.message);
+        return 0;
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -463,6 +573,13 @@ module.exports = {
   resetStuckSendingItems,
   pruneOldProducts,
   getSetting,
-  setSetting
+  setSetting,
+  saveCoupon,
+  saveCouponsBatch,
+  getActiveCoupons,
+  getCouponByCode,
+  deactivateExpiredCoupons,
+  pruneOldCoupons
 };
+
 
