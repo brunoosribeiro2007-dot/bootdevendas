@@ -6,6 +6,14 @@ const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
 
+// ──────────────────────────────────────────────────────────────────────────────
+// PARÂMETROS CONFIGURÁVEIS DE QUALIDADE E REPUTAÇÃO DO PRODUTO (BUSCA AUTOMÁTICA)
+// ──────────────────────────────────────────────────────────────────────────────
+const MIN_REVIEWS = env.minReviews !== undefined ? env.minReviews : 100;
+const MIN_RATING = env.minRating !== undefined ? env.minRating : 4.5;
+const MIN_DISCOUNT_PERCENT = env.minDiscountPercent !== undefined ? env.minDiscountPercent : 5;
+const REQUIRE_TRUSTED_SELLER = env.requireTrustedSeller !== undefined ? env.requireTrustedSeller : true;
+
 // 🛑 FILTRO DE NICHO (CASA): Ignora ferramentas pesadas, eletrônicos gamer, automotivos e beleza/cosméticos
 const PRODUCT_BLACKLIST = [
     // 🔧 Ferramentas e automotivo
@@ -86,6 +94,169 @@ const isProductBlacklisted = (title) => {
         return titleLower.includes(word);
     });
 };
+
+/**
+ * 🛡️ VALIDAÇÃO DE QUALIDADE E REPUTAÇÃO DE PRODUTOS
+ * 
+ * Avalia se o produto atende a TODOS os critérios rigorosos:
+ * 1. Mínimo de avaliações de compradores (reviewsCount >= MIN_REVIEWS, padrão 100)
+ * 2. Nota média mínima (rating >= MIN_RATING, padrão 4.5 estrelas de 0 a 5)
+ * 3. Desconto/Promoção ativa (desconto percentual >= MIN_DISCOUNT_PERCENT, selo de oferta ou cupom ativo)
+ * 4. Reputação do Vendedor (Loja Oficial, MercadoLíder Gold/Platinum, Full ou termômetro verde)
+ * 
+ * @param {Object} produto - Objeto com os dados do item.
+ * @param {Object} [customThresholds] - Permite customizar limiares (útil para testes unitários).
+ * @returns {boolean} True se aprovado em todos os critérios.
+ */
+function validarQualidadeProduto(produto, customThresholds = {}) {
+    if (!produto || typeof produto !== 'object') return false;
+
+    const minReviews = customThresholds.minReviews !== undefined ? customThresholds.minReviews : (env.minReviews || MIN_REVIEWS);
+    const minRating = customThresholds.minRating !== undefined ? customThresholds.minRating : (env.minRating || MIN_RATING);
+    const minDiscountPercent = customThresholds.minDiscountPercent !== undefined ? customThresholds.minDiscountPercent : (env.minDiscountPercent !== undefined ? env.minDiscountPercent : MIN_DISCOUNT_PERCENT);
+    const requireSeller = customThresholds.requireTrustedSeller !== undefined ? customThresholds.requireTrustedSeller : (env.requireTrustedSeller !== undefined ? env.requireTrustedSeller : REQUIRE_TRUSTED_SELLER);
+
+    const title = produto.title || 'Produto sem título';
+
+    // ── 1. FILTRO DE QUANTIDADE DE AVALIAÇÕES (MÍNIMO: 100) ────────────────────
+    let reviews = 0;
+    if (typeof produto.reviewsCount === 'number') {
+        reviews = produto.reviewsCount;
+    } else if (typeof produto.reviewsCount === 'string') {
+        reviews = parseInt(produto.reviewsCount.replace(/\D/g, ''), 10) || 0;
+    } else if (produto.sales && typeof produto.sales === 'number') {
+        reviews = produto.sales; // Fallback para Shopee ou APIs de vendas
+    }
+
+    if (reviews < minReviews) {
+        logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": quantidade de avaliações insuficiente (${reviews} < ${minReviews})`);
+        return false;
+    }
+
+    // ── 2. FILTRO DE NOTA MÉDIA (MÍNIMO: 4.5 ESTRELAS) ────────────────────────
+    let rating = 0;
+    if (typeof produto.rating === 'number') {
+        rating = produto.rating;
+    } else if (typeof produto.rating === 'string') {
+        rating = parseFloat(produto.rating.replace(',', '.')) || 0;
+    }
+
+    if (rating < minRating) {
+        logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": nota média insuficiente (${rating.toFixed(1)} < ${minRating.toFixed(1)})`);
+        return false;
+    }
+
+    // ── 3. FILTRO DE PROMOÇÃO / DESCONTO ATIVO ────────────────────────────────
+    let discount = 0;
+    if (typeof produto.discountPercent === 'number') {
+        discount = produto.discountPercent;
+    } else if (typeof produto.discountPercent === 'string') {
+        discount = parseFloat(produto.discountPercent.replace('%', '')) || 0;
+    }
+
+    if (!discount && produto.oldPrice && produto.price && produto.price < produto.oldPrice) {
+        discount = Math.round(((produto.oldPrice - produto.price) / produto.oldPrice) * 100);
+    }
+
+    const hasMinDiscount = discount >= minDiscountPercent;
+    const hasPromoBadge = Boolean(produto.hasPromotionBadge || produto.promotionBadge || produto.isDeal);
+    const hasActiveCoupon = Boolean(produto.coupon && typeof produto.coupon === 'string' && produto.coupon.trim().length > 0);
+    const hasPriceDiscountFlag = Boolean(produto.hasDiscount);
+
+    const isPromoted = hasMinDiscount || hasPromoBadge || hasActiveCoupon || hasPriceDiscountFlag;
+    if (!isPromoted) {
+        logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": sem desconto ou promoção ativa (desconto: ${discount}%, mínimo: ${minDiscountPercent}%)`);
+        return false;
+    }
+
+    // ── 4. FILTRO DE REPUTAÇÃO DO VENDEDOR (RECOMENDADO) ──────────────────────
+    if (requireSeller) {
+        const isOfficialStore = Boolean(produto.isOfficialStore);
+        const isMercadoLider = Boolean(produto.isMercadoLider);
+        const hasGreenReputation = Boolean(produto.hasGreenReputation);
+        const isFull = Boolean(produto.isFull); // No ML, o envio Full requer histórico comprovado e reputação verde
+        
+        // Suporte para Shopee (lojas oficiais / indicadas)
+        const isShopeeVerified = Boolean(produto.source === 'shopee' || (produto.link && (produto.link.includes('shopee') || produto.link.includes('shope.ee'))));
+
+        const sellerInfoText = (produto.sellerInfo || produto.sellerReputation || '').toLowerCase();
+        const sellerMatchesGoodReputation = /oficial|mercadol[ií]der|platinum|gold|verde|5_green|l[ií]der|melhores/i.test(sellerInfoText);
+
+        const isTrustedSeller = isOfficialStore || isMercadoLider || hasGreenReputation || isFull || isShopeeVerified || sellerMatchesGoodReputation;
+        if (!isTrustedSeller) {
+            logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": reputação do vendedor não comprovada (não é Loja Oficial, MercadoLíder, Full ou termômetro verde).`);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Retorna o motivo detalhado caso o produto não atenda a algum dos critérios rigorosos.
+ *
+ * @param {Object} produto - Objeto com os dados do item.
+ * @param {Object} [customThresholds] - Limiares opcionais.
+ * @returns {string|null} Motivo de reprovação ou null se válido.
+ */
+function obterMotivoReprovacao(produto, customThresholds = {}) {
+    if (!produto || typeof produto !== 'object') return 'Produto inexistente ou inválido';
+
+    const minReviews = customThresholds.minReviews !== undefined ? customThresholds.minReviews : (env.minReviews || MIN_REVIEWS);
+    const minRating = customThresholds.minRating !== undefined ? customThresholds.minRating : (env.minRating || MIN_RATING);
+    const minDiscountPercent = customThresholds.minDiscountPercent !== undefined ? customThresholds.minDiscountPercent : (env.minDiscountPercent !== undefined ? env.minDiscountPercent : MIN_DISCOUNT_PERCENT);
+    const requireSeller = customThresholds.requireTrustedSeller !== undefined ? customThresholds.requireTrustedSeller : (env.requireTrustedSeller !== undefined ? env.requireTrustedSeller : REQUIRE_TRUSTED_SELLER);
+
+    let reviews = 0;
+    if (typeof produto.reviewsCount === 'number') reviews = produto.reviewsCount;
+    else if (typeof produto.reviewsCount === 'string') reviews = parseInt(produto.reviewsCount.replace(/\D/g, ''), 10) || 0;
+    else if (produto.sales && typeof produto.sales === 'number') reviews = produto.sales;
+
+    if (reviews < minReviews) {
+        return `Avaliações insuficientes (${reviews} < ${minReviews} mínimas)`;
+    }
+
+    let rating = 0;
+    if (typeof produto.rating === 'number') rating = produto.rating;
+    else if (typeof produto.rating === 'string') rating = parseFloat(produto.rating.replace(',', '.')) || 0;
+
+    if (rating < minRating) {
+        return `Nota média insuficiente (${rating.toFixed(1)} < ${minRating.toFixed(1)} estrelas)`;
+    }
+
+    let discount = 0;
+    if (typeof produto.discountPercent === 'number') discount = produto.discountPercent;
+    else if (typeof produto.discountPercent === 'string') discount = parseFloat(produto.discountPercent.replace('%', '')) || 0;
+    if (!discount && produto.oldPrice && produto.price && produto.price < produto.oldPrice) {
+        discount = Math.round(((produto.oldPrice - produto.price) / produto.oldPrice) * 100);
+    }
+
+    const hasMinDiscount = discount >= minDiscountPercent;
+    const hasPromoBadge = Boolean(produto.hasPromotionBadge || produto.promotionBadge || produto.isDeal);
+    const hasActiveCoupon = Boolean(produto.coupon && typeof produto.coupon === 'string' && produto.coupon.trim().length > 0);
+    const hasPriceDiscountFlag = Boolean(produto.hasDiscount);
+
+    if (!hasMinDiscount && !hasPromoBadge && !hasActiveCoupon && !hasPriceDiscountFlag) {
+        return `Sem promoção/desconto ativo (desconto atual: ${discount}%, mínimo: ${minDiscountPercent}%)`;
+    }
+
+    if (requireSeller) {
+        const isOfficialStore = Boolean(produto.isOfficialStore);
+        const isMercadoLider = Boolean(produto.isMercadoLider);
+        const hasGreenReputation = Boolean(produto.hasGreenReputation);
+        const isFull = Boolean(produto.isFull);
+        const isShopeeVerified = Boolean(produto.source === 'shopee' || (produto.link && (produto.link.includes('shopee') || produto.link.includes('shope.ee'))));
+        const sellerInfoText = (produto.sellerInfo || produto.sellerReputation || '').toLowerCase();
+        const sellerMatchesGoodReputation = /oficial|mercadol[ií]der|platinum|gold|verde|5_green|l[ií]der|melhores/i.test(sellerInfoText);
+
+        const isTrustedSeller = isOfficialStore || isMercadoLider || hasGreenReputation || isFull || isShopeeVerified || sellerMatchesGoodReputation;
+        if (!isTrustedSeller) {
+            return `Vendedor sem reputação qualificada (exige Loja Oficial, MercadoLíder, Termômetro Verde ou Full)`;
+        }
+    }
+
+    return null;
+}
 
 /**
  * Parser unificado para as páginas do Mercado Livre
@@ -179,15 +350,20 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                     return;
                 }
 
-                // 🏷️ VERIFICAÇÃO DE PROMOÇÃO (Preferência, não obrigatório)
-                const hasDiscount = $(element).find('.andes-money-amount__discount, .ui-search-price__discount').length > 0;
+                const cardText = $(element).text().toLowerCase();
 
-                // ⭐ VERIFICAÇÃO DE QUALIDADE (Avaliação e Vendas)
+                // ⭐ 1. AVALIAÇÕES E NOTA MÉDIA DO PRODUTO
                 const ratingElement = $(element).find('.poly-reviews__rating, .ui-search-reviews__rating-number, .ui-search-item__group__element--reviews').first();
                 const ratingText = ratingElement.text();
-                const rating = parseFloat(ratingText.replace(',', '.'));
+                let rating = 0;
+                const ratingMatch = ratingText.match(/([1-5][.,]\d)/);
+                if (ratingMatch) {
+                    rating = parseFloat(ratingMatch[1].replace(',', '.'));
+                } else if (ratingText) {
+                    rating = parseFloat(ratingText.replace(',', '.')) || 0;
+                }
                 
-                // 💬 CAPTURA DA QUANTIDADE DE AVALIAÇÕES
+                // Quantidade de avaliações de compradores
                 let reviewsCount = 0;
                 const reviewsElement = $(element).find('.poly-reviews__total, .ui-search-reviews__amount').first();
                 if (reviewsElement.length > 0) {
@@ -199,26 +375,43 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                     }
                 }
 
+                // Fallback para atributo aria-label de avaliações
+                if (!rating || !reviewsCount) {
+                    const ariaLabel = $(element).find('[aria-label*="avalia"], [aria-label*="estrela"], .poly-reviews, .ui-search-reviews').attr('aria-label') || '';
+                    if (!rating && ariaLabel) {
+                        const rMatch = ariaLabel.match(/([1-5][.,]\d)/);
+                        if (rMatch) rating = parseFloat(rMatch[1].replace(',', '.'));
+                    }
+                    if (!reviewsCount && ariaLabel) {
+                        const revMatch = ariaLabel.match(/(\d[\d.,]*)\s*(avalia|opini|coment)/i);
+                        if (revMatch) reviewsCount = parseInt(revMatch[1].replace(/\D/g, ''), 10) || 0;
+                    }
+                }
+
+                // 🏬 2. REPUTAÇÃO DO VENDEDOR
                 const salesElement = $(element).find('.poly-component__sales, .ui-search-item__group__element--shipping, .ui-search-item__quantity-sold').first();
                 const salesText = salesElement.text().toLowerCase();
-                
-                // Critério de Sofisticação: Priorizamos Loja Oficial e Full
-                const isOfficialStore = $(element).text().toLowerCase().includes('loja oficial') || $(element).find('.ui-search-official-store-label').length > 0;
-                const isFull = salesText.includes('full') || $(element).find('.ui-search-item__shipping--full').length > 0;
+                const sellerElement = $(element).find('.ui-search-item__group__element--seller, .poly-component__seller, .ui-search-official-store-label, [class*="seller"]').first();
+                const sellerText = sellerElement.text().trim();
 
-                // 🛑 FILTRO DE QUALIDADE RIGOROSO (Mapeamento de 4.2 estrelas e 30 avaliações)
-                // Se a página tiver a informação de avaliações, aplicamos o filtro. Se não tiver (como no layout leve do Googlebot), aceitamos o produto.
-                if (rating && !isNaN(rating) && rating < 4.2) {
-                    logger.debug(`⏩ Ignorando "${title}" por avaliação insuficiente: ${rating}`);
-                    return;
-                }
+                const isOfficialStore = $(element).find('.ui-search-official-store-label').length > 0 || 
+                                        cardText.includes('loja oficial') || 
+                                        sellerText.toLowerCase().includes('oficial') ||
+                                        $(element).find('.poly-component__seller').text().toLowerCase().includes('loja oficial');
 
-                if (reviewsCount && reviewsCount < 30) {
-                    logger.debug(`⏩ Ignorando "${title}" por quantidade de avaliações insuficiente: ${reviewsCount}`);
-                    return;
-                }
+                const isMercadoLider = /mercadol[ií]der|platinum|gold/i.test(cardText + ' ' + sellerText);
+                const hasGreenReputation = /term[oô]metro verde|melhores do site|5_green/i.test(cardText + ' ' + sellerText);
+                const isFull = salesText.includes('full') || 
+                               $(element).find('.ui-search-item__shipping--full, .andes-badge--fulfillment, [class*="fulfillment"]').length > 0 ||
+                               $(element).find('svg[class*="full"], svg[aria-label*="Full"], svg[aria-label*="FULL"]').length > 0;
+
+                let sellerReputation = 'Standard';
+                if (isOfficialStore) sellerReputation = 'Loja Oficial';
+                else if (isMercadoLider) sellerReputation = 'MercadoLíder';
+                else if (isFull) sellerReputation = 'Mercado Livre Full';
+                else if (hasGreenReputation) sellerReputation = 'Termômetro Verde';
                 
-                // 💰 CAPTURA DE PREÇO
+                // 💰 3. CAPTURA DE PREÇO E DESCONTO
                 let currentMoneyEl = $(element).find('.poly-price__current .andes-money-amount, .ui-search-price__second-line .andes-money-amount, .andes-money-amount--current').filter(function() {
                     return $(this).closest('.poly-price__installments, .ui-search-item__group__element--installments').length === 0;
                 }).first();
@@ -242,18 +435,20 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 if (!priceFrac) return;
                 const price = parseFloat(`${priceFrac}.${priceCents}`);
                 
-                // 🏷️ CÁLCULO DE DESCONTO REAL
-                let discountPercent = 0;
-                if (oldPrice && price < oldPrice) {
+                // 🏷️ CÁLCULO E DETECÇÃO DE PROMOÇÕES / DESCONTOS
+                const discountEl = $(element).find('.andes-money-amount__discount, .ui-search-price__discount').first();
+                const discountText = discountEl.text().trim();
+                const discountMatch = discountText.match(/(\d+)%/);
+                let discountPercent = discountMatch ? parseInt(discountMatch[1], 10) : 0;
+
+                if (!discountPercent && oldPrice && price < oldPrice) {
                     discountPercent = Math.round(((oldPrice - price) / oldPrice) * 100);
                 }
 
-                // 🛑 FILTRO DE "OFERTA DE VERDADE"
-                // Só aceita se tiver pelo menos 15% de desconto OU for Loja Oficial + Full
-                if (discountPercent < 15 && !isOfficialStore) {
-                    logger.debug(`⏩ Ignorando "${title}" por desconto baixo (${discountPercent}%) e não ser Loja Oficial.`);
-                    return;
-                }
+                const promoBadgeEl = $(element).find('.poly-component__promotions, .poly-badge--deal, .ui-search-item__highlight-label, [class*="badge--deal"], [class*="promotion"]').first();
+                const promoBadgeText = promoBadgeEl.text().trim();
+                const hasPromotionBadge = promoBadgeEl.length > 0 || /oferta\s+do\s+dia|rel[aâ]mpago|oferta/i.test(cardText);
+                const hasDiscount = discountPercent > 0 || discountEl.length > 0 || hasPromotionBadge;
                 
                 // Tentar várias formas de pegar a imagem
                 let image = $(element).find('img').attr('data-src') || 
@@ -279,25 +474,40 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 if (title && price && link) {
                     const id = getStableId(link, title);
                     if (!products.find(p => p.id === id)) {
-                        // Atribuindo um Score de Qualidade para ordenação posterior (relevância + nota + reviews)
-                        const qualityScore = ((rating || 4.5) * 25) + (reviewsCount / 50) + (isOfficialStore ? 50 : 0) + (isFull ? 30 : 0) + (discountPercent);
-                        
-                        products.push({ 
+                        const productCandidate = {
                             id, 
                             title, 
                             price, 
                             oldPrice,
                             discountPercent,
+                            hasDiscount,
+                            hasPromotionBadge,
+                            promotionBadge: promoBadgeText || (hasPromotionBadge ? 'Oferta Ativa' : null),
                             isOfficialStore,
+                            isMercadoLider,
+                            hasGreenReputation,
                             isFull,
-                            qualityScore,
+                            sellerReputation,
+                            sellerInfo: sellerText || sellerReputation,
                             link, 
                             imageUrl: image, 
                             description: `Oferta: ${searchTerm}`,
                             coupon: couponText,
                             rating,
                             reviewsCount
-                        });
+                        };
+
+                        // 🛑 FILTRO DE QUALIDADE E REPUTAÇÃO RIGOROSO
+                        // Exige mais de 100 avaliações, nota >= 4.5, promoção ativa e reputação comprovada
+                        if (!validarQualidadeProduto(productCandidate)) {
+                            return;
+                        }
+
+                        // Atribuindo Score de Qualidade para ordenação posterior
+                        const qualityScore = ((rating || 4.5) * 25) + (reviewsCount / 50) + (isOfficialStore ? 50 : 0) + (isFull ? 30 : 0) + (discountPercent);
+                        productCandidate.qualityScore = qualityScore;
+                        
+                        products.push(productCandidate);
                     }
                 }
             } catch (err) {
@@ -370,44 +580,51 @@ const fetchFromBackupAPI = async (searchTerm) => {
             });
             
                 if (data.results && data.results.length > 0) {
-                    // Filtrar apenas produtos com rating decente se disponível na API
-                    const results = data.results
-                        .filter(p => !p.title.toLowerCase().includes('usado')) // Garante novos
-                        .filter(p => !isProductBlacklisted(p.title)) // Filtro de nicho
-                        .filter(p => {
-                            const apiRating = p.reviews?.rating_average || p.rating_average || null;
-                            const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
-                            // Exige mais de 4.2 estrelas e pelo menos 30 avaliações
-                            return apiRating && apiRating >= 4.2 && apiReviewsCount >= 30;
-                        })
+                    // Filtrar produtos novos e do nicho
+                    const candidates = data.results
+                        .filter(p => !p.title.toLowerCase().includes('usado'))
+                        .filter(p => !isProductBlacklisted(p.title))
                         .map(p => {
                             const apiRating = p.reviews?.rating_average || p.rating_average || null;
                             const apiReviewsCount = p.reviews?.total || p.reviews?.total_relations || 0;
                             const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
                             
-                            const isOfficial = !!(p.official_store_id || p.official_store_name);
+                            const isOfficial = !!(p.official_store_id || p.official_store_name || p.seller?.tags?.includes('brand') || p.seller?.tags?.includes('large_seller'));
+                            const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
+                            const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
+                            const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
                             const isFull = !!(p.shipping?.store_pick_up || p.shipping?.logistic_type === 'fulfillment');
-                            
-                            // Calcula score consistente para a API
-                            const score = ((apiRating || 4.5) * 25) + (apiReviewsCount / 50) + (isOfficial ? 50 : 0) + (isFull ? 30 : 0) + discount;
-                            
-                            return {
+                            const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
+
+                            const candidate = {
                                 id: p.id,
                                 title: p.title,
                                 price: p.price,
                                 oldPrice: p.original_price || null,
-                                discountPercent: discount || null,
+                                discountPercent: discount,
+                                hasDiscount: discount > 0,
+                                hasPromotionBadge: hasPromo,
+                                promotionBadge: hasPromo ? 'Oferta Ativa' : null,
+                                isOfficialStore: isOfficial,
+                                isMercadoLider,
+                                hasGreenReputation: hasGreenRep,
+                                isFull,
+                                sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder ${powerSellerStatus}` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
                                 link: p.permalink,
-                                imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'), // -W é maior
+                                imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'),
                                 description: `Oferta Especial: ${searchTerm}`,
-                                rating: apiRating || 4.2,
-                                reviewsCount: apiReviewsCount || 30,
-                                qualityScore: score
+                                rating: apiRating,
+                                reviewsCount: apiReviewsCount,
+                                qualityScore: ((apiRating || 4.5) * 25) + (apiReviewsCount / 50) + (isOfficial ? 50 : 0) + (isFull ? 30 : 0) + discount
                             };
-                        });
+
+                            return candidate;
+                        })
+                        // 🛑 APLICAÇÃO DO FILTRO RIGOROSO DE QUALIDADE E REPUTAÇÃO
+                        .filter(candidate => validarQualidadeProduto(candidate));
                 
-                logger.info(`✅ API Fallback (${domain}) funcionou para "${searchTerm}"! (${results.length} itens)`);
-                return results;
+                logger.info(`✅ API Fallback (${domain}) funcionou para "${searchTerm}"! (${candidates.length} itens aprovados)`);
+                return candidates;
             }
         } catch (apiErr) {
             logger.warn(`⚠️ Falha no domínio ${domain}: ${apiErr.message}`);
@@ -776,5 +993,12 @@ module.exports = {
   searchDealsByCategory,
   enrichProductDetails,
   isProductBlacklisted,
-  getCategoryForKeyword
+  getCategoryForKeyword,
+  validarQualidadeProduto,
+  validateProductQuality: validarQualidadeProduto,
+  obterMotivoReprovacao,
+  MIN_REVIEWS,
+  MIN_RATING,
+  MIN_DISCOUNT_PERCENT,
+  REQUIRE_TRUSTED_SELLER
 };

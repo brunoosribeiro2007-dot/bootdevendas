@@ -43,4 +43,10 @@ module.exports = {
   adminUser: process.env.ADMIN_USER || process.env.DASHBOARD_USERNAME || 'admin',
   adminPass: process.env.ADMIN_PASS || process.env.DASHBOARD_PASSWORD || 'admin123',
   sessionSecret: process.env.SESSION_SECRET || 'affiliate_secret_hmac_key_2026',
+
+  // Critérios de Qualidade e Reputação de Ofertas (Busca Automática)
+  minReviews: parseInt(process.env.MIN_REVIEWS || process.env.MIN_PRODUCT_REVIEWS || '100', 10),
+  minRating: parseFloat(process.env.MIN_RATING || process.env.MIN_PRODUCT_RATING || '4.5'),
+  minDiscountPercent: parseFloat(process.env.MIN_DISCOUNT_PERCENT || '5'),
+  requireTrustedSeller: (process.env.REQUIRE_TRUSTED_SELLER || 'true').toLowerCase() === 'true',
 };

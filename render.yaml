@@ -27,6 +27,16 @@ services:
       - key: ADMIN_PASS
         sync: false
 
+      # Filtros de Qualidade e Reputação de Ofertas (Busca Automática)
+      - key: MIN_REVIEWS
+        value: "100"
+      - key: MIN_RATING
+        value: "4.5"
+      - key: MIN_DISCOUNT_PERCENT
+        value: "5"
+      - key: REQUIRE_TRUSTED_SELLER
+        value: "true"
+
       # URL de conexão do PostgreSQL (Supabase) - configurado nas secrets do Render
       - key: DATABASE_URL
         sync: false

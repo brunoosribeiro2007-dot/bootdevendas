@@ -11,7 +11,7 @@ describe('Mercado Livre Service - Deals Category Scraper', () => {
     test('searchDealsByCategory should scrape items successfully', async () => {
         const mockHtml = `
             <div class="poly-card">
-                <a href="https://produto.mercadolivre.com.br/MLB-123456-teste" class="poly-component__title">Panela Antiaderente</a>
+                <a href="https://produto.mercadolivre.com.br/MLB-123456-teste" class="poly-component__title">Fritadeira Air Fryer 4L Inox</a>
                 <div class="poly-reviews__rating">4.5</div>
                 <div class="poly-reviews__total">(150)</div>
                 <div class="poly-price__current">
@@ -23,6 +23,8 @@ describe('Mercado Livre Service - Deals Category Scraper', () => {
                 <div class="andes-money-amount--previous">
                     <span class="andes-money-amount__fraction">150</span>
                 </div>
+                <span class="poly-component__seller">Por Loja Oficial</span>
+                <span class="ui-search-item__shipping--full">FULL</span>
                 <img src="https://http2.mlstatic.com/D_NQ_NP_983637-MLB74786438234_032024-F.webp" />
             </div>
         `;
@@ -35,7 +37,7 @@ describe('Mercado Livre Service - Deals Category Scraper', () => {
         const results = await mlService.searchDealsByCategory('MLB1574', 1);
         
         expect(results.length).toBeGreaterThan(0);
-        expect(results[0].title).toBe('Panela Antiaderente');
+        expect(results[0].title).toBe('Fritadeira Air Fryer 4L Inox');
         expect(results[0].price).toBe(100.00);
         expect(results[0].oldPrice).toBe(150.00);
         expect(results[0].discountPercent).toBe(33); // (150-100)/150 = 33%

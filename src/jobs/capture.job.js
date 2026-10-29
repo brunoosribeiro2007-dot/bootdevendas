@@ -230,6 +230,14 @@ const captureTask = async () => {
     for (const product of allProductsInCycle) {
       if (!product.title || !product.price || !product.link) continue;
 
+      // 🛡️ VALIDAÇÃO RIGOROSA DE QUALIDADE E REPUTAÇÃO DO PRODUTO
+      // Exige: >= 100 avaliações de compradores, nota média >= 4.5, promoção/desconto ativo e vendedor qualificado
+      if (!mlService.validarQualidadeProduto(product)) {
+        const motivo = mlService.obterMotivoReprovacao ? mlService.obterMotivoReprovacao(product) : `Avaliações: ${product.reviewsCount || 0}, Nota: ${product.rating || 0}, Desconto: ${product.discountPercent || 0}%`;
+        logger.info(`⏩ [Qualidade] Produto ignorado: "${product.title}" (${motivo})`);
+        continue; // Ignora o item que não atinge os critérios e busca o próximo da fila
+      }
+
       // Pré-checagem de duplicidade por ID MLB
       const mlbId = extractMlbId(product.link);
       if (mlbId && existingMlbIds.has(mlbId)) {
