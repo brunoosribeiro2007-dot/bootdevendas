@@ -95,7 +95,7 @@ let retryTimeout = null;
 // BLOCO 3: CICLO DE PUBLICAÇÃO PRINCIPAL (publishTask)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const publishTask = async () => {
+const publishTask = async (force = false) => {
   if (isPublishing) {
     logger.debug('⚠️ [PublishTask] Tentativa de publicação ignorada: envio em andamento.');
     return;
@@ -104,7 +104,7 @@ const publishTask = async () => {
 
   try {
     // ─── 1. Validação da Janela de Horário ────────────────────────────────────
-    if (!isWithinPublishTime()) {
+    if (!force && !isWithinPublishTime()) {
       if (!sentGoodNightMessage && shouldSendGoodNight()) {
         try {
           logger.info('Tentando enviar mensagem de boa noite...');
@@ -154,7 +154,7 @@ const publishTask = async () => {
       return;
     }
 
-    logger.info(`📤 Tentando publicar item com ID da fila: ${item.id}`);
+    logger.info(`📤 Tentando publicar item com ID da fila: ${item.id} ("${item.title}")`);
 
     try {
       // Revalida a prontidão do WhatsApp antes de disparar a mídia
@@ -167,13 +167,13 @@ const publishTask = async () => {
       // ─── 5. Formatação Dinâmica da Mensagem Promocional ─────────────────────
       item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
 
-      // ─── 6. Disparo da Mensagem (Texto + Imagem) ───────────────────────────
+      // ─── 6. Disparo da Mensagem (Texto + Imagem) em todos os destinos ─────────
       const success = await publisher.publish(item);
 
       if (success) {
         // Remove produto publicado do banco e da fila para economizar espaço
         await repository.deleteProductAndQueueItem(item.product_id, item.description);
-        logger.info(`✅ Item ${item.id} publicado com sucesso e removido do banco.`);
+        logger.info(`✅ Item ${item.id} ("${item.title}") publicado com sucesso e removido da fila.`);
       } else {
         logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
         await repository.updateQueueStatus(item.id, 'approved');
@@ -199,13 +199,13 @@ const publishTask = async () => {
  */
 const startPublishJob = () => {
   logger.info(`Agendando job de publicação com cron: ${env.cronPublishSchedule} das ${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}`);
-  cron.schedule(env.cronPublishSchedule, publishTask);
+  cron.schedule(env.cronPublishSchedule, () => publishTask(false));
 
   // Executa uma vez no boot para publicar sem esperar o próximo ciclo do cron
   if (isWithinPublishTime()) {
     logger.info('🚀 Executando disparo de publicação inicial pós-boot...');
     setTimeout(() => {
-      publishTask().catch(err => logger.error('Erro na publicação inicial:', err));
+      publishTask(false).catch(err => logger.error('Erro na publicação inicial:', err));
     }, 15000); // 15 segundos após a inicialização
   }
 };

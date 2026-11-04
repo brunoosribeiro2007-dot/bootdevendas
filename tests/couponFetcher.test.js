@@ -1,9 +1,10 @@
 const couponFetcher = require('../src/services/couponFetcher.service');
+const repository = require('../src/database/repository');
 
 describe('CouponFetcher Service & Daily Expiration', () => {
   afterEach(async () => {
-    // Limpa cupom em memória após cada teste
     await couponFetcher.setActiveDailyCoupon(null);
+    jest.restoreAllMocks();
   });
 
   test('deve definir e recuperar o cupom ativo para o dia de hoje', async () => {
@@ -28,11 +29,13 @@ describe('CouponFetcher Service & Daily Expiration', () => {
     };
 
     const resolved = await couponFetcher.resolveCouponForProduct(mockProduct);
-    expect(resolved).toBe('CUPOMTOP20');
+    expect(resolved?.code || resolved).toBe('CUPOMTOP20');
   });
 
   test('resolveCouponForProduct deve retornar null se não houver cupom manual e produto não tiver cupom', async () => {
     await couponFetcher.setActiveDailyCoupon(null);
+    jest.spyOn(repository, 'getActiveCoupons').mockResolvedValue([]);
+
     const mockProduct = {
       title: 'Fritadeira Air Fryer',
       price: 299
@@ -44,6 +47,8 @@ describe('CouponFetcher Service & Daily Expiration', () => {
 
   test('resolveCouponForProduct deve ignorar se produto tiver TUDOPARACASA', async () => {
     await couponFetcher.setActiveDailyCoupon(null);
+    jest.spyOn(repository, 'getActiveCoupons').mockResolvedValue([]);
+
     const mockProduct = {
       title: 'Fritadeira Air Fryer',
       price: 299,

@@ -3,7 +3,7 @@ const logger = require('../config/logger');
 
 // ============================================================
 // MODO AUTOMÁTICO: Supabase (PostgreSQL) quando DATABASE_URL existe
-//                  SQLite local quando não existe
+//                  SQLite local quando não existe ou em fallback
 // ============================================================
 
 let USE_POSTGRES = !!env.databaseUrl;
@@ -11,10 +11,20 @@ let pool = null;
 let sqliteDb = null;
 
 const initSqlite = () => {
-    const Database = require('better-sqlite3');
-    sqliteDb = new Database(env.dbPath, { timeout: 10000 });
-    sqliteDb.pragma('journal_mode = WAL');
-    logger.info('🗃️  Modo: SQLite local (com busy_timeout de 10s)');
+    if (!sqliteDb) {
+        const Database = require('better-sqlite3');
+        sqliteDb = new Database(env.dbPath, { timeout: 10000 });
+        sqliteDb.pragma('journal_mode = WAL');
+        logger.info('🗃️  Modo: SQLite local (com busy_timeout de 10s)');
+    }
+    return sqliteDb;
+};
+
+const getSqliteDb = () => {
+    if (!sqliteDb) {
+        initSqlite();
+    }
+    return sqliteDb;
 };
 
 if (USE_POSTGRES) {
@@ -24,7 +34,13 @@ if (USE_POSTGRES) {
         ssl: { rejectUnauthorized: false },
         max: 5,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000
+        connectionTimeoutMillis: 8000
+    });
+    // Trata erros de conexão assíncronos no pool para não encerrar o processo
+    pool.on('error', (err) => {
+        logger.warn(`⚠️ Erro no Pool Postgres (${err.message}). Chaveando para SQLite local.`);
+        USE_POSTGRES = false;
+        initSqlite();
     });
     logger.info('🐘 Modo: PostgreSQL (Supabase)');
 } else {
@@ -37,13 +53,25 @@ const db = {
     run: async (query, params = []) => {
         try {
             if (USE_POSTGRES) {
-                let index = 1;
-                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-                const res = await pool.query(pgQuery, params);
-                return { rowCount: res.rowCount };
+                try {
+                    let index = 1;
+                    const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                    const res = await pool.query(pgQuery, params);
+                    return { rowCount: res.rowCount };
+                } catch (pgErr) {
+                    if (pgErr.code === 'XX000' || pgErr.code === 'ECONNREFUSED' || pgErr.message?.includes('ENOTFOUND') || pgErr.message?.includes('not found')) {
+                        logger.warn(`⚠️ Supabase indisponível (${pgErr.message}). Chaveando permanentemente para SQLite local.`);
+                        USE_POSTGRES = false;
+                        initSqlite();
+                        runSqliteDDL();
+                        const stmt = getSqliteDb().prepare(query);
+                        const result = stmt.run(params);
+                        return { rowCount: result.changes };
+                    }
+                    throw pgErr;
+                }
             } else {
-                const stmt = sqliteDb.prepare(query);
-                // better-sqlite3: passar o array diretamente é mais seguro que o spread operator
+                const stmt = getSqliteDb().prepare(query);
                 const result = stmt.run(params); 
                 return { rowCount: result.changes };
             }
@@ -55,12 +83,24 @@ const db = {
     get: async (query, params = []) => {
         try {
             if (USE_POSTGRES) {
-                let index = 1;
-                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-                const res = await pool.query(pgQuery, params);
-                return res.rows[0];
+                try {
+                    let index = 1;
+                    const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                    const res = await pool.query(pgQuery, params);
+                    return res.rows[0];
+                } catch (pgErr) {
+                    if (pgErr.code === 'XX000' || pgErr.code === 'ECONNREFUSED' || pgErr.message?.includes('ENOTFOUND') || pgErr.message?.includes('not found')) {
+                        logger.warn(`⚠️ Supabase indisponível (${pgErr.message}). Chaveando permanentemente para SQLite local.`);
+                        USE_POSTGRES = false;
+                        initSqlite();
+                        runSqliteDDL();
+                        const stmt = getSqliteDb().prepare(query);
+                        return stmt.get(params);
+                    }
+                    throw pgErr;
+                }
             } else {
-                const stmt = sqliteDb.prepare(query);
+                const stmt = getSqliteDb().prepare(query);
                 return stmt.get(params);
             }
         } catch (err) {
@@ -71,12 +111,24 @@ const db = {
     all: async (query, params = []) => {
         try {
             if (USE_POSTGRES) {
-                let index = 1;
-                const pgQuery = query.replace(/\?/g, () => `$${index++}`);
-                const res = await pool.query(pgQuery, params);
-                return res.rows;
+                try {
+                    let index = 1;
+                    const pgQuery = query.replace(/\?/g, () => `$${index++}`);
+                    const res = await pool.query(pgQuery, params);
+                    return res.rows;
+                } catch (pgErr) {
+                    if (pgErr.code === 'XX000' || pgErr.code === 'ECONNREFUSED' || pgErr.message?.includes('ENOTFOUND') || pgErr.message?.includes('not found')) {
+                        logger.warn(`⚠️ Supabase indisponível (${pgErr.message}). Chaveando permanentemente para SQLite local.`);
+                        USE_POSTGRES = false;
+                        initSqlite();
+                        runSqliteDDL();
+                        const stmt = getSqliteDb().prepare(query);
+                        return stmt.all(params);
+                    }
+                    throw pgErr;
+                }
             } else {
-                const stmt = sqliteDb.prepare(query);
+                const stmt = getSqliteDb().prepare(query);
                 return stmt.all(params);
             }
         } catch (err) {
@@ -160,58 +212,58 @@ const DDL = {
 };
 
 const runSqliteDDL = () => {
-    sqliteDb.exec(DDL.products);
+    const sDb = getSqliteDb();
+    sDb.exec(DDL.products);
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN original_link TEXT');
+        sDb.exec('ALTER TABLE products ADD COLUMN original_link TEXT');
         logger.info('🗃️ SQLite: Coluna "original_link" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN coupon TEXT');
+        sDb.exec('ALTER TABLE products ADD COLUMN coupon TEXT');
         logger.info('🗃️ SQLite: Coluna "coupon" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN old_price REAL');
+        sDb.exec('ALTER TABLE products ADD COLUMN old_price REAL');
         logger.info('🗃️ SQLite: Coluna "old_price" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
+        sDb.exec('ALTER TABLE products ADD COLUMN discount_percent INTEGER');
         logger.info('🗃️ SQLite: Coluna "discount_percent" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN rating REAL');
+        sDb.exec('ALTER TABLE products ADD COLUMN rating REAL');
         logger.info('🗃️ SQLite: Coluna "rating" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN reviews_count INTEGER');
+        sDb.exec('ALTER TABLE products ADD COLUMN reviews_count INTEGER');
         logger.info('🗃️ SQLite: Coluna "reviews_count" adicionada à tabela products.');
     } catch (e) {}
     try {
-        sqliteDb.exec('ALTER TABLE products ADD COLUMN quality_score REAL');
+        sDb.exec('ALTER TABLE products ADD COLUMN quality_score REAL');
         logger.info('🗃️ SQLite: Coluna "quality_score" adicionada à tabela products.');
     } catch (e) {}
-    sqliteDb.exec(DDL.queue);
-    // Auto-migração para remover CHECK constraint antigo no SQLite
+    sDb.exec(DDL.queue);
     try {
-        const schema = sqliteDb.prepare("SELECT sql FROM sqlite_master WHERE name = 'queue'").get();
+        const schema = sDb.prepare("SELECT sql FROM sqlite_master WHERE name = 'queue'").get();
         if (schema && schema.sql && schema.sql.includes('CHECK')) {
             logger.info('🗃️ SQLite: Detectada restrição CHECK antiga na tabela "queue". Iniciando migração...');
-            sqliteDb.exec('ALTER TABLE queue RENAME TO queue_old');
-            sqliteDb.exec(DDL.queue);
-            sqliteDb.exec(`
+            sDb.exec('ALTER TABLE queue RENAME TO queue_old');
+            sDb.exec(DDL.queue);
+            sDb.exec(`
                 INSERT INTO queue (id, product_id, raw_message, formatted_message, status, created_at, updated_at)
                 SELECT id, product_id, raw_message, formatted_message, status, created_at, updated_at FROM queue_old
             `);
-            sqliteDb.exec('DROP TABLE queue_old');
+            sDb.exec('DROP TABLE queue_old');
             logger.info('🗃️ SQLite: Migração da tabela "queue" concluída com sucesso (restrição CHECK removida).');
         }
     } catch (migErr) {
         logger.error('🗃️ SQLite: Erro ao migrar tabela "queue": ' + migErr.message);
     }
-    sqliteDb.exec(DDL.sessions);
-    sqliteDb.exec(DDL.settings);
-    sqliteDb.exec(DDL.coupons);
+    sDb.exec(DDL.sessions);
+    sDb.exec(DDL.settings);
+    sDb.exec(DDL.coupons);
     try {
-        sqliteDb.exec('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
+        sDb.exec('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
     } catch (e) {}
 };
 
@@ -220,7 +272,6 @@ const initializeDB = async () => {
         if (USE_POSTGRES) {
             try {
                 logger.info('Conectando ao Supabase (PostgreSQL)...');
-                // Testa a conexão básica antes de inicializar tabelas
                 await pool.query('SELECT 1');
                 
                 await pool.query(DDL.products);
@@ -275,14 +326,13 @@ const initializeDB = async () => {
     }
 };
 
-// Funções de sessão (para persistência do WhatsApp no Supabase)
 const saveSessionFile = async (id, data) => {
     try {
         if (USE_POSTGRES) {
             const query = 'INSERT INTO sessions (id, data, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = CURRENT_TIMESTAMP';
             await pool.query(query, [id, data]);
         } else {
-            const stmt = sqliteDb.prepare('INSERT OR REPLACE INTO sessions (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
+            const stmt = getSqliteDb().prepare('INSERT OR REPLACE INTO sessions (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)');
             stmt.run(id, data);
         }
     } catch (err) {
@@ -295,7 +345,7 @@ const deleteSessionFile = async (id) => {
         if (USE_POSTGRES) {
             await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
         } else {
-            sqliteDb.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+            getSqliteDb().prepare('DELETE FROM sessions WHERE id = ?').run(id);
         }
     } catch (err) {
         logger.warn(`Falha ao deletar sessão ${id}:`, err.message);
@@ -308,7 +358,7 @@ const getAllSessionFiles = async () => {
             const res = await pool.query('SELECT id, data FROM sessions');
             return res.rows;
         } else {
-            return sqliteDb.prepare('SELECT id, data FROM sessions').all();
+            return getSqliteDb().prepare('SELECT id, data FROM sessions').all();
         }
     } catch (err) {
         logger.warn('Falha ao recuperar sessões:', err.message);
@@ -317,4 +367,3 @@ const getAllSessionFiles = async () => {
 };
 
 module.exports = { db, pool, initializeDB, saveSessionFile, deleteSessionFile, getAllSessionFiles, isPostgres: () => USE_POSTGRES };
-

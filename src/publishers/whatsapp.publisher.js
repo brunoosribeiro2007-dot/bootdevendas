@@ -23,17 +23,20 @@ class WhatsappPublisher {
     this.sessionFilesMtime = new Map(); // Cache local dos tempos de modificação dos arquivos
     this.isInitializing = false; // Controle de concorrência na inicialização
     this.reconnectTimeout = null; // Referência para evitar agendamentos paralelos
-    this._cachedDestination = null; // { id, name, type: 'channel' | 'group' | 'number' }
+    this._cachedDestination = null; // Legado: { id, name, type }
+    this._cachedDestinations = null; // Multi-destino: Array<{ id, name, type: 'channel' | 'group' | 'number' }>
+    this._cachedChannels = null; // Cache dos canais aos quais a conta está inscrita
+    this._cachedGroupId = null;
     
     if (!fs.existsSync(this.authPath)) {
         try { fs.mkdirSync(this.authPath, { recursive: true }); } catch (e) {}
     }
   }
 
-  // 🔄 CARREGAR SESSÃO DO SUPABASE PARA O DISCO (Bundle atômico com fallback legado)
+  // 🔄 CARREGAR SESSÃO DO BANCO DE DADOS (Bundle atômico com fallback legado)
   async restoreSessionFromPostgres() {
       const { db } = require('../database/init');
-      this.addLog('📥 Recuperando login salvo no Supabase...');
+      this.addLog('📥 Recuperando login salvo no banco...');
       try {
           const row = await db.get('SELECT data FROM sessions WHERE id = ?', ['session_bundle']);
           if (!row || !row.data) {
@@ -78,11 +81,10 @@ class WhatsappPublisher {
       try {
           const files = await getAllSessionFiles();
           if (files.length === 0) {
-              this.addLog('⚠️ Nenhuma sessão anterior encontrada no Supabase.');
+              this.addLog('⚠️ Nenhuma sessão anterior encontrada no banco.');
               return false;
           }
 
-          // Ignora o próprio id de bundle se ele aparecer
           const individualFiles = files.filter(f => f.id !== 'session_bundle');
           if (individualFiles.length === 0) return false;
 
@@ -98,7 +100,7 @@ class WhatsappPublisher {
       }
   }
 
-  // 📤 SALVAR SESSÃO DO DISCO PARA O SUPABASE (Compacta tudo em 1 único bundle para evitar corrupção)
+  // 📤 SALVAR SESSÃO DO DISCO PARA O BANCO DE DADOS
   async syncSessionToPostgres() {
       const { saveSessionFile, db } = require('../database/init');
       try {
@@ -119,9 +121,8 @@ class WhatsappPublisher {
           const compressed = Buffer.from(serialized, 'utf-8');
 
           await saveSessionFile('session_bundle', compressed);
-          logger.info('📤 Sincronizado bundle de sessão completo e atômico para o Supabase.');
+          logger.info('📤 Sincronizado bundle de sessão completo e atômico para o banco.');
 
-          // Limpa registros legados individuais para otimizar espaço no banco
           await db.run("DELETE FROM sessions WHERE id != 'session_bundle'", []);
       } catch (e) {
           logger.warn(`Erro na sincronização do bundle de sessão: ${e.message}`);
@@ -131,7 +132,7 @@ class WhatsappPublisher {
   addLog(msg) {
     const time = new Date().toLocaleTimeString();
     this.logs.unshift(`[${time}] ${msg}`);
-    if (this.logs.length > 20) this.logs.pop(); // Aumentado para 20
+    if (this.logs.length > 25) this.logs.pop();
     logger.info(msg);
   }
 
@@ -145,16 +146,16 @@ class WhatsappPublisher {
     try {
         this.latestQr = null;
         this.latestPairingCode = null;
-        this._cachedGroupId = null; // Reset cache do grupo no reconnect
-        this._cachedDestination = null; // Reset cache de destino (canal/grupo)
+        this._cachedGroupId = null;
+        this._cachedDestination = null;
+        this._cachedDestinations = null;
+        this._cachedChannels = null;
 
-        // Cancela qualquer agendamento de reconexão pendente
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
         }
 
-        // Evita múltiplas instâncias rodando juntas (Causa erro 405)
         if (this.sock) {
             try { 
                 this.sock.ev.removeAllListeners(); 
@@ -163,10 +164,9 @@ class WhatsappPublisher {
             this.sock = null;
         }
 
-        // TENTA RESTAURAR ANTES DE LIGAR O MOTOR
         await this.restoreSessionFromPostgres();
 
-        this.addLog('⚙️ Iniciando motor (Conexão Persistente)...');
+        this.addLog('⚙️ Iniciando motor WhatsApp (Conexão Persistente)...');
         const baileys = await import('@whiskeysockets/baileys');
         const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = baileys;
         const { Boom } = await import('@hapi/boom');
@@ -184,11 +184,10 @@ class WhatsappPublisher {
           shouldSyncHistoryMessage: () => false
         });
 
-        // SALVA NO BANCO SEMPRE QUE O LOGIN MUDA
         this.sock.ev.on('creds.update', async () => {
             try {
                 await saveCreds();
-                await this.syncSessionToPostgres(); // Sincroniza bundle atômico
+                await this.syncSessionToPostgres();
             } catch (err) {
                 logger.error('Erro ao sincronizar credenciais:', err);
             }
@@ -204,7 +203,6 @@ class WhatsappPublisher {
           }
 
           if (connection === 'close') {
-            // Extração segura do statusCode (previne crash se lastDisconnect/error for null)
             let statusCode = 0;
             try {
                 if (lastDisconnect && lastDisconnect.error) {
@@ -220,6 +218,9 @@ class WhatsappPublisher {
             const shouldReconnect = !isLoggedOut;
             
             this.isReady = false;
+            this._cachedDestinations = null;
+            this._cachedDestination = null;
+            this._cachedChannels = null;
 
             if (this.reconnectTimeout) {
                 clearTimeout(this.reconnectTimeout);
@@ -230,16 +231,15 @@ class WhatsappPublisher {
                 this.initStatus = 'Reconectando (timeout)...';
                 this.reconnectTimeout = setTimeout(() => this.initialize(), 15000);
             } else if (statusCode === 515 || statusCode === 503) {
-                this.addLog(`⏳ Servidor WhatsApp indisponível/Restart (${statusCode}). Reconectando em 5s...`);
+                this.addLog(`⏳ Servidor WhatsApp reiniciando (${statusCode}). Reconectando em 5s...`);
                 this.initStatus = 'Reconectando (515)...';
                 this.reconnectTimeout = setTimeout(() => this.initialize(), 5000);
             } else if (shouldReconnect) {
-                this.addLog(`❌ Conexão fechada (Motivo: ${statusCode}). Reconectando em 20s...`);
+                this.addLog(`❌ Conexão fechada (${statusCode}). Reconectando em 15s...`);
                 this.initStatus = 'Reconectando...';
-                this.reconnectTimeout = setTimeout(() => this.initialize(), 20000);
+                this.reconnectTimeout = setTimeout(() => this.initialize(), 15000);
             } else {
                 this.initStatus = 'Sessão Inválida (Limpando...)';
-                // Se foi deslogado, precisamos limpar tudo para gerar novo QR
                 const { db } = require('../database/init');
                 db.run('DELETE FROM sessions', []).catch(() => {});
                 try {
@@ -257,8 +257,12 @@ class WhatsappPublisher {
             this.latestPairingCode = null;
             this.addLog('✅ Conexão realizada com sucesso! Bot pronto para publicações.');
             
-            // Sincroniza a sessão após conectar com sucesso
             this.syncSessionToPostgres().catch(err => logger.warn('Erro ao sincronizar sessão após conexão:', err.message));
+
+            // Pré-resolve destinos em background para prontidão imediata
+            setTimeout(() => {
+              this.getDestinations().catch(e => logger.debug('Pré-resolução de destinos:', e.message));
+            }, 3000);
           }
         });
     } catch (err) {
@@ -272,7 +276,9 @@ class WhatsappPublisher {
       this.isReady = false;
       this._cachedGroupId = null;
       this._cachedDestination = null;
-      this.addLog('⚠️ Instabilidade ou timeout detectado. Forçando reinicialização da conexão do WhatsApp...');
+      this._cachedDestinations = null;
+      this._cachedChannels = null;
+      this.addLog('⚠️ Instabilidade ou timeout detectado. Agendando reinicialização da conexão...');
       if (this.sock) {
           try {
               this.sock.ev.removeAllListeners();
@@ -300,7 +306,7 @@ class WhatsappPublisher {
     }
   }
 
-  // ─── RESOLUÇÃO INTELIGENTE DE DESTINO (CANAIS, GRUPOS E NÚMEROS) ─────────────
+  // ─── RESOLUÇÃO INTELIGENTE DE DESTINOS (CANAIS, GRUPOS E NÚMEROS) ─────────────
 
   /**
    * Consulta canais (newsletters) aos quais a conta conectada tem acesso
@@ -308,6 +314,9 @@ class WhatsappPublisher {
    */
   async getSubscribedChannels() {
     if (!this.sock) return [];
+    if (this._cachedChannels && this._cachedChannels.length > 0) {
+      return this._cachedChannels;
+    }
     try {
       const baileys = await import('@whiskeysockets/baileys');
       const getBinaryNodeChild = baileys.getBinaryNodeChild;
@@ -329,7 +338,7 @@ class WhatsappPublisher {
             }
           ]
         }),
-        15000,
+        8000,
         'Timeout ao consultar canais do WhatsApp'
       );
 
@@ -337,13 +346,15 @@ class WhatsappPublisher {
       if (child?.content) {
         const parsed = JSON.parse(child.content.toString());
         const list = parsed?.data?.xwa2_newsletter_subscribed || [];
-        return list.map(item => ({
+        const mapped = list.map(item => ({
           id: item.id,
           name: item.thread_metadata?.name?.text || item.name || 'Canal sem nome',
           subscribers: item.thread_metadata?.subscribers_count || 0,
           role: item.viewer_metadata?.role || 'SUBSCRIBER',
           invite: item.thread_metadata?.invite || null
         }));
+        this._cachedChannels = mapped;
+        return mapped;
       }
     } catch (e) {
       logger.warn(`⚠️ Não foi possível listar canais via MEX query: ${e.message}`);
@@ -357,7 +368,7 @@ class WhatsappPublisher {
    * 1. JID direto (...@newsletter)
    * 2. Link de convite oficial (https://whatsapp.com/channel/0029Va... ou whatsapp.com/channel/...)
    * 3. Código de convite alfanumérico (ex: 0029Va...)
-   * 4. Nome do canal (ex: "OfertaLar") via busca nos canais administrados/inscritos
+   * 4. Nome do canal (ex: "OfertaLar") via busca nos canais inscritos/administrados
    */
   async resolveChannel(target) {
     if (!target) return null;
@@ -379,7 +390,7 @@ class WhatsappPublisher {
         this.addLog(`🔍 Resolvendo canal via link/código de convite: ${inviteCode}...`);
         const meta = await promiseTimeout(
           this.sock.newsletterMetadata('invite', inviteCode),
-          15000,
+          12000,
           'Timeout ao consultar metadados do canal'
         );
         if (meta?.id) {
@@ -415,19 +426,47 @@ class WhatsappPublisher {
 
   /**
    * Resolve um alvo para Grupo do WhatsApp (@g.us).
+   * Suporta:
+   * 1. JID direto (...@g.us)
+   * 2. Link de convite (https://chat.whatsapp.com/...)
+   * 3. Nome exato ou parcial do grupo na conta
    */
   async resolveGroup(target) {
     if (!target || !this.sock) return null;
     const clean = String(target).trim();
 
+    // 1. Já é JID de grupo direto
     if (clean.endsWith('@g.us')) {
       return { id: clean, name: clean, type: 'group' };
     }
 
+    // 2. Link de convite de grupo (chat.whatsapp.com/...)
+    const groupLinkMatch = clean.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
+    if (groupLinkMatch && typeof this.sock.groupGetInviteInfo === 'function') {
+      try {
+        const inviteCode = groupLinkMatch[1];
+        this.addLog(`🔍 Resolvendo grupo via link de convite: ${inviteCode}...`);
+        const info = await promiseTimeout(
+          this.sock.groupGetInviteInfo(inviteCode),
+          12000,
+          'Timeout ao consultar convite do grupo'
+        );
+        if (info?.id) {
+          const groupJid = info.id.endsWith('@g.us') ? info.id : `${info.id}@g.us`;
+          const groupSubject = info.subject || clean;
+          this.addLog(`✅ Grupo identificado via link: "${groupSubject}" (${groupJid})`);
+          return { id: groupJid, name: groupSubject, type: 'group' };
+        }
+      } catch (err) {
+        logger.warn(`Falha ao resolver grupo por link de convite: ${err.message}`);
+      }
+    }
+
+    // 3. Busca por nome nos grupos em que a conta participa
     try {
       const groups = await promiseTimeout(
         this.sock.groupFetchAllParticipating(),
-        20000,
+        15000,
         'Timeout ao buscar lista de grupos'
       );
       const groupName = clean.toLowerCase();
@@ -467,148 +506,228 @@ class WhatsappPublisher {
   }
 
   /**
-   * Retorna informações do destino atual configurado (Canal, Grupo ou Número).
+   * Resolve TODOS os destinos ativos configurados:
+   * Se Canal E Grupo estiverem configurados, envia para AMBOS juntos!
+   * @returns {Promise<Array<{ id: string, name: string, type: 'channel'|'group'|'number' }>>}
    */
-  async getDestinationInfo() {
-    if (this._cachedDestination) {
-      return this._cachedDestination;
-    }
-    const chatId = await this.getChatId();
-    return this._cachedDestination || (chatId ? { id: chatId, name: chatId, type: 'unknown' } : null);
-  }
-
-  /**
-   * Determina o ID de destino prioritário para envio das mensagens.
-   * Ordem de prioridade:
-   * 1. Canal do WhatsApp (WHATSAPP_TARGET_CHANNEL)
-   * 2. Grupo ou Canal configurado em WHATSAPP_TARGET_GROUP
-   * 3. Número privado (WHATSAPP_TARGET_NUMBER)
-   */
-  async getChatId() {
-    if (this._cachedDestination?.id) {
-      return this._cachedDestination.id;
+  async getDestinations() {
+    if (this._cachedDestinations && this._cachedDestinations.length > 0) {
+      return this._cachedDestinations;
     }
 
+    const destinations = [];
     const targetChannel = env.whatsappTargetChannel;
     const targetGroup = env.whatsappTargetGroup;
     const targetNumber = env.whatsappTargetNumber;
 
-    // 1. Tenta Canal explícito
+    // 1. Tenta resolver Canal do WhatsApp
     if (targetChannel) {
-      const channel = await this.resolveChannel(targetChannel);
-      if (channel) {
-        this._cachedDestination = channel;
-        this._cachedGroupId = channel.id;
-        logger.info(`📢 Destino ativo: [CANAL] "${channel.name}" (${channel.id})`);
-        return channel.id;
-      }
-    }
-
-    // 2. Tenta Grupo ou Canal via targetGroup
-    if (targetGroup) {
-      // Se tiver formato característico de canal (@newsletter ou link de canal)
-      if (targetGroup.endsWith('@newsletter') || targetGroup.includes('whatsapp.com/channel/') || targetGroup.startsWith('0029')) {
-        const channel = await this.resolveChannel(targetGroup);
-        if (channel) {
-          this._cachedDestination = channel;
-          this._cachedGroupId = channel.id;
-          logger.info(`📢 Destino ativo: [CANAL] "${channel.name}" (${channel.id})`);
-          return channel.id;
+      try {
+        const channel = await this.resolveChannel(targetChannel);
+        if (channel && channel.id) {
+          destinations.push(channel);
+          logger.info(`📢 Destino ativo adicionado: [CANAL] "${channel.name}" (${channel.id})`);
+        } else {
+          logger.warn(`⚠️ Canal do WhatsApp "${targetChannel}" configurado mas não localizado.`);
         }
-      }
-
-      // Se for JID de grupo explícito (@g.us)
-      if (targetGroup.endsWith('@g.us')) {
-        this._cachedDestination = { id: targetGroup, name: targetGroup, type: 'group' };
-        this._cachedGroupId = targetGroup;
-        return targetGroup;
-      }
-
-      // Tenta primeiro como canal (ex: usuário colocou "OfertaLar" que é canal)
-      const maybeChannel = await this.resolveChannel(targetGroup);
-      if (maybeChannel) {
-        this._cachedDestination = maybeChannel;
-        this._cachedGroupId = maybeChannel.id;
-        logger.info(`📢 Destino ativo: [CANAL] "${maybeChannel.name}" (${maybeChannel.id})`);
-        return maybeChannel.id;
-      }
-
-      // Tenta como grupo tradicional
-      const group = await this.resolveGroup(targetGroup);
-      if (group) {
-        this._cachedDestination = group;
-        this._cachedGroupId = group.id;
-        logger.info(`👥 Destino ativo: [GRUPO] "${group.name}" (${group.id})`);
-        return group.id;
+      } catch (err) {
+        logger.warn(`Erro ao resolver canal "${targetChannel}": ${err.message}`);
       }
     }
 
-    // 3. Fallback para número privado
-    if (targetNumber) {
+    // 2. Tenta resolver Grupo do WhatsApp
+    if (targetGroup) {
+      try {
+        const group = await this.resolveGroup(targetGroup);
+        if (group && group.id) {
+          if (!destinations.some(d => d.id === group.id)) {
+            destinations.push(group);
+            logger.info(`👥 Destino ativo adicionado: [GRUPO] "${group.name}" (${group.id})`);
+          }
+        } else {
+          logger.warn(`⚠️ Grupo do WhatsApp "${targetGroup}" configurado mas não localizado.`);
+        }
+      } catch (err) {
+        logger.warn(`Erro ao resolver grupo "${targetGroup}": ${err.message}`);
+      }
+    }
+
+    // 3. Fallback: Caso nenhum canal ou grupo tenha sido encontrado, utiliza número privado
+    if (destinations.length === 0 && targetNumber) {
       const numId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
-      this._cachedDestination = { id: numId, name: targetNumber, type: 'number' };
-      logger.info(`📱 Destino ativo: [NÚMERO PRIVADO] ${targetNumber}`);
-      return numId;
+      destinations.push({ id: numId, name: targetNumber, type: 'number' });
+      logger.info(`📱 Destino ativo (Fallback): [NÚMERO PRIVADO] ${targetNumber}`);
     }
 
-    return null;
+    if (destinations.length > 0) {
+      this._cachedDestinations = destinations;
+      this._cachedDestination = destinations[0];
+      this._cachedGroupId = destinations[0].id;
+    }
+
+    return destinations;
   }
 
+  /**
+   * Retorna resumo estruturado de todos os destinos ativos (para o Dashboard e APIs).
+   */
+  async getDestinationInfo() {
+    const destinations = await this.getDestinations();
+    if (!destinations || destinations.length === 0) {
+      return {
+        id: null,
+        name: env.whatsappTargetChannel || env.whatsappTargetGroup || env.whatsappTargetNumber || 'Não definido',
+        type: 'unknown',
+        summary: 'Nenhum destino ativo',
+        destinations: [],
+        count: 0
+      };
+    }
+
+    const summaryParts = destinations.map(d => `${d.type === 'channel' ? '📢 Canal' : (d.type === 'group' ? '👥 Grupo' : '📱 Número')}: "${d.name}"`);
+    const summary = summaryParts.join(' + ');
+    const combinedType = destinations.length > 1 ? 'multi' : destinations[0].type;
+
+    return {
+      id: destinations.map(d => d.id).join(', '),
+      name: summary,
+      type: combinedType,
+      summary: summary,
+      destinations: destinations,
+      count: destinations.length
+    };
+  }
+
+  /**
+   * Retorna o ID do primeiro destino ativo (compatibilidade com métodos legados).
+   */
+  async getChatId() {
+    const destinations = await this.getDestinations();
+    return destinations.length > 0 ? destinations[0].id : null;
+  }
+
+  /**
+   * Dispara mensagem de texto para todos os destinos configurados (Canal e Grupo juntos).
+   */
   async sendTextMessage(text, customChatId = null) {
     if (!this.isReady || !this.sock) {
         logger.warn('⚠️ Envio de mensagem abortado: WhatsApp não está pronto');
         return false;
     }
     try {
-      const chatId = customChatId ? await this.resolveChatId(customChatId) : await this.getChatId();
-      if (!chatId) {
-          logger.error('❌ Não foi possível determinar o destino para envio de texto.');
-          return false;
+      let targets = [];
+      if (customChatId) {
+        const resolvedId = await this.resolveChatId(customChatId);
+        targets = [{ id: resolvedId, name: customChatId, type: 'custom' }];
+      } else {
+        targets = await this.getDestinations();
       }
-      await promiseTimeout(
-          this.sock.sendMessage(chatId, { text }),
-          25000,
-          'Timeout ao enviar mensagem de texto no WhatsApp'
-      );
-      return true;
+
+      if (!targets || targets.length === 0) {
+        logger.error('❌ Não foi possível determinar o destino para envio de texto.');
+        return false;
+      }
+
+      let successCount = 0;
+      for (const dest of targets) {
+        try {
+          await promiseTimeout(
+            this.sock.sendMessage(dest.id, { text }),
+            25000,
+            `Timeout ao enviar mensagem de texto para ${dest.name}`
+          );
+          successCount++;
+          this.addLog(`✅ Texto enviado com sucesso para [${dest.type.toUpperCase()}] "${dest.name}"`);
+        } catch (destErr) {
+          logger.error(`❌ Erro ao enviar texto para [${dest.type}] "${dest.name}":`, destErr.message || destErr);
+          this.addLog(`❌ Falha envio texto para "${dest.name}": ${destErr.message}`);
+          if (destErr.message?.includes('Timeout') || destErr.message?.includes('closed') || destErr.message?.includes('not open')) {
+            this.handleTimeoutOrConnectionIssue();
+          }
+        }
+      }
+      return successCount > 0;
     } catch (error) {
-      logger.error('❌ Erro ao enviar mensagem de texto no WhatsApp:', error.message || error);
-      if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
-          this.handleTimeoutOrConnectionIssue();
-      }
+      logger.error('❌ Erro geral ao enviar mensagem de texto no WhatsApp:', error.message || error);
       return false;
     }
   }
 
+  /**
+   * Dispara imagem com legenda para todos os destinos configurados (Canal e Grupo juntos).
+   */
   async sendImageMessage(imageBuffer, caption, customChatId = null) {
     if (!this.isReady || !this.sock) {
       logger.warn('⚠️ Envio de imagem abortado: WhatsApp não está conectado.');
       return false;
     }
     try {
-      const chatId = customChatId ? await this.resolveChatId(customChatId) : await this.getChatId();
-      if (!chatId) {
+      let targets = [];
+      if (customChatId) {
+        const resolvedId = await this.resolveChatId(customChatId);
+        targets = [{ id: resolvedId, name: customChatId, type: 'custom' }];
+      } else {
+        targets = await this.getDestinations();
+      }
+
+      if (!targets || targets.length === 0) {
         logger.error('❌ Não foi possível determinar o destino para envio de imagem.');
         return false;
       }
-      await promiseTimeout(
-        this.sock.sendMessage(chatId, {
-          image: imageBuffer,
-          caption: caption || ''
-        }),
-        35000,
-        'Timeout ao enviar imagem no WhatsApp'
-      );
-      return true;
+
+      let successCount = 0;
+      for (const dest of targets) {
+        try {
+          let sent = false;
+          if (imageBuffer && imageBuffer.length > 0) {
+            try {
+              await promiseTimeout(
+                this.sock.sendMessage(dest.id, {
+                  image: imageBuffer,
+                  caption: caption || ''
+                }),
+                35000,
+                `Timeout ao enviar imagem para ${dest.name}`
+              );
+              sent = true;
+            } catch (imgErr) {
+              logger.warn(`⚠️ Falha ao enviar imagem para [${dest.type}] "${dest.name}": ${imgErr.message}. Tentando texto...`);
+            }
+          }
+
+          if (!sent) {
+            await promiseTimeout(
+              this.sock.sendMessage(dest.id, {
+                text: caption || ''
+              }),
+              25000,
+              `Timeout ao enviar texto para ${dest.name}`
+            );
+            sent = true;
+          }
+
+          if (sent) {
+            successCount++;
+            this.addLog(`✅ Imagem/mensagem enviada para [${dest.type.toUpperCase()}] "${dest.name}"`);
+          }
+        } catch (destErr) {
+          logger.error(`❌ Falha ao enviar imagem/mensagem para [${dest.type}] "${dest.name}":`, destErr.message || destErr);
+          this.addLog(`❌ Falha envio para "${dest.name}": ${destErr.message}`);
+          if (destErr.message?.includes('Timeout') || destErr.message?.includes('closed') || destErr.message?.includes('not open')) {
+            this.handleTimeoutOrConnectionIssue();
+          }
+        }
+      }
+      return successCount > 0;
     } catch (error) {
       logger.error('❌ Erro ao enviar imagem no WhatsApp:', error.message || error);
-      if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
-        this.handleTimeoutOrConnectionIssue();
-      }
       return false;
     }
   }
 
+  /**
+   * Publica a oferta em TODOS os destinos ativos simultaneamente (Canal + Grupo).
+   */
   async publish(item) {
     if (!this.isReady || !this.sock) {
         logger.warn(`⚠️ Publicação abortada: WhatsApp não está pronto (Ready: ${this.isReady})`);
@@ -616,16 +735,17 @@ class WhatsappPublisher {
     }
     
     try {
-      const chatId = await this.getChatId();
-      if (!chatId) {
-          logger.error('❌ Não foi possível determinar o destino (Canal, Grupo ou Número).');
+      const destinations = await this.getDestinations();
+      if (!destinations || destinations.length === 0) {
+          logger.error('❌ Não foi possível determinar nenhum destino ativo (Canal, Grupo ou Número).');
           return false;
       }
 
       const displayTitle = item.title || 'Sem título';
-      this.addLog(`📤 Publicando produto: ${displayTitle.substring(0, 40)}...`);
+      const destSummary = destinations.map(d => `[${d.type.toUpperCase()}] "${d.name}"`).join(' e ');
+      this.addLog(`📤 Publicando produto: "${displayTitle.substring(0, 35)}..." para ${destSummary}`);
       
-      // Tenta baixar a imagem previamente com timeout estrito de 8 segundos
+      // Baixa a imagem uma única vez se disponível
       let imageBuffer = null;
       if (item.image_url && item.image_url.startsWith('http')) {
           try {
@@ -642,49 +762,57 @@ class WhatsappPublisher {
           }
       }
 
-      if (imageBuffer) {
-          try {
-              await promiseTimeout(
-                  this.sock.sendMessage(chatId, {
-                      image: imageBuffer,
-                      caption: item.formatted_message
-                  }),
-                  35000,
-                  'Timeout ao enviar imagem no WhatsApp'
-              );
-              return true;
-          } catch (sendImgErr) {
-              logger.warn(`⚠️ Falha ao enviar mensagem com imagem (${sendImgErr.message}). Prosseguindo com fallback de texto.`);
-              if (sendImgErr.message?.includes('Timeout')) {
-                  this.handleTimeoutOrConnectionIssue();
-                  return false;
+      let successCount = 0;
+      for (const dest of destinations) {
+        try {
+          let sent = false;
+          if (imageBuffer) {
+              try {
+                  await promiseTimeout(
+                      this.sock.sendMessage(dest.id, {
+                          image: imageBuffer,
+                          caption: item.formatted_message
+                      }),
+                      35000,
+                      `Timeout ao enviar imagem para [${dest.type}] "${dest.name}"`
+                  );
+                  sent = true;
+              } catch (sendImgErr) {
+                  logger.warn(`⚠️ Falha ao enviar imagem para [${dest.type}] "${dest.name}" (${sendImgErr.message}). Prosseguindo com fallback de texto.`);
               }
           }
-      }
 
-      // Envia somente texto como fallback
-      try {
-          await promiseTimeout(
-              this.sock.sendMessage(chatId, {
-                  text: item.formatted_message
-              }),
-              25000,
-              'Timeout ao enviar mensagem de texto no WhatsApp'
-          );
-          return true;
-      } catch (textErr) {
-          logger.error('❌ Falha total ao enviar mensagem:', textErr.message);
+          if (!sent) {
+              await promiseTimeout(
+                  this.sock.sendMessage(dest.id, {
+                      text: item.formatted_message
+                  }),
+                  25000,
+                  `Timeout ao enviar texto para [${dest.type}] "${dest.name}"`
+              );
+              sent = true;
+          }
+
+          if (sent) {
+              successCount++;
+              this.addLog(`✅ Publicado com sucesso em [${dest.type.toUpperCase()}] "${dest.name}"`);
+          }
+        } catch (destErr) {
+          logger.error(`❌ Erro ao publicar item ${item.id} para [${dest.type}] "${dest.name}":`, destErr.message || destErr);
+          this.addLog(`❌ Falha no envio para [${dest.type}] "${dest.name}": ${destErr.message}`);
           if (
-              textErr.message?.includes('Connection Closed') || 
-              textErr.message?.includes('not open') || 
-              textErr.message?.includes('Timeout')
+              destErr.message?.includes('Connection Closed') || 
+              destErr.message?.includes('not open') || 
+              destErr.message?.includes('Timeout')
           ) {
               this.handleTimeoutOrConnectionIssue();
           }
-          return false;
+        }
       }
+
+      return successCount > 0;
     } catch (error) {
-      logger.error('❌ Erro ao publicar mensagem no WhatsApp:', error.message || error);
+      logger.error('❌ Erro geral ao publicar mensagem no WhatsApp:', error.message || error);
       if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
           this.handleTimeoutOrConnectionIssue();
       }

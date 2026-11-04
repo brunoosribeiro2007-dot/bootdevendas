@@ -962,7 +962,7 @@
                             📤 Forçar Envio
                         </button>
                         <button id="btn-test-whatsapp" onclick="testWhatsAppSend()" class="btn btn-outline" style="grid-column: 1 / -1; border-color: rgba(14, 165, 233, 0.35); color: var(--primary); font-size: 0.82rem;">
-                            🚀 Testar Envio no Canal
+                            🚀 Testar Envio (Canal e Grupo)
                         </button>
                     </div>
                     
@@ -1319,7 +1319,11 @@
                 if (data.destination) {
                     const dest = data.destination;
                     if (destTypeBadge) {
-                        if (dest.type === 'channel') {
+                        if (dest.destinations && dest.destinations.length > 1) {
+                            destTypeBadge.textContent = '📢 Canal + 👥 Grupo';
+                            destTypeBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+                            destTypeBadge.style.color = 'var(--accent-success)';
+                        } else if (dest.type === 'channel') {
                             destTypeBadge.textContent = '📢 Canal WhatsApp';
                             destTypeBadge.style.background = 'rgba(14, 165, 233, 0.15)';
                             destTypeBadge.style.color = 'var(--primary)';
@@ -1462,7 +1466,7 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert('✅ Mensagem de teste enviada com sucesso para o canal!');
+                    alert('✅ ' + (data.message || 'Mensagem de teste enviada com sucesso!'));
                 } else {
                     alert('⚠️ ' + (data.error || 'Falha ao enviar mensagem'));
                 }

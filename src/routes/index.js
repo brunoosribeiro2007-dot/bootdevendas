@@ -20,11 +20,11 @@ router.get('/capture/force', async (req, res) => {
     captureTask().catch(err => logger.error('Erro na captura manual:', err));
 });
 
-// Forçar Publicação Manual
+// Forçar Publicação Manual (Bypass de horário permitido para testes)
 router.get('/publish/force', async (req, res) => {
     logger.info('Solicitação de publicação manual recebida via API.');
-    res.json({ message: 'Tentativa de publicação iniciada. Acompanhe os logs!' });
-    publishTask().catch(err => logger.error('Erro na publicação manual:', err));
+    res.json({ message: 'Tentativa de publicação iniciada para todos os destinos configurados. Acompanhe os logs!' });
+    publishTask(true).catch(err => logger.error('Erro na publicação manual:', err));
 });
 
 // Testar Scraper
@@ -63,7 +63,6 @@ router.get('/database/clear', async (req, res) => {
     }
 });
 
-
 // Cupons do dia (busca do banco de dados com fallback para cache em memória)
 router.get('/coupons/daily', async (req, res) => {
     try {
@@ -88,7 +87,7 @@ router.post('/coupons', async (req, res) => {
             return res.status(400).json({ error: 'O campo "code" é obrigatório.' });
         }
 
-        const saved = await repository.saveCoupon({
+        await repository.saveCoupon({
             code: code.trim().toUpperCase(),
             description: description || `Cupom ${code}`,
             rule: rule || description || '',
@@ -165,6 +164,7 @@ router.get('/coupons/match', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 // ──────────────────────────────────────────────────────────────────────────────
 // ENDPOINTS DO NOVO MOTOR DE PROMOÇÕES (EXTRATOR, MARCA D'ÁGUA, AFILIADO E ENVIO)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ router.post('/promo/preview', async (req, res) => {
     }
 });
 
-// 3. Processar e publicar imediatamente no grupo do WhatsApp
+// 3. Processar e publicar imediatamente (Canal e Grupo juntos ou targetChatId específico)
 router.post('/promo/publish', async (req, res) => {
     try {
         const { targetChatId, ...input } = req.body;
@@ -227,18 +227,18 @@ router.get('/whatsapp/channels', async (req, res) => {
     }
 });
 
-// 5. Testar envio de mensagem no canal/grupo configurado
+// 5. Testar envio de mensagem para todos os destinos configurados (Canal e Grupo juntos)
 router.post('/whatsapp/test', async (req, res) => {
     const whatsappPublisher = require('../publishers/whatsapp.publisher');
     const { target, message } = req.body;
     try {
-        const testText = message || '🚀 *OfertaLar Bot:* Teste de envio realizado com sucesso no canal do WhatsApp!';
+        const testText = message || '🚀 *OfertaLar Bot:* Teste de envio disparado com sucesso para o Canal e Grupo do WhatsApp!';
         const sent = await whatsappPublisher.sendTextMessage(testText, target || null);
         const dest = await whatsappPublisher.getDestinationInfo();
         if (sent) {
-            return res.json({ success: true, message: 'Mensagem de teste enviada com sucesso!', destination: dest });
+            return res.json({ success: true, message: 'Mensagem de teste enviada com sucesso para os destinos configurados!', destination: dest });
         } else {
-            return res.status(500).json({ success: false, error: 'Falha ao enviar mensagem de teste. Verifique se o WhatsApp está conectado e se o canal foi encontrado.', destination: dest });
+            return res.status(500).json({ success: false, error: 'Falha ao enviar mensagem de teste. Verifique se o WhatsApp está conectado e se os destinos foram encontrados.', destination: dest });
         }
     } catch (err) {
         logger.error('[API /whatsapp/test] Erro:', err);
@@ -247,4 +247,3 @@ router.post('/whatsapp/test', async (req, res) => {
 });
 
 module.exports = router;
-
