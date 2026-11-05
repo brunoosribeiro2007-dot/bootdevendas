@@ -558,6 +558,55 @@ const pruneOldCoupons = async (days = 7) => {
     }
 };
 
+// 👤 Módulo de Usuários / Autenticação Administrativa 👤
+const getUserByEmail = async (email) => {
+    try {
+        if (!email) return null;
+        const clean = String(email).trim().toLowerCase();
+        const row = await db.get(
+            "SELECT id, email, password_hash as passwordHash, role, created_at as createdAt, updated_at as updatedAt FROM users WHERE LOWER(email) = ?",
+            [clean]
+        );
+        return row || null;
+    } catch (e) {
+        logger.error("[Repository] Erro ao buscar usuário por email/username: " + e.message);
+        return null;
+    }
+};
+
+const saveOrUpdateUser = async (email, passwordHash, role = 'admin') => {
+    try {
+        const clean = String(email).trim().toLowerCase();
+        const existing = await getUserByEmail(clean);
+        if (existing) {
+            await db.run(
+                "UPDATE users SET password_hash = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [passwordHash, role, existing.id]
+            );
+            return await getUserByEmail(clean);
+        } else {
+            await db.run(
+                "INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)",
+                [clean, passwordHash, role]
+            );
+            return await getUserByEmail(clean);
+        }
+    } catch (e) {
+        logger.error("[Repository] Erro ao cadastrar/atualizar usuário: " + e.message);
+        throw e;
+    }
+};
+
+const countUsers = async () => {
+    try {
+        const row = await db.get("SELECT COUNT(*) as count FROM users", []);
+        return row ? parseInt(row.count, 10) : 0;
+    } catch (e) {
+        logger.error("[Repository] Erro ao contar usuários: " + e.message);
+        return 0;
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -579,7 +628,8 @@ module.exports = {
   getActiveCoupons,
   getCouponByCode,
   deactivateExpiredCoupons,
-  pruneOldCoupons
+  pruneOldCoupons,
+  getUserByEmail,
+  saveOrUpdateUser,
+  countUsers
 };
-
-

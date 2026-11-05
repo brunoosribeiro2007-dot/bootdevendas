@@ -51,6 +51,18 @@ router.get('/search/test', async (req, res) => {
     }
 });
 
+// Desconectar e Resetar Sessão do WhatsApp (limpa Bad MAC e credenciais antigas)
+router.post('/whatsapp/disconnect', async (req, res) => {
+    logger.info('Solicitação de reset/desconexão da sessão do WhatsApp recebida.');
+    try {
+        await whatsappPublisher.disconnectAndResetSession();
+        res.json({ success: true, message: 'Sessão do WhatsApp limpa com sucesso. Um novo QR Code está sendo gerado.' });
+    } catch (err) {
+        logger.error('Erro ao desconectar WhatsApp:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Limpar Banco de Dados Total (Novos nichos)
 router.get('/database/clear', async (req, res) => {
     logger.info('Solicitação de limpeza total do banco recebida.');

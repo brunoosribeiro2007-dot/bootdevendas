@@ -46,14 +46,41 @@ app.get('/health', (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// BLOCO 3: SISTEMA DE AUTENTICAÇÃO E SESSÃO (ADMIN_USER & ADMIN_PASS)
+// BLOCO 3: SISTEMA DE AUTENTICAÇÃO, CADASTRO LIVRE E SESSÃO SEGURA
 // ──────────────────────────────────────────────────────────────────────────────
+
+const repository = require('./database/repository');
 
 const ADMIN_USER = process.env.ADMIN_USER || process.env.DASHBOARD_USERNAME || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || process.env.DASHBOARD_PASSWORD || 'admin123';
 const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_PASS || 'affiliate_secret_hmac_key_2026';
 const SESSION_COOKIE_NAME = 'auth_session';
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+
+/**
+ * Cria hash criptográfico para senha usando scrypt
+ */
+function hashPassword(password) {
+  const salt = 'ml_affiliate_salt_2026';
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+/**
+ * Verifica se a senha corresponde ao hash salvo
+ */
+function verifyPassword(password, storedHash) {
+  if (!password || !storedHash) return false;
+  try {
+    const salt = 'ml_affiliate_salt_2026';
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    const a = Buffer.from(hash);
+    const b = Buffer.from(storedHash);
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch (e) {
+    return false;
+  }
+}
 
 /**
  * Cria token de sessão HMAC-SHA256 assinado
@@ -141,9 +168,9 @@ function clearSessionCookie(res) {
 /**
  * Middleware central de autenticação
  */
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   // 1. Rotas estritamente públicas
-  if (req.path === '/health' || req.path === '/login') {
+  if (req.path === '/health' || req.path === '/login' || req.path === '/register' || req.path === '/api/auth/status') {
     return next();
   }
 
@@ -162,9 +189,18 @@ const authMiddleware = (req, res, next) => {
   if (authHeader && authHeader.startsWith('Basic ')) {
     try {
       const creds = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
-      const u = creds[0];
+      const u = creds[0].trim().toLowerCase();
       const p = creds[1];
-      if (u === ADMIN_USER && p === ADMIN_PASS) {
+
+      // Testa no banco
+      const user = await repository.getUserByEmail(u);
+      if (user && user.passwordHash && verifyPassword(p, user.passwordHash)) {
+        req.user = user.email;
+        return next();
+      }
+
+      // Fallback para variáveis de ambiente
+      if (u === ADMIN_USER.toLowerCase() && p === ADMIN_PASS) {
         req.user = u;
         return next();
       }
@@ -186,11 +222,23 @@ const authMiddleware = (req, res, next) => {
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// ROTAS DE LOGIN E LOGOUT
+// ROTAS DE LOGIN, CADASTRO LIVRE E LOGOUT
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * Exibe a página de login
+ * Retorna status da autenticação (se já existe usuário ou se é primeiro acesso)
+ */
+app.get('/api/auth/status', async (req, res) => {
+  try {
+    const totalUsers = await repository.countUsers();
+    res.json({ hasUsers: totalUsers > 0, count: totalUsers });
+  } catch (err) {
+    res.json({ hasUsers: false, count: 0 });
+  }
+});
+
+/**
+ * Exibe a página de login / cadastro
  */
 app.get('/login', (req, res) => {
   const cookies = parseCookies(req.headers.cookie);
@@ -208,36 +256,125 @@ app.get('/login', (req, res) => {
 });
 
 /**
- * Processa a autenticação de login (aceita JSON e formulário nativo)
+ * Processa a autenticação de login (aceita e-mail/usuário e senha)
  */
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
+app.post('/login', async (req, res) => {
+  const { username, email, password } = req.body;
   const isJsonRequest = req.is('json') || (req.headers.accept && req.headers.accept.includes('application/json'));
 
-  const validUser = (username || '').trim() === ADMIN_USER;
-  const validPass = (password || '') === ADMIN_PASS;
+  const identifier = (username || email || '').trim().toLowerCase();
+  const inputPass = password || '';
 
-  if (validUser && validPass) {
-    const token = createSessionToken(username.trim());
+  if (!identifier || !inputPass) {
+    const error = 'Por favor, informe seu usuário/e-mail e sua senha.';
+    if (isJsonRequest) return res.status(400).json({ success: false, error });
+    return res.redirect('/login?error=1');
+  }
+
+  let isAuthenticated = false;
+  let loggedUser = identifier;
+
+  // 1. Busca usuário cadastrado no banco de dados
+  try {
+    const user = await repository.getUserByEmail(identifier);
+    if (user && user.passwordHash) {
+      if (verifyPassword(inputPass, user.passwordHash)) {
+        isAuthenticated = true;
+        loggedUser = user.email;
+      }
+    }
+  } catch (err) {
+    logger.warn('Erro ao consultar usuário no banco durante login:', err.message);
+  }
+
+  // 2. Fallback para variáveis de ambiente (.env) caso ainda não haja usuário
+  if (!isAuthenticated) {
+    const envUser = (ADMIN_USER || '').trim().toLowerCase();
+    if (identifier === envUser && inputPass === ADMIN_PASS) {
+      isAuthenticated = true;
+      loggedUser = envUser;
+      try {
+        await repository.saveOrUpdateUser(loggedUser, hashPassword(inputPass));
+      } catch (e) {}
+    }
+  }
+
+  if (isAuthenticated) {
+    const token = createSessionToken(loggedUser);
     setSessionCookie(res, token);
-    logger.info(`🔐 Login realizado com sucesso para o utilizador: "${username.trim()}"`);
+    logger.info(`🔐 Login realizado com sucesso para o utilizador: "${loggedUser}"`);
 
     if (isJsonRequest) {
-      return res.json({ success: true, redirect: '/qr' });
+      return res.json({ success: true, redirect: '/qr', user: loggedUser });
     }
     return res.redirect('/qr');
   }
 
-  logger.warn(`⚠️ Falha de login para o utilizador: "${username || 'não informado'}"`);
+  logger.warn(`⚠️ Falha de login para o utilizador: "${identifier}"`);
 
   if (isJsonRequest) {
     return res.status(401).json({ 
       success: false, 
-      error: 'Nome de utilizador ou palavra-passe incorretos.' 
+      error: 'Credenciais incorretas. Caso ainda não tenha cadastro, cadastre-se na aba Cadastrar.' 
     });
   }
 
   return res.redirect('/login?error=1');
+});
+
+/**
+ * Processa o cadastro de novo usuário / administrador
+ */
+app.post('/register', async (req, res) => {
+  const { username, email, password, confirmPassword } = req.body;
+  const isJsonRequest = req.is('json') || (req.headers.accept && req.headers.accept.includes('application/json'));
+
+  const identifier = (username || email || '').trim().toLowerCase();
+
+  if (!identifier || identifier.length < 3) {
+    const error = 'O nome de usuário ou e-mail deve ter no mínimo 3 caracteres.';
+    if (isJsonRequest) return res.status(400).json({ success: false, error });
+    return res.redirect('/login?error_register=' + encodeURIComponent(error));
+  }
+
+  if (!password || password.length < 6) {
+    const error = 'A senha deve conter no mínimo 6 caracteres.';
+    if (isJsonRequest) return res.status(400).json({ success: false, error });
+    return res.redirect('/login?error_register=' + encodeURIComponent(error));
+  }
+
+  if (confirmPassword && password !== confirmPassword) {
+    const error = 'As senhas informadas não coincidem.';
+    if (isJsonRequest) return res.status(400).json({ success: false, error });
+    return res.redirect('/login?error_register=' + encodeURIComponent(error));
+  }
+
+  try {
+    const existing = await repository.getUserByEmail(identifier);
+    if (existing) {
+      const error = 'Este usuário/e-mail já está cadastrado. Por favor, faça login.';
+      if (isJsonRequest) return res.status(409).json({ success: false, error });
+      return res.redirect('/login?error_register=' + encodeURIComponent(error));
+    }
+
+    const hashed = hashPassword(password);
+    await repository.saveOrUpdateUser(identifier, hashed, 'admin');
+    logger.info(`✨ Novo usuário cadastrado com sucesso: "${identifier}"`);
+
+    // Inicia sessão imediatamente
+    const token = createSessionToken(identifier);
+    setSessionCookie(res, token);
+
+    if (isJsonRequest) {
+      return res.json({ success: true, redirect: '/qr', user: identifier });
+    }
+    return res.redirect('/qr');
+  } catch (err) {
+    logger.error('Erro ao cadastrar novo usuário:', err);
+    const error = 'Erro ao cadastrar usuário. Tente novamente.';
+    if (isJsonRequest) return res.status(500).json({ success: false, error });
+    return res.redirect('/login?error_register=' + encodeURIComponent(error));
+  }
 });
 
 /**
@@ -294,26 +431,15 @@ app.post('/qr', async (req, res) => {
  */
 app.get('/whatsapp/reset', async (req, res) => {
   const whatsappPublisher = require('./publishers/whatsapp.publisher');
-  const { db } = require('./database/init');
 
   try {
-    // Limpa a tabela de sessões do banco de dados
-    await db.run('DELETE FROM sessions', []);
-
-    // Limpa os arquivos da pasta local de autenticação
-    if (fs.existsSync(whatsappPublisher.authPath)) {
-      fs.rmSync(whatsappPublisher.authPath, { recursive: true, force: true });
-    }
-
-    // Reinicia o motor do WhatsApp para gerar novo QR Code
-    whatsappPublisher.isReady = false;
-    whatsappPublisher.initialize();
+    await whatsappPublisher.disconnectAndResetSession();
 
     res.send(`
       <style>body { font-family: sans-serif; text-align: center; margin-top: 50px; background: #0f172a; color: #fff; }</style>
       <h2>🛑 WhatsApp Reiniciado com Sucesso</h2>
-      <p>O banco de dados de sessões do WhatsApp foi limpo e o motor reiniciado.</p>
-      <p><a href="/qr" style="color: #0ea5e9;">Voltar para o Dashboard</a></p>
+      <p>A sessão anterior foi limpa e o motor reiniciado. Um novo QR Code limpo está disponível.</p>
+      <p><a href="/qr" style="color: #0ea5e9; font-weight: bold; font-size: 1.1rem;">👉 Ir para o QR Code</a></p>
     `);
   } catch (e) {
     res.status(500).send('Erro ao limpar sessão do WhatsApp: ' + e.message);

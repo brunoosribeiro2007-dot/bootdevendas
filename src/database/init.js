@@ -9,6 +9,7 @@ const logger = require('../config/logger');
 let USE_POSTGRES = !!env.databaseUrl;
 let pool = null;
 let sqliteDb = null;
+let sqliteDdlExecuted = false;
 
 const initSqlite = () => {
     if (!sqliteDb) {
@@ -71,6 +72,7 @@ const db = {
                     throw pgErr;
                 }
             } else {
+                ensureSqliteDDL();
                 const stmt = getSqliteDb().prepare(query);
                 const result = stmt.run(params); 
                 return { rowCount: result.changes };
@@ -100,6 +102,7 @@ const db = {
                     throw pgErr;
                 }
             } else {
+                ensureSqliteDDL();
                 const stmt = getSqliteDb().prepare(query);
                 return stmt.get(params);
             }
@@ -128,6 +131,7 @@ const db = {
                     throw pgErr;
                 }
             } else {
+                ensureSqliteDDL();
                 const stmt = getSqliteDb().prepare(query);
                 return stmt.all(params);
             }
@@ -208,6 +212,24 @@ const DDL = {
             source TEXT,
             captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+    users: `
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+    usersPostgres: `
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
 };
 
@@ -262,9 +284,20 @@ const runSqliteDDL = () => {
     sDb.exec(DDL.sessions);
     sDb.exec(DDL.settings);
     sDb.exec(DDL.coupons);
+    sDb.exec(DDL.users);
     try {
         sDb.exec('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
     } catch (e) {}
+    try {
+        sDb.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    } catch (e) {}
+};
+
+const ensureSqliteDDL = () => {
+    if (!sqliteDdlExecuted) {
+        sqliteDdlExecuted = true;
+        runSqliteDDL();
+    }
 };
 
 const initializeDB = async () => {
@@ -307,8 +340,12 @@ const initializeDB = async () => {
                 await pool.query(DDL.sessionsPostgres);
                 await pool.query(DDL.settings);
                 await pool.query(DDL.coupons);
+                await pool.query(DDL.usersPostgres);
                 try {
                     await pool.query('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
+                } catch (e) {}
+                try {
+                    await pool.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
                 } catch (e) {}
             } catch (pgErr) {
                 logger.error(`❌ Erro ao conectar/inicializar Postgres (${pgErr.message}). Fazendo fallback para SQLite local...`);

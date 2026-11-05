@@ -29,9 +29,9 @@ services:
 
       # Filtros de Qualidade e Reputação de Ofertas (Busca Automática)
       - key: MIN_REVIEWS
-        value: "100"
+        value: "0"
       - key: MIN_RATING
-        value: "4.5"
+        value: "4.0"
       - key: MIN_DISCOUNT_PERCENT
         value: "5"
       - key: REQUIRE_TRUSTED_SELLER

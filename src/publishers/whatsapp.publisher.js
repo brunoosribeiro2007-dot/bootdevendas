@@ -179,9 +179,11 @@ class WhatsappPublisher {
           auth: state,
           logger: pino({ level: 'silent' }),
           connectTimeoutMs: 60000,
-          printQRInTerminal: true,
           syncFullHistory: false,
-          shouldSyncHistoryMessage: () => false
+          shouldSyncHistoryMessage: () => false,
+          getMessage: async (key) => {
+            return undefined;
+          }
         });
 
         this.sock.ev.on('creds.update', async () => {
@@ -270,6 +272,51 @@ class WhatsappPublisher {
     } finally {
         this.isInitializing = false;
     }
+  }
+
+  async disconnectAndResetSession() {
+      this.isReady = false;
+      this.latestQr = null;
+      this.latestPairingCode = null;
+      this._cachedGroupId = null;
+      this._cachedDestination = null;
+      this._cachedDestinations = null;
+      this._cachedChannels = null;
+      this.initStatus = 'Sessão resetada. Gerando novo QR Code...';
+      this.addLog('🔄 Desconectando e limpando sessão corrompida do WhatsApp...');
+
+      if (this.sock) {
+          try {
+              this.sock.end(undefined);
+          } catch (e) {}
+          this.sock = null;
+      }
+
+      // Limpa pasta local
+      try {
+          if (fs.existsSync(this.authPath)) {
+              fs.rmSync(this.authPath, { recursive: true, force: true });
+              fs.mkdirSync(this.authPath, { recursive: true });
+          }
+      } catch (e) {
+          logger.warn('Erro ao limpar pasta auth:', e.message);
+      }
+
+      // Limpa sessão no banco
+      try {
+          const { db } = require('../database/init');
+          await db.run('DELETE FROM sessions WHERE id = ?', ['session_bundle']);
+          await db.run('DELETE FROM sessions WHERE id LIKE ?', ['session_%']);
+      } catch (e) {
+          logger.warn('Erro ao limpar sessão no banco:', e.message);
+      }
+
+      // Reinicia após 1.5s para gerar QR code limpo
+      setTimeout(() => {
+          this.initialize().catch(err => logger.error('Erro ao reiniciar WhatsApp pós-reset:', err));
+      }, 1500);
+
+      return true;
   }
 
   handleTimeoutOrConnectionIssue() {
