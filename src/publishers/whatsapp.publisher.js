@@ -195,6 +195,17 @@ class WhatsappPublisher {
             }
         });
 
+        // 🛡️ DETECÇÃO AUTOMÁTICA DE BAD MAC ERROR — sessão corrompida/desincronizada
+        this.sock.ev.on('messages.upsert', () => {}); // keep listener alive
+        this.sock.ws.on('error', (err) => {
+            const msg = (err && err.message) ? err.message : String(err);
+            if (msg.includes('Bad MAC') || msg.includes('bad mac') || msg.includes('decrypt')) {
+                logger.error(`🔐 Bad MAC Error detectado — sessão desincronizada. Resetando sessão em 3s...`);
+                this.addLog('🔐 Bad MAC Error: sessão corrompida. Limpando e gerando novo QR Code...');
+                setTimeout(() => this.disconnectAndResetSession(), 3000);
+            }
+        });
+
         this.sock.ev.on('connection.update', (update) => {
           const { connection, lastDisconnect, qr } = update;
           
@@ -217,6 +228,15 @@ class WhatsappPublisher {
             }
             
             const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            // 🔐 Bad MAC Error — Baileys lança error com mensagem 'Bad MAC' ou código 500/440
+            const isBadMac = lastDisconnect?.error?.message?.includes('Bad MAC') ||
+                             lastDisconnect?.error?.message?.includes('bad mac') ||
+                             lastDisconnect?.error?.message?.includes('decrypt');
+            if (isBadMac) {
+                this.addLog('🔐 Bad MAC Error detectado na conexão — sessão corrompida. Resetando...');
+                setTimeout(() => this.disconnectAndResetSession(), 2000);
+                return;
+            }
             const shouldReconnect = !isLoggedOut;
             
             this.isReady = false;

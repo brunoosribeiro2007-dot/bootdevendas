@@ -811,7 +811,11 @@ const searchCategoryDealsFallback = async (searchTerm) => {
 
 /**
  * Busca produtos no Mercado Livre.
- * Tenta Scraper Direto -> Scraper via Proxy (Stealth) -> API Fallback -> Fallback de Ofertas por Categoria.
+ * ORDEM DE PRIORIDADE:
+ * 1. API Oficial (api.mercadolibre.com) — sem bloqueio, retorna JSON limpo
+ * 2. Scraper Direto — fallback caso a API retorne vazio
+ * 3. Scraper via Proxy Stealth (Google/Bing/Redirect/AllOrigins)
+ * 4. Fallback de Ofertas por Categoria
  */
 const searchProducts = async (searchTerm, category = '') => {
     // Se o termo for "ofertas", usamos o buscador de ofertas dedicado
@@ -821,7 +825,24 @@ const searchProducts = async (searchTerm, category = '') => {
     }
 
     logger.info(`🔍 Buscando produtos no Mercado Livre para: "${searchTerm}"...`);
-    
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1ª TENTATIVA: API OFICIAL (mais confiável em produção/cloud)
+    // ─────────────────────────────────────────────────────────────────
+    try {
+        const apiResults = await fetchFromBackupAPI(searchTerm);
+        if (apiResults && apiResults.length > 0) {
+            logger.info(`✅ API Oficial retornou ${apiResults.length} produto(s) para "${searchTerm}". Usando resultado da API.`);
+            return apiResults;
+        }
+        logger.info(`ℹ️ API Oficial retornou 0 resultados para "${searchTerm}". Tentando scraping...`);
+    } catch (apiErr) {
+        logger.warn(`⚠️ Erro na API Oficial (${apiErr.message}). Tentando scraping...`);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 2ª TENTATIVA: SCRAPER DIRETO
+    // ─────────────────────────────────────────────────────────────────
     const userAgents = [
         'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
         'Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)'
@@ -960,10 +981,10 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
 
       if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')) {
           logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy...`);
-          // Tentativa com proxy translate
-          const proxyUrl = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;
+          // Tentativa 1: Google Translate proxy
+          const proxyUrl1 = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;
           try {
-              const response = await axios.get(proxyUrl, {
+              const response = await axios.get(proxyUrl1, {
                   headers: {
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                       'Accept-Language': 'pt-BR,pt;q=0.9'
@@ -973,7 +994,65 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
               const products = parseProducts(response.data, `Ofertas ${categoryId}`, true);
               if (products.length > 0) return products;
           } catch (err) {
-              logger.warn(`⚠️ Falha no proxy translate para ofertas: ${err.message}`);
+              logger.warn(`⚠️ Falha no proxy Google Translate para ofertas: ${err.message}`);
+          }
+          // Tentativa 2: AllOrigins proxy
+          const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(dealsUrl)}`;
+          try {
+              const response2 = await axios.get(proxyUrl2, {
+                  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+                  timeout: 15000
+              });
+              const products2 = parseProducts(response2.data, `Ofertas ${categoryId}`, true);
+              if (products2.length > 0) return products2;
+          } catch (err2) {
+              logger.warn(`⚠️ Falha no proxy AllOrigins para ofertas: ${err2.message}`);
+          }
+          // Tentativa 3: API Oficial como último recurso
+          try {
+              const apiUrl = `https://api.mercadolibre.com/sites/MLB/search?category=${categoryId}&sort=relevance&condition=new&limit=50`;
+              const { data: apiData } = await axios.get(apiUrl, {
+                  headers: {
+                      'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
+                      'Accept-Language': 'pt-BR,pt;q=0.9',
+                      'Accept': 'application/json'
+                  },
+                  timeout: 10000
+              });
+              if (apiData && apiData.results && apiData.results.length > 0) {
+                  const apiProducts = apiData.results
+                      .filter(p => !p.title.toLowerCase().includes('usado'))
+                      .filter(p => !isProductBlacklisted(p.title))
+                      .map(p => {
+                          const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
+                          const isOfficial = !!(p.official_store_id || p.official_store_name);
+                          const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
+                          const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
+                          const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
+                          const isFull = !!(p.shipping?.logistic_type === 'fulfillment');
+                          const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
+                          return {
+                              id: p.id, title: p.title, price: p.price,
+                              oldPrice: p.original_price || null,
+                              discountPercent: discount, hasDiscount: discount > 0,
+                              hasPromotionBadge: hasPromo, promotionBadge: hasPromo ? 'Oferta Ativa' : null,
+                              isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
+                              sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
+                              link: p.permalink,
+                              imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
+                              description: `Oferta: ${p.title}`,
+                              rating: p.reviews?.rating_average || null,
+                              reviewsCount: p.reviews?.total || 0
+                          };
+                      })
+                      .filter(candidate => validarQualidadeProduto(candidate));
+                  if (apiProducts.length > 0) {
+                      logger.info(`✅ API Oficial retornou ${apiProducts.length} produtos para categoria ${categoryId}.`);
+                      return apiProducts;
+                  }
+              }
+          } catch (apiErr3) {
+              logger.warn(`⚠️ Falha na API Oficial para ofertas de categoria: ${apiErr3.message}`);
           }
           return [];
       }
