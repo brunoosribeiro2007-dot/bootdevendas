@@ -607,6 +607,77 @@ const countUsers = async () => {
     }
 };
 
+const seedInitialProductsIfEmpty = async () => {
+    try {
+        const approvedCountRow = await db.get("SELECT COUNT(*) as count FROM queue WHERE status = 'approved'");
+        const approvedCount = approvedCountRow ? parseInt(approvedCountRow.count, 10) : 0;
+        if (approvedCount > 0) {
+            logger.info(`📦 Fila já possui ${approvedCount} produtos aprovados prontos para publicação.`);
+            return approvedCount;
+        }
+
+        const seedPath = path.join(__dirname, 'seeds', 'initial_products.json');
+        if (!fs.existsSync(seedPath)) {
+            logger.warn(`⚠️ Arquivo de seed inicial não encontrado em ${seedPath}`);
+            return 0;
+        }
+
+        const rawSeed = fs.readFileSync(seedPath, 'utf8');
+        const seedItems = JSON.parse(rawSeed);
+        if (!Array.isArray(seedItems) || seedItems.length === 0) return 0;
+
+        logger.info(`🌱 Fila vazia detectada! Importando ${seedItems.length} produtos do seed inicial...`);
+        let imported = 0;
+        for (const item of seedItems) {
+            try {
+                await db.run(`
+                    INSERT INTO products (id, title, price, link, original_link, image_url, description, coupon, old_price, discount_percent, rating, reviews_count, quality_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (id) DO UPDATE SET
+                        price = excluded.price,
+                        link = excluded.link,
+                        image_url = COALESCE(excluded.image_url, products.image_url),
+                        coupon = COALESCE(excluded.coupon, products.coupon),
+                        old_price = COALESCE(excluded.old_price, products.old_price),
+                        discount_percent = COALESCE(excluded.discount_percent, products.discount_percent)
+                `, [
+                    item.id,
+                    item.title,
+                    item.price,
+                    item.link,
+                    item.original_link || item.link,
+                    item.image_url || null,
+                    item.description || null,
+                    item.coupon || '',
+                    item.old_price || null,
+                    item.discount_percent || null,
+                    item.rating || 4.8,
+                    item.reviews_count || 120,
+                    item.quality_score || 100
+                ]);
+
+                await db.run(`
+                    INSERT INTO queue (product_id, raw_message, formatted_message, status)
+                    VALUES (?, ?, ?, 'approved')
+                    ON CONFLICT (product_id) DO UPDATE SET status = 'approved'
+                `, [
+                    item.id,
+                    item.raw_message || '',
+                    item.formatted_message || ''
+                ]);
+                imported++;
+            } catch (err) {
+                logger.debug(`[Seed] Item ${item.id} pulado: ${err.message}`);
+            }
+        }
+        logger.info(`✅ Seed inicial concluído: ${imported} produtos adicionados com sucesso à fila aprovada!`);
+        return imported;
+    } catch (e) {
+        logger.error(`❌ Erro ao executar seed inicial: ${e.message}`);
+        return 0;
+    }
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -631,5 +702,6 @@ module.exports = {
   pruneOldCoupons,
   getUserByEmail,
   saveOrUpdateUser,
-  countUsers
+  countUsers,
+  seedInitialProductsIfEmpty
 };

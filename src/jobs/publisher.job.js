@@ -143,9 +143,15 @@ const publishTask = async (force = false) => {
     await repository.resetStuckSendingItems();
 
     // ─── 4. Busca do Próximo Item Aprovado na Fila ───────────────────────────
-    const item = await repository.getNextApprovedItem();
+    let item = await repository.getNextApprovedItem();
     if (!item) {
-      logger.info('ℹ️ Fila de publicações aprovadas está vazia. Disparando captura emergencial em segundo plano...');
+      logger.info('ℹ️ Fila de publicações aprovadas está vazia. Verificando seed inicial...');
+      await repository.seedInitialProductsIfEmpty();
+      item = await repository.getNextApprovedItem();
+    }
+
+    if (!item) {
+      logger.info('ℹ️ Fila continua vazia após verificação de seed. Disparando captura emergencial em segundo plano...');
       const captureJob = require('./capture.job');
       const capturePromise = captureJob.captureTask();
       if (capturePromise && typeof capturePromise.catch === 'function') {
