@@ -812,20 +812,62 @@ class WhatsappPublisher {
       const destSummary = destinations.map(d => `[${d.type.toUpperCase()}] "${d.name}"`).join(' e ');
       this.addLog(`📤 Publicando produto: "${displayTitle.substring(0, 35)}..." para ${destSummary}`);
       
-      // Baixa a imagem uma única vez se disponível
+      // 1. Tenta recuperar image_url via OpenGraph se estiver ausente
+      if (!item.image_url && (item.original_link || item.link)) {
+          try {
+              const targetLink = item.original_link || item.link;
+              const axios = require('axios');
+              const cheerio = require('cheerio');
+              const pageRes = await axios.get(targetLink, {
+                  headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                  },
+                  timeout: 8000,
+                  maxRedirects: 5
+              });
+              const html = typeof pageRes.data === 'string' ? pageRes.data : JSON.stringify(pageRes.data);
+              const $ = cheerio.load(html);
+              let resolvedImg = $('meta[property="og:image"]').attr('content') || 
+                                $('meta[name="image"]').attr('content') ||
+                                $('meta[name="twitter:image"]').attr('content');
+              if (!resolvedImg) {
+                  const m = html.match(/"(?:og:image|image)"\s*:\s*"([^"]+)"/i);
+                  if (m) resolvedImg = m[1].replace(/\\u002F/g, '/');
+              }
+              if (resolvedImg) {
+                  item.image_url = resolvedImg;
+                  logger.info(`📸 [Publisher] Imagem recuperada via OpenGraph para "${displayTitle.substring(0, 30)}": ${resolvedImg.substring(0, 60)}...`);
+                  try {
+                      const { db } = require('../database/init');
+                      db.run('UPDATE products SET image_url = ? WHERE id = ?', [resolvedImg, item.product_id]).catch(() => {});
+                  } catch (e) {}
+              }
+          } catch (resErr) {
+              logger.debug(`[Publisher] Não foi possível resolver imagem para ${item.product_id}: ${resErr.message}`);
+          }
+      }
+
+      // 2. Baixa e processa a imagem em formato JPEG padrão (com compatibilidade total WhatsApp/Baileys)
       let imageBuffer = null;
       if (item.image_url && item.image_url.startsWith('http')) {
           try {
               const axios = require('axios');
+              const sharp = require('sharp');
               const imgRes = await axios.get(item.image_url, { 
                   responseType: 'arraybuffer', 
-                  timeout: 8000 
+                  timeout: 10000,
+                  headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  }
               });
               if (imgRes.data) {
-                  imageBuffer = Buffer.from(imgRes.data);
+                  // Converte para JPEG padrão (evita que WebP seja tratado como sticker ou rejeitado com legenda)
+                  imageBuffer = await sharp(Buffer.from(imgRes.data))
+                      .jpeg({ quality: 85 })
+                      .toBuffer();
               }
           } catch (imgDownloadErr) {
-              logger.warn(`⚠️ Falha ao baixar imagem do produto (${imgDownloadErr.message}). Prosseguindo com fallback de texto.`);
+              logger.warn(`⚠️ Falha ao baixar/converter imagem do produto (${imgDownloadErr.message}). Prosseguindo com fallback de texto.`);
           }
       }
 
@@ -838,7 +880,8 @@ class WhatsappPublisher {
                   await promiseTimeout(
                       this.sock.sendMessage(dest.id, {
                           image: imageBuffer,
-                          caption: item.formatted_message
+                          caption: item.formatted_message,
+                          mimetype: 'image/jpeg'
                       }),
                       35000,
                       `Timeout ao enviar imagem para [${dest.type}] "${dest.name}"`
