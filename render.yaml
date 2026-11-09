@@ -71,7 +71,7 @@ services:
 
       # OAuth 2.0 Mercado Livre
       - key: ML_CLIENT_ID
-        value: "1426096167919533"
+        value: "7921110595606583"
       - key: ML_CLIENT_SECRET
         sync: false
       - key: ML_REDIRECT_URI

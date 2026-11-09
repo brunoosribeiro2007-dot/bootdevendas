@@ -8,7 +8,7 @@ describe('OAuth 2.0 & Webhook Integration Tests', () => {
     const res = await request(app).get('/auth/login');
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('auth.mercadolivre.com.br/authorization');
-    expect(res.headers.location).toContain('client_id=1426096167919533');
+    expect(res.headers.location).toContain('client_id=7921110595606583');
     expect(res.headers.location).toContain('response_type=code');
   });
 
@@ -39,3 +39,4 @@ describe('OAuth 2.0 & Webhook Integration Tests', () => {
     expect(url).toContain('redirect_uri=');
   });
 });
+

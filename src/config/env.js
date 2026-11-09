@@ -51,8 +51,8 @@ module.exports = {
   requireTrustedSeller: (process.env.REQUIRE_TRUSTED_SELLER || 'true').toLowerCase() === 'true',
 
   // 🛡️ Credenciais Oficiais OAuth 2.0 Mercado Livre
-  mlClientId: process.env.ML_CLIENT_ID || '1426096167919533',
-  mlClientSecret: process.env.ML_CLIENT_SECRET || 'GECHipJQoAw8w6014NOPbpQFzu2kpqcp',
+  mlClientId: process.env.ML_CLIENT_ID || '7921110595606583',
+  mlClientSecret: process.env.ML_CLIENT_SECRET || '1Hzeh0kF7u5OXli5cqp9Bsg3zyMZdOPI',
   mlRedirectUri: process.env.ML_REDIRECT_URI || 'https://ml-afiliados-bot-f1w7.onrender.com/auth/callback',
   webhookSecret: process.env.WEBHOOK_SECRET || null,
 };
