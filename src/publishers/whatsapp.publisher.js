@@ -888,4 +888,30 @@ class WhatsappPublisher {
   }
 }
 
-module.exports = new WhatsappPublisher();
+const publisherInstance = new WhatsappPublisher();
+
+// 🛡️ INTERCEPTAÇÃO AUTOMÁTICA DE BAD MAC ERROR NO LIBSIGNAL
+// O libsignal chama console.error("Session error:" + e) diretamente sem emitir eventos.
+// Esta trava detecta o loop, suprime o spam no log do Render e executa o reset automático.
+const origConsoleError = console.error;
+let badMacResetTimer = null;
+let badMacCounter = 0;
+
+console.error = function(...args) {
+    const fullText = args.map(a => String(a?.stack || a)).join(' ');
+    if (fullText.includes('Bad MAC Error') || fullText.includes('Failed to decrypt message')) {
+        badMacCounter++;
+        if (!badMacResetTimer && badMacCounter >= 2) {
+            badMacCounter = 0;
+            badMacResetTimer = setTimeout(() => {
+                badMacResetTimer = null;
+                logger.warn('🚨 Detectado loop de Bad MAC Error no WhatsApp. Limpando sessão corrompida e gerando novo QR Code...');
+                publisherInstance.disconnectAndResetSession().catch(e => logger.error('Erro no auto-reset pós Bad MAC:', e));
+            }, 2500);
+        }
+        return; // suprime o spam vermelho no console
+    }
+    origConsoleError.apply(console, args);
+};
+
+module.exports = publisherInstance;

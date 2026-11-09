@@ -5,6 +5,7 @@ const logger = require('../config/logger');
 const { captureTask } = require('../jobs/capture.job');
 const { publishTask } = require('../jobs/publisher.job');
 const couponFetcher = require('../services/couponFetcher.service');
+const whatsappPublisher = require('../publishers/whatsapp.publisher');
 
 // Listar fila
 router.get('/queue', async (req, res) => {
