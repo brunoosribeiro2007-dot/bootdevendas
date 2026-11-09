@@ -230,6 +230,18 @@ const DDL = {
             role TEXT DEFAULT 'admin',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+    oauthTokens: `
+        CREATE TABLE IF NOT EXISTS oauth_tokens (
+            id TEXT PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            token_type TEXT DEFAULT 'bearer',
+            expires_at BIGINT NOT NULL,
+            user_id TEXT,
+            scope TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
 };
 
@@ -285,6 +297,7 @@ const runSqliteDDL = () => {
     sDb.exec(DDL.settings);
     sDb.exec(DDL.coupons);
     sDb.exec(DDL.users);
+    sDb.exec(DDL.oauthTokens);
     try {
         sDb.exec('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
     } catch (e) {}
@@ -341,6 +354,7 @@ const initializeDB = async () => {
                 await pool.query(DDL.settings);
                 await pool.query(DDL.coupons);
                 await pool.query(DDL.usersPostgres);
+                await pool.query(DDL.oauthTokens);
                 try {
                     await pool.query('CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(is_active)');
                 } catch (e) {}

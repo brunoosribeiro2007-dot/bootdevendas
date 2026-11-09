@@ -678,6 +678,73 @@ const seedInitialProductsIfEmpty = async () => {
     }
 };
 
+// ─── MÓDULO OAUTH 2.0 MERCADO LIVRE ───────────────────────────────────────
+const saveOAuthTokens = async (tokenData) => {
+    if (!tokenData || !tokenData.access_token || !tokenData.refresh_token) {
+        throw new Error('Tokens inválidos para salvamento');
+    }
+    const expiresInMs = (tokenData.expires_in || 21600) * 1000;
+    const expiresAt = Date.now() + expiresInMs;
+    const userId = String(tokenData.user_id || '');
+    const scope = tokenData.scope || '';
+    const tokenType = tokenData.token_type || 'bearer';
+
+    const existing = await db.get("SELECT id FROM oauth_tokens WHERE id = 'ml_primary_account'");
+    if (existing) {
+        await db.run(
+            `UPDATE oauth_tokens SET access_token = ?, refresh_token = ?, token_type = ?, expires_at = ?, user_id = ?, scope = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 'ml_primary_account'`,
+            [tokenData.access_token, tokenData.refresh_token, tokenType, expiresAt, userId, scope]
+        );
+    } else {
+        await db.run(
+            `INSERT INTO oauth_tokens (id, access_token, refresh_token, token_type, expires_at, user_id, scope) VALUES ('ml_primary_account', ?, ?, ?, ?, ?, ?)`,
+            [tokenData.access_token, tokenData.refresh_token, tokenType, expiresAt, userId, scope]
+        );
+    }
+    logger.info(`[OAuth] Tokens salvos com sucesso no banco de dados. Válido por ~${Math.round(expiresInMs / 60000)} minutos.`);
+};
+
+const getOAuthTokens = async () => {
+    const row = await db.get("SELECT * FROM oauth_tokens WHERE id = 'ml_primary_account'");
+    if (!row) return null;
+    const now = Date.now();
+    const expiresAtNum = Number(row.expires_at);
+    return {
+        accessToken: row.access_token,
+        refreshToken: row.refresh_token,
+        tokenType: row.token_type,
+        expiresAt: expiresAtNum,
+        userId: row.user_id,
+        isExpired: now >= (expiresAtNum - 60000)
+    };
+};
+
+const getSafeOAuthStatus = async () => {
+    const tokens = await getOAuthTokens();
+    if (!tokens) {
+        return {
+            authenticated: false,
+            message: 'Nenhum token encontrado. Acesse /auth/login para autorizar.'
+        };
+    }
+    const now = Date.now();
+    const remainingMs = Math.max(0, tokens.expiresAt - now);
+    return {
+        authenticated: true,
+        userId: tokens.userId || 'Configurado',
+        tokenType: tokens.tokenType,
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+        minutesRemaining: Math.floor(remainingMs / 60000),
+        isExpired: tokens.isExpired,
+        status: tokens.isExpired ? 'Expirado (renovação necessária)' : 'Ativo e Válido'
+    };
+};
+
+const clearOAuthTokens = async () => {
+    await db.run("DELETE FROM oauth_tokens WHERE id = 'ml_primary_account'");
+    logger.info('[OAuth] Tokens removidos do banco.');
+};
+
 module.exports = {
   saveProduct,
   getProductById,
@@ -703,5 +770,9 @@ module.exports = {
   getUserByEmail,
   saveOrUpdateUser,
   countUsers,
-  seedInitialProductsIfEmpty
+  seedInitialProductsIfEmpty,
+  saveOAuthTokens,
+  getOAuthTokens,
+  getSafeOAuthStatus,
+  clearOAuthTokens
 };

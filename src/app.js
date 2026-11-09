@@ -170,7 +170,14 @@ function clearSessionCookie(res) {
  */
 const authMiddleware = async (req, res, next) => {
   // 1. Rotas estritamente públicas
-  if (req.path === '/health' || req.path === '/login' || req.path === '/register' || req.path === '/api/auth/status') {
+  if (
+    req.path === '/health' || 
+    req.path === '/login' || 
+    req.path === '/register' || 
+    req.path === '/api/auth/status' ||
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/webhook')
+  ) {
     return next();
   }
 
@@ -482,9 +489,14 @@ app.get('/api/status', async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// BLOCO 5: ROTEADOR DE APIS DO SISTEMA
+// BLOCO 5: ROTEADOR DE APIS E INTEGRAÇÃO MERCADO LIVRE (OAUTH & WEBHOOK)
 // ──────────────────────────────────────────────────────────────────────────────
 
+const authRoutes = require('./auth/authRoutes');
+const webhookRoutes = require('./webhook/webhookRoutes');
+
+app.use('/auth', authRoutes);
+app.use('/webhook', webhookRoutes);
 app.use('/api', routes);
 
 module.exports = app;

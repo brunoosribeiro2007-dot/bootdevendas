@@ -49,4 +49,10 @@ module.exports = {
   minRating: parseFloat(process.env.MIN_RATING || process.env.MIN_PRODUCT_RATING || '4.5'),
   minDiscountPercent: parseFloat(process.env.MIN_DISCOUNT_PERCENT || '5'),
   requireTrustedSeller: (process.env.REQUIRE_TRUSTED_SELLER || 'true').toLowerCase() === 'true',
+
+  // 🛡️ Credenciais Oficiais OAuth 2.0 Mercado Livre
+  mlClientId: process.env.ML_CLIENT_ID || '1426096167919533',
+  mlClientSecret: process.env.ML_CLIENT_SECRET || 'GECHipJQoAw8w6014NOPbpQFzu2kpqcp',
+  mlRedirectUri: process.env.ML_REDIRECT_URI || 'https://ml-afiliados-bot-f1w7.onrender.com/auth/callback',
+  webhookSecret: process.env.WEBHOOK_SECRET || null,
 };

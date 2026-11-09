@@ -30,6 +30,8 @@ tmp/
 *.sqlite-shm
 *.sqlite-wal
 database.sqlite*
+*.db
+data/
 
 # Logs do sistema
 logs/

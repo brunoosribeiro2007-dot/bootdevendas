@@ -68,3 +68,11 @@ services:
       # Frequência do job de publicação de ofertas no WhatsApp (a cada 5 minutos)
       - key: CRON_PUBLISH_SCHEDULE
         value: "*/5 * * * *"
+
+      # OAuth 2.0 Mercado Livre
+      - key: ML_CLIENT_ID
+        value: "1426096167919533"
+      - key: ML_CLIENT_SECRET
+        sync: false
+      - key: ML_REDIRECT_URI
+        value: "https://ml-afiliados-bot-f1w7.onrender.com/auth/callback"

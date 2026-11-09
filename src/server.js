@@ -94,6 +94,11 @@ const startServer = async () => {
   startCleanupJob(); // Limpeza diária de fila à meia-noite
   startCaptureJob(); // Coleta periódica de produtos
   startPublishJob(); // Publicação periódica de mensagens no WhatsApp
+
+  // Monitor preventivo de renovação OAuth 2.0 (Mercado Livre)
+  const tokenManager = require('./auth/tokenManager');
+  tokenManager.startAutoRefreshJob(20);
+
   logger.info('⚙️ Jobs de automação agendados com sucesso.');
 
   // PASSO 5: Rotina de Keep-Alive (Prevenção de Spindown no Render Free)
