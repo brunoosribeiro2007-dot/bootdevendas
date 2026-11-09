@@ -87,17 +87,18 @@ class TokenManager {
   }
 
   /**
-   * Renova o access_token utilizando o refresh_token salvo no banco.
+   * Renova o access_token utilizando o refresh_token salvo no banco (ou fornecido/em env).
    */
-  async refreshAccessToken() {
+  async refreshAccessToken(explicitRefreshToken = null) {
     if (this._isRefreshing) {
       logger.debug('[OAuth] Renovação de token já em andamento. Aguardando...');
       return false;
     }
 
     const currentTokens = await repository.getOAuthTokens();
-    if (!currentTokens || !currentTokens.refreshToken) {
-      logger.debug('[OAuth] Nenhum refresh_token disponível no banco para renovação.');
+    const tokenToUse = explicitRefreshToken || (currentTokens ? currentTokens.refreshToken : null) || env.mlRefreshToken;
+    if (!tokenToUse) {
+      logger.debug('[OAuth] Nenhum refresh_token disponível para renovação.');
       return false;
     }
 
@@ -108,7 +109,7 @@ class TokenManager {
       grant_type: 'refresh_token',
       client_id: env.mlClientId,
       client_secret: env.mlClientSecret,
-      refresh_token: currentTokens.refreshToken
+      refresh_token: tokenToUse
     });
 
     try {
@@ -127,7 +128,7 @@ class TokenManager {
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         expires_in: tokenData.expires_in,
-        user_id: tokenData.user_id || currentTokens.userId,
+        user_id: tokenData.user_id || (currentTokens ? currentTokens.userId : null),
         scope: tokenData.scope,
         token_type: tokenData.token_type
       });
@@ -148,6 +149,13 @@ class TokenManager {
    */
   async getValidAccessToken() {
     let tokens = await repository.getOAuthTokens();
+    if (!tokens && env.mlRefreshToken) {
+      logger.info('[OAuth] Nenhum token no banco. Restaurando via ML_REFRESH_TOKEN de ambiente...');
+      const restored = await this.refreshAccessToken(env.mlRefreshToken);
+      if (restored) {
+        tokens = await repository.getOAuthTokens();
+      }
+    }
     if (!tokens) return null;
 
     const now = Date.now();

@@ -54,5 +54,6 @@ module.exports = {
   mlClientId: process.env.ML_CLIENT_ID || '7921110595606583',
   mlClientSecret: process.env.ML_CLIENT_SECRET || '1Hzeh0kF7u5OXli5cqp9Bsg3zyMZdOPI',
   mlRedirectUri: process.env.ML_REDIRECT_URI || 'https://ml-afiliados-bot-f1w7.onrender.com/auth/callback',
+  mlRefreshToken: process.env.ML_REFRESH_TOKEN || null,
   webhookSecret: process.env.WEBHOOK_SECRET || null,
 };

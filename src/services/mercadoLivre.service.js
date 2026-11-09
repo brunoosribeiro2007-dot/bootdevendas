@@ -970,59 +970,60 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
   // 1ª TENTATIVA: API OFICIAL (com Token OAuth)
   // ─────────────────────────────────────────────────────────────────
   try {
-      const apiUrl = `https://api.mercadolibre.com/sites/MLB/search?category=${categoryId}&sort=relevance&condition=new&limit=50`;
-      const apiHeaders = {
-          'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
-          'Accept-Language': 'pt-BR,pt;q=0.9',
-          'Accept': 'application/json'
-      };
+      const tokenManager = require('../auth/tokenManager');
+      const oauthToken = await tokenManager.getValidAccessToken();
 
-      try {
-          const tokenManager = require('../auth/tokenManager');
-          const oauthToken = await tokenManager.getValidAccessToken();
-          if (oauthToken) {
-              apiHeaders['Authorization'] = `Bearer ${oauthToken}`;
-              logger.debug('🔑 Token OAuth injetado na busca de ofertas por categoria');
+      if (oauthToken) {
+          const apiOffset = Math.max(0, offset - 1);
+          const apiUrl = `https://api.mercadolibre.com/sites/MLB/search?category=${categoryId}&sort=relevance&condition=new&limit=50&offset=${apiOffset}`;
+          const apiHeaders = {
+              'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
+              'Accept-Language': 'pt-BR,pt;q=0.9',
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${oauthToken}`
+          };
+
+          const { data: apiData } = await axios.get(apiUrl, {
+              headers: apiHeaders,
+              timeout: 10000
+          });
+
+          if (apiData && apiData.results && apiData.results.length > 0) {
+              const apiProducts = apiData.results
+                  .filter(p => !p.title.toLowerCase().includes('usado'))
+                  .filter(p => !isProductBlacklisted(p.title))
+                  .map(p => {
+                      const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
+                      const isOfficial = !!(p.official_store_id || p.official_store_name);
+                      const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
+                      const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
+                      const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
+                      const isFull = !!(p.shipping?.logistic_type === 'fulfillment');
+                      const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
+                      return {
+                          id: p.id, title: p.title, price: p.price,
+                          oldPrice: p.original_price || null,
+                          discountPercent: discount, hasDiscount: discount > 0,
+                          hasPromotionBadge: hasPromo, promotionBadge: hasPromo ? 'Oferta Ativa' : null,
+                          isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
+                          sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
+                          link: p.permalink,
+                          imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
+                          description: `Oferta: ${p.title}`,
+                          rating: p.reviews?.rating_average || null,
+                          reviewsCount: p.reviews?.total || 0,
+                          qualityScore: ((p.reviews?.rating_average || 4.5) * 25) + ((p.reviews?.total || 0) / 50) + (isOfficial ? 50 : 0) + (isFull ? 30 : 0) + discount
+                      };
+                  })
+                  .filter(candidate => validarQualidadeProduto(candidate));
+
+              if (apiProducts.length > 0) {
+                  logger.info(`✅ API Oficial retornou ${apiProducts.length} produtos para categoria ${categoryId} (Offset: ${offset}).`);
+                  return apiProducts;
+              }
           }
-      } catch (tErr) {}
-
-      const { data: apiData } = await axios.get(apiUrl, {
-          headers: apiHeaders,
-          timeout: 10000
-      });
-
-      if (apiData && apiData.results && apiData.results.length > 0) {
-          const apiProducts = apiData.results
-              .filter(p => !p.title.toLowerCase().includes('usado'))
-              .filter(p => !isProductBlacklisted(p.title))
-              .map(p => {
-                  const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
-                  const isOfficial = !!(p.official_store_id || p.official_store_name);
-                  const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
-                  const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
-                  const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
-                  const isFull = !!(p.shipping?.logistic_type === 'fulfillment');
-                  const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
-                  return {
-                      id: p.id, title: p.title, price: p.price,
-                      oldPrice: p.original_price || null,
-                      discountPercent: discount, hasDiscount: discount > 0,
-                      hasPromotionBadge: hasPromo, promotionBadge: hasPromo ? 'Oferta Ativa' : null,
-                      isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
-                      sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
-                      link: p.permalink,
-                      imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
-                      description: `Oferta: ${p.title}`,
-                      rating: p.reviews?.rating_average || null,
-                      reviewsCount: p.reviews?.total || 0
-                  };
-              })
-              .filter(candidate => validarQualidadeProduto(candidate));
-
-          if (apiProducts.length > 0) {
-              logger.info(`✅ API Oficial retornou ${apiProducts.length} produtos para categoria ${categoryId}.`);
-              return apiProducts;
-          }
+      } else {
+          logger.debug(`[OAuth] Sem token para categoria ${categoryId}. Usando web scraping.`);
       }
   } catch (apiErr) {
       logger.debug(`⚠️ API Oficial de categoria: ${apiErr.message}. Tentando scraping...`);
@@ -1084,52 +1085,6 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
               if (products2.length > 0) return products2;
           } catch (err2) {
               logger.warn(`⚠️ Falha no proxy AllOrigins para ofertas: ${err2.message}`);
-          }
-          // Tentativa 3: API Oficial como último recurso
-          try {
-              const apiUrl = `https://api.mercadolibre.com/sites/MLB/search?category=${categoryId}&sort=relevance&condition=new&limit=50`;
-              const { data: apiData } = await axios.get(apiUrl, {
-                  headers: {
-                      'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
-                      'Accept-Language': 'pt-BR,pt;q=0.9',
-                      'Accept': 'application/json'
-                  },
-                  timeout: 10000
-              });
-              if (apiData && apiData.results && apiData.results.length > 0) {
-                  const apiProducts = apiData.results
-                      .filter(p => !p.title.toLowerCase().includes('usado'))
-                      .filter(p => !isProductBlacklisted(p.title))
-                      .map(p => {
-                          const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
-                          const isOfficial = !!(p.official_store_id || p.official_store_name);
-                          const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
-                          const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
-                          const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
-                          const isFull = !!(p.shipping?.logistic_type === 'fulfillment');
-                          const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
-                          return {
-                              id: p.id, title: p.title, price: p.price,
-                              oldPrice: p.original_price || null,
-                              discountPercent: discount, hasDiscount: discount > 0,
-                              hasPromotionBadge: hasPromo, promotionBadge: hasPromo ? 'Oferta Ativa' : null,
-                              isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
-                              sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
-                              link: p.permalink,
-                              imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
-                              description: `Oferta: ${p.title}`,
-                              rating: p.reviews?.rating_average || null,
-                              reviewsCount: p.reviews?.total || 0
-                          };
-                      })
-                      .filter(candidate => validarQualidadeProduto(candidate));
-                  if (apiProducts.length > 0) {
-                      logger.info(`✅ API Oficial retornou ${apiProducts.length} produtos para categoria ${categoryId}.`);
-                      return apiProducts;
-                  }
-              }
-          } catch (apiErr3) {
-              logger.warn(`⚠️ Falha na API Oficial para ofertas de categoria: ${apiErr3.message}`);
           }
           return [];
       }
