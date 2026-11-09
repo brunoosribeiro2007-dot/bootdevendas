@@ -964,6 +964,73 @@ async function enrichProductDetails(product) {
  * Busca ofertas reais diretamente de uma categoria na aba de Ofertas do Mercado Livre
  */
 const searchDealsByCategory = async (categoryId, offset = 1) => {
+  logger.info(`🔎 Buscando ofertas reais na categoria ${categoryId} (Offset: ${offset})...`);
+
+  // ─────────────────────────────────────────────────────────────────
+  // 1ª TENTATIVA: API OFICIAL (com Token OAuth)
+  // ─────────────────────────────────────────────────────────────────
+  try {
+      const apiUrl = `https://api.mercadolibre.com/sites/MLB/search?category=${categoryId}&sort=relevance&condition=new&limit=50`;
+      const apiHeaders = {
+          'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+          'Accept': 'application/json'
+      };
+
+      try {
+          const tokenManager = require('../auth/tokenManager');
+          const oauthToken = await tokenManager.getValidAccessToken();
+          if (oauthToken) {
+              apiHeaders['Authorization'] = `Bearer ${oauthToken}`;
+              logger.debug('🔑 Token OAuth injetado na busca de ofertas por categoria');
+          }
+      } catch (tErr) {}
+
+      const { data: apiData } = await axios.get(apiUrl, {
+          headers: apiHeaders,
+          timeout: 10000
+      });
+
+      if (apiData && apiData.results && apiData.results.length > 0) {
+          const apiProducts = apiData.results
+              .filter(p => !p.title.toLowerCase().includes('usado'))
+              .filter(p => !isProductBlacklisted(p.title))
+              .map(p => {
+                  const discount = p.original_price && p.price < p.original_price ? Math.round(((p.original_price - p.price) / p.original_price) * 100) : 0;
+                  const isOfficial = !!(p.official_store_id || p.official_store_name);
+                  const powerSellerStatus = p.seller?.seller_reputation?.power_seller_status;
+                  const isMercadoLider = !!(powerSellerStatus && ['platinum', 'gold', 'silver'].includes(powerSellerStatus.toLowerCase()));
+                  const hasGreenRep = p.seller?.seller_reputation?.level_id === '5_green' || isMercadoLider || isOfficial;
+                  const isFull = !!(p.shipping?.logistic_type === 'fulfillment');
+                  const hasPromo = discount >= MIN_DISCOUNT_PERCENT || (p.tags && p.tags.some(t => t.includes('deal') || t.includes('discount')));
+                  return {
+                      id: p.id, title: p.title, price: p.price,
+                      oldPrice: p.original_price || null,
+                      discountPercent: discount, hasDiscount: discount > 0,
+                      hasPromotionBadge: hasPromo, promotionBadge: hasPromo ? 'Oferta Ativa' : null,
+                      isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
+                      sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
+                      link: p.permalink,
+                      imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
+                      description: `Oferta: ${p.title}`,
+                      rating: p.reviews?.rating_average || null,
+                      reviewsCount: p.reviews?.total || 0
+                  };
+              })
+              .filter(candidate => validarQualidadeProduto(candidate));
+
+          if (apiProducts.length > 0) {
+              logger.info(`✅ API Oficial retornou ${apiProducts.length} produtos para categoria ${categoryId}.`);
+              return apiProducts;
+          }
+      }
+  } catch (apiErr) {
+      logger.debug(`⚠️ API Oficial de categoria: ${apiErr.message}. Tentando scraping...`);
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // 2ª TENTATIVA: SCRAPING COM FALLBACK DE PROXY
+  // ─────────────────────────────────────────────────────────────────
   const fakeIP = getRandomBrIP();
   const dealsUrl = `https://www.mercadolivre.com.br/ofertas?category=${categoryId}&_Desde=${offset}`;
   logger.info(`🔎 Buscando ofertas reais na categoria ${categoryId} (Offset: ${offset})...`);
