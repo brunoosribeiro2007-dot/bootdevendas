@@ -11,6 +11,19 @@ const promiseTimeout = (promise, ms, errorMsg) => {
     ]);
 };
 
+/**
+ * Converte URLs de imagem da CDN do Mercado Livre para a resolução Ultra HD (1200px / -F.webp).
+ * Substitui thumbnails pequenos (-P.webp de 250px, -I.jpg de 90px, -V.webp de 320px) 
+ * pela versão em alta definição (-F.webp).
+ */
+const upgradeToHdImageUrl = (url) => {
+    if (!url || typeof url !== 'string') return url;
+    if (url.includes('mlstatic.com') || url.includes('mercadolibre.com')) {
+        return url.replace(/-[A-Z]\.(webp|jpg|jpeg|png)(\?.*)?$/i, '-F.webp$2');
+    }
+    return url;
+};
+
 class WhatsappPublisher {
   constructor() {
     this.sock = null;
@@ -834,9 +847,14 @@ class WhatsappPublisher {
                   const m = html.match(/"(?:og:image|image)"\s*:\s*"([^"]+)"/i);
                   if (m) resolvedImg = m[1].replace(/\\u002F/g, '/');
               }
+              // Ignora logos genéricos do Mercado Livre retornados por páginas de erro/social
+              if (resolvedImg && (resolvedImg.includes('logo') || resolvedImg.includes('ui-navigation') || resolvedImg.includes('pixel'))) {
+                  resolvedImg = null;
+              }
               if (resolvedImg) {
+                  resolvedImg = upgradeToHdImageUrl(resolvedImg);
                   item.image_url = resolvedImg;
-                  logger.info(`📸 [Publisher] Imagem recuperada via OpenGraph para "${displayTitle.substring(0, 30)}": ${resolvedImg.substring(0, 60)}...`);
+                  logger.info(`📸 [Publisher] Imagem Ultra HD recuperada via OpenGraph para "${displayTitle.substring(0, 30)}": ${resolvedImg.substring(0, 60)}...`);
                   try {
                       const { db } = require('../database/init');
                       db.run('UPDATE products SET image_url = ? WHERE id = ?', [resolvedImg, item.product_id]).catch(() => {});
@@ -847,23 +865,52 @@ class WhatsappPublisher {
           }
       }
 
-      // 2. Baixa e processa a imagem em formato JPEG padrão (com compatibilidade total WhatsApp/Baileys)
+      // 2. Baixa e processa a imagem em Ultra HD (1200px) e converte para JPEG de alta fidelidade
       let imageBuffer = null;
       if (item.image_url && item.image_url.startsWith('http')) {
           try {
               const axios = require('axios');
               const sharp = require('sharp');
-              const imgRes = await axios.get(item.image_url, { 
-                  responseType: 'arraybuffer', 
-                  timeout: 10000,
-                  headers: {
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
+              // Monta cadeia de candidatos em ordem decrescente de resolução
+              const candidateUrls = [];
+              const hdUrl = upgradeToHdImageUrl(item.image_url);
+              if (hdUrl && hdUrl !== item.image_url) {
+                  candidateUrls.push(hdUrl);
+              }
+              const originalWebp = item.image_url.replace(/-[A-Z]\.(webp|jpg|jpeg|png)(\?.*)?$/i, '-O.webp$2');
+              if (originalWebp !== hdUrl && originalWebp !== item.image_url) {
+                  candidateUrls.push(originalWebp);
+              }
+              const originalJpg = item.image_url.replace(/-[A-Z]\.(webp|jpg|jpeg|png)(\?.*)?$/i, '-O.jpg$2');
+              if (originalJpg !== hdUrl && originalJpg !== item.image_url) {
+                  candidateUrls.push(originalJpg);
+              }
+              candidateUrls.push(item.image_url);
+
+              let rawBuffer = null;
+              for (const candUrl of candidateUrls) {
+                  try {
+                      const imgRes = await axios.get(candUrl, { 
+                          responseType: 'arraybuffer', 
+                          timeout: 10000,
+                          headers: {
+                              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                          }
+                      });
+                      if (imgRes.data && imgRes.data.length > 500) {
+                          rawBuffer = Buffer.from(imgRes.data);
+                          break;
+                      }
+                  } catch (candErr) {
+                      // Se o CDN retornar 404 para o sufixo -F, tenta o próximo candidato
                   }
-              });
-              if (imgRes.data) {
-                  // Converte para JPEG padrão (evita que WebP seja tratado como sticker ou rejeitado com legenda)
-                  imageBuffer = await sharp(Buffer.from(imgRes.data))
-                      .jpeg({ quality: 85 })
+              }
+
+              if (rawBuffer) {
+                  // Converte para JPEG com altíssima qualidade (92%) e sem compressão destrutiva de croma (4:4:4)
+                  imageBuffer = await sharp(rawBuffer)
+                      .jpeg({ quality: 92, chromaSubsampling: '4:4:4', force: true })
                       .toBuffer();
               }
           } catch (imgDownloadErr) {

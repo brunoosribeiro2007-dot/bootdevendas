@@ -460,8 +460,8 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                     image = $(element).find('img').attr('data-src') || $(element).find('img').attr('data-srcset')?.split(' ')[0];
                 }
 
-                if (image && image.includes('-I.jpg')) {
-                    image = image.replace('-I.jpg', '-W.jpg');
+                if (image && (image.includes('mlstatic.com') || image.includes('mercadolibre.com'))) {
+                    image = image.replace(/-[A-Z]\.(webp|jpg|jpeg|png)(\?.*)?$/i, '-F.webp$2');
                 }
 
                 // 🏷️ CAPTURA DE CUPOM (SE HOUVER)
@@ -621,7 +621,7 @@ const fetchFromBackupAPI = async (searchTerm) => {
                                 isFull,
                                 sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder ${powerSellerStatus}` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
                                 link: p.permalink,
-                                imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail?.replace('-I.jpg', '-O.jpg'),
+                                imageUrl: p.thumbnail?.replace(/-[A-Z]\.(webp|jpg|jpeg|png)$/i, '-F.webp') || p.thumbnail,
                                 description: `Oferta Especial: ${searchTerm}`,
                                 rating: apiRating,
                                 reviewsCount: apiReviewsCount,
@@ -1008,7 +1008,7 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
                           isOfficialStore: isOfficial, isMercadoLider, hasGreenReputation: hasGreenRep, isFull,
                           sellerReputation: isOfficial ? 'Loja Oficial' : (isMercadoLider ? `MercadoLíder` : (hasGreenRep ? 'Termômetro Verde' : 'Standard')),
                           link: p.permalink,
-                          imageUrl: p.thumbnail?.replace('-I.jpg', '-W.jpg') || p.thumbnail,
+                          imageUrl: p.thumbnail?.replace(/-[A-Z]\.(webp|jpg|jpeg|png)$/i, '-F.webp') || p.thumbnail,
                           description: `Oferta: ${p.title}`,
                           rating: p.reviews?.rating_average || null,
                           reviewsCount: p.reviews?.total || 0,
