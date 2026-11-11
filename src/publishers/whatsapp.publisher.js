@@ -596,36 +596,38 @@ class WhatsappPublisher {
       }
     }
 
-    // 3. Busca por nome nos grupos em que a conta participa (inclui comunidades)
+    // 3. Busca por nome nos grupos em que a conta participa (ignora contêiner de comunidade que não tem chat)
     try {
       const groups = await this.getParticipatingGroups();
       const groupList = Object.values(groups || {});
       const groupName = clean.toLowerCase();
       const normClean = normalizeGroupName(clean);
 
-      // A. Match exato case-insensitive
-      let group = groupList.find(g => (g.subject || '').toLowerCase().trim() === groupName);
+      // Filtra apenas grupos que possuem chat real (ignora o contêiner raiz de comunidade que não possui timeline)
+      const validChatGroups = groupList.filter(g => !g.isCommunity);
+
+      // A. Match exato case-insensitive em grupos com chat
+      let group = validChatGroups.find(g => (g.subject || '').toLowerCase().trim() === groupName);
 
       // B. Match normalizado (ignora emojis como 🏠 vs 🏡 e acentos)
       if (!group && normClean) {
-        group = groupList.find(g => normalizeGroupName(g.subject) === normClean);
+        group = validChatGroups.find(g => normalizeGroupName(g.subject) === normClean);
       }
 
       // C. Match por substring normalizada
       if (!group && normClean) {
-        group = groupList.find(g => {
+        group = validChatGroups.find(g => {
           const normSubject = normalizeGroupName(g.subject);
           return normSubject && (normSubject.includes(normClean) || normClean.includes(normSubject));
         });
       }
 
-      // D. Se o alvo for o nome da comunidade, busca o grupo de avisos da comunidade
+      // D. Se o alvo for o nome de uma comunidade, busca o grupo de avisos associado a essa comunidade
       if (!group && normClean) {
-        group = groupList.find(g => {
-          const isComm = g.isCommunity || g.isCommunityAnnounce;
-          const normSubject = normalizeGroupName(g.subject);
-          return isComm && normSubject && (normSubject.includes(normClean) || normClean.includes(normSubject));
-        });
+        const parentComm = groupList.find(g => g.isCommunity && normalizeGroupName(g.subject) === normClean);
+        if (parentComm) {
+          group = validChatGroups.find(g => g.isCommunityAnnounce || g.linkedParent === parentComm.id);
+        }
       }
 
       if (group) {
@@ -633,7 +635,7 @@ class WhatsappPublisher {
         this.addLog(`✅ Grupo encontrado: "${group.subject}" (${group.id})${isAnnounce ? ' [Avisos/Somente Admins]' : ''}`);
         return { id: group.id, name: group.subject, type: 'group', isAnnounce };
       } else {
-        const availableGroups = groupList.map(g => `"${g.subject}"`).join(', ');
+        const availableGroups = validChatGroups.map(g => `"${g.subject}"`).join(', ');
         logger.warn(`❌ Grupo "${clean}" não encontrado. Grupos disponíveis: ${availableGroups}`);
         this.addLog(`❌ Grupo "${clean}" não encontrado na conta.`);
       }
