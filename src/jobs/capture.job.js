@@ -173,8 +173,8 @@ const captureTask = async () => {
     const allProductsInCycle = [];
 
     // ─── 5. Captura das Abas Oficiais de Ofertas do Mercado Livre ──────────────
-    // Categorias: MLB1574 (Casa, Móveis e Decoração) e MLB5726 (Eletrodomésticos)
-    const dealsCategories = ['MLB1574', 'MLB5726'];
+    // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa; MLB1648 (Informática) para PC Gamer
+    const dealsCategories = env.niche === 'pc_gamer' ? ['MLB1648'] : ['MLB1574', 'MLB5726'];
     const dealsOffsets = [1, 49, 97, 145, 193]; // 5 páginas por categoria
 
     logger.info('🔥 Coletando ofertas reais das abas oficiais de promoções do Mercado Livre...');

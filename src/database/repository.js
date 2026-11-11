@@ -624,7 +624,14 @@ const seedInitialProductsIfEmpty = async () => {
             return approvedCount;
         }
 
-        const seedPath = path.join(__dirname, 'seeds', 'initial_products.json');
+        let targetSeedFile = 'initial_products.json';
+        if (env && env.nicheProfile && env.nicheProfile.seedFile) {
+            targetSeedFile = env.nicheProfile.seedFile;
+        }
+        let seedPath = path.join(__dirname, 'seeds', targetSeedFile);
+        if (!fs.existsSync(seedPath)) {
+            seedPath = path.join(__dirname, 'seeds', 'initial_products.json');
+        }
         if (!fs.existsSync(seedPath)) {
             logger.warn(`⚠️ Arquivo de seed inicial não encontrado em ${seedPath}`);
             return 0;

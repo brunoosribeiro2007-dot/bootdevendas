@@ -181,7 +181,17 @@ const publishTask = async (force = false) => {
       }
 
       // ─── 5. Formatação Dinâmica da Mensagem Promocional ─────────────────────
-      item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+      if (env.nicheProfile && env.nicheProfile.copywriter === 'gamer') {
+        try {
+          const gamerCopywriter = require('../services/gamerCopywriter.service');
+          item.formatted_message = await gamerCopywriter.formatForWhatsApp(item, item.link);
+        } catch (gamerErr) {
+          logger.warn(`[PublisherJob] Falha no copywriter gamer (${gamerErr.message}). Usando fallback padrão.`);
+          item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+        }
+      } else {
+        item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+      }
 
       // ─── 6. Disparo da Mensagem (Texto + Imagem) em todos os destinos com Watchdog ───
       const publishPromise = publisher.publish(item);

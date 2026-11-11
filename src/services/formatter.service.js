@@ -341,6 +341,26 @@ class FormatterService {
     // Normaliza removendo acentos e pontuações para facilitar matching de regex
     const tNorm = productTitle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+    // ─── PC / Hardware / Periféricos / Setup Gamer ───────────────────────────
+    if (/placa[- ]m[aã]e|motherboard/.test(tNorm)) return 'PLACA-MÃE PARA SEU SETUP';
+    if (/processador|ryzen|core i[3579]|intel core/.test(tNorm)) return 'PROCESSADOR DE ALTA PERFORMANCE';
+    if (/placa de v[ií]deo|placa de video|rtx|gtx|radeon|rx \d{4}/.test(tNorm)) return 'PLACA DE VÍDEO EM SUPER PROMOÇÃO';
+    if (/mem[oó]ria ram|memoria ram|ram ddr[45]/.test(tNorm)) return 'MEMÓRIA RAM GAMER EM OFERTA';
+    if (/ssd|nvme|m\.2/.test(tNorm)) return 'SSD ULTRA RÁPIDO EM OFERTA';
+    if (/fonte (atx|gamer|real|\d+w|de alimenta[çc][aã]o)|80 plus/.test(tNorm) || (/\bfonte\b/.test(tNorm) && !/água|agua|pet|gato|cão|cao|chocolate|decorat|chafariz/.test(tNorm) && /pc|watt|w\b|atx|tens[aã]o|bivolt/.test(tNorm))) {
+      return 'FONTE GAMER POTENTE E SEGURA';
+    }
+    if (/water[- ]?cooler|air[- ]?cooler|cooler para processador/.test(tNorm)) return 'WATER COOLER PRA RESFRIAR SEU PC';
+    if (/monitor gamer|monitor (144hz|240hz|165hz|75hz|60hz|ultrawide|ips|led|pc|para pc|curvo)|monitor \d{2}["'’]/.test(tNorm)) {
+      return 'MONITOR GAMER COM DESCONTO';
+    }
+    if (/teclado mec[aâ]nico|teclado mecanico|teclado gamer/.test(tNorm)) return 'TECLADO MECÂNICO GAMER EM PROMOÇÃO';
+    if (/mousepad|mouse pad/.test(tNorm)) return 'MOUSEPAD GAMER SPEED/CONTROL';
+    if (/mouse gamer|mouse sem fio/.test(tNorm)) return 'MOUSE GAMER PRECISO EM OFERTA';
+    if (/headset|headphone gamer/.test(tNorm)) return 'HEADSET GAMER COM SOM IMERSIVO';
+    if (/cadeira gamer/.test(tNorm)) return 'CADEIRA GAMER CONFORTÁVEL';
+    if (/mesa gamer|escrivaninha gamer/.test(tNorm)) return 'MESA PRA SETUP GAMER';
+
     // ─── Câmera de segurança e monitoramento ─────────────────────────────────
     if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';
     if (/\bcameras?\b/.test(tNorm) && /\b(seguranca|vigilancia|monitoramento)\b/.test(tNorm)) {

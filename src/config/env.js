@@ -1,11 +1,17 @@
 require('dotenv').config();
+const { getNicheProfile, normalizeNicheId } = require('./niches');
+
+const activeNicheId = normalizeNicheId(process.env.NICHE);
+const nicheProfile = getNicheProfile(activeNicheId);
 
 module.exports = {
+  niche: activeNicheId,
+  nicheProfile,
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'production',
   databaseUrl: process.env.DATABASE_URL,
   dbPath: process.env.DB_PATH || './database.sqlite',
-  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || 'geladeira, cooktop, fogão, forno elétrico, micro-ondas, air fryer, liquidificador, batedeira, cafeteira, purificador de água, jogo de panelas, panela de pressão elétrica, smart tv, soundbar, ventilador, ar-condicionado, máquina de lavar, aspirador pó robô, ferro de passar, adega de vinhos, cervejeira',
+  mlSearchKeyword: process.env.ML_SEARCH_KEYWORD || nicheProfile.searchKeywords.join(', '),
   mlCategory: process.env.ML_CATEGORY || '',
   cronCaptureSchedule: process.env.CRON_CAPTURE_SCHEDULE || '0 * * * *',
   cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/3 * * * *',
@@ -31,7 +37,7 @@ module.exports = {
 
   // Configurações do Módulo de Marca d'Água e Postagem
   watermarkPath: process.env.WATERMARK_PATH || '',
-  defaultStoreName: process.env.DEFAULT_STORE_NAME || 'Oferta no Mercado Livre',
+  defaultStoreName: process.env.DEFAULT_STORE_NAME || nicheProfile.defaultStoreName,
 
   shopeeAppId: process.env.SHOPEE_APP_ID || '',
   shopeeSecret: process.env.SHOPEE_SECRET || '',
@@ -47,7 +53,7 @@ module.exports = {
   // Critérios de Qualidade e Reputação de Ofertas (Busca Automática)
   minReviews: parseInt(process.env.MIN_REVIEWS || process.env.MIN_PRODUCT_REVIEWS || '100', 10),
   minRating: parseFloat(process.env.MIN_RATING || process.env.MIN_PRODUCT_RATING || '4.5'),
-  minDiscountPercent: parseFloat(process.env.MIN_DISCOUNT_PERCENT || '5'),
+  minDiscountPercent: parseFloat(process.env.MIN_DISCOUNT_PERCENT || String(nicheProfile.minDiscountPercent)),
   requireTrustedSeller: (process.env.REQUIRE_TRUSTED_SELLER || 'true').toLowerCase() === 'true',
 
   // 🛡️ Credenciais Oficiais OAuth 2.0 Mercado Livre
