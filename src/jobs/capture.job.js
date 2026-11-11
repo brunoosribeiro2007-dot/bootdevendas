@@ -184,11 +184,15 @@ const captureTask = async () => {
           const deals = await mlService.searchDealsByCategory(catId, offset);
           if (deals && deals.length > 0) {
             allProductsInCycle.push(...deals);
+          } else {
+            // Se o offset retornou 0 (ou bloqueio anti-bot), pula os próximos offsets desta categoria
+            break;
           }
           // Pausa entre requisições para evitar rate-limit
           await new Promise(r => setTimeout(r, 800));
         } catch (err) {
           logger.error(`❌ Erro ao capturar aba de ofertas para categoria ${catId} (offset ${offset}): ${err.message}`);
+          break;
         }
       }
     }

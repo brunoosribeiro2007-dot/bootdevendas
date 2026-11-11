@@ -1038,27 +1038,31 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
   
   try {
       const headers = {
-          'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-          'X-Forwarded-For': fakeIP,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept-Language': 'pt-BR,pt;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1'
       };
 
-      const isCrawlerDeals = headers['User-Agent'].includes('bot') || headers['User-Agent'].includes('Slurp');
-      if (env.mlCookieString && !isCrawlerDeals) {
+      if (env.mlCookieString) {
           headers['Cookie'] = env.mlCookieString;
       }
 
       const { data: html, status } = await axios.get(dealsUrl, {
           headers,
-          timeout: 12000,
+          timeout: 8000,
           validateStatus: () => true
       });
 
-      if (status === 403 || html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')) {
-          logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy...`);
+      if (status === 403 || (typeof html === 'string' && (html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')))) {
+          logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy rápido...`);
           // Tentativa 1: Google Translate proxy
           const proxyUrl1 = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;
           try {
@@ -1067,19 +1071,19 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                       'Accept-Language': 'pt-BR,pt;q=0.9'
                   },
-                  timeout: 15000
+                  timeout: 5000
               });
               const products = parseProducts(response.data, `Ofertas ${categoryId}`, true);
               if (products.length > 0) return products;
           } catch (err) {
               logger.warn(`⚠️ Falha no proxy Google Translate para ofertas: ${err.message}`);
           }
-          // Tentativa 2: AllOrigins proxy
+          // Tentativa 2: AllOrigins proxy com timeout curto
           const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(dealsUrl)}`;
           try {
               const response2 = await axios.get(proxyUrl2, {
                   headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
-                  timeout: 15000
+                  timeout: 5000
               });
               const products2 = parseProducts(response2.data, `Ofertas ${categoryId}`, true);
               if (products2.length > 0) return products2;
