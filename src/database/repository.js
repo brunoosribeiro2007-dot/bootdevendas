@@ -265,38 +265,44 @@ const getNextApprovedItem = async () => {
             }
 
             // Checagem retroativa de duplicados:
-            // Se o produto selecionado já foi publicado (está em products mas não está mais em queue),
+            // Se o produto selecionado já foi publicado recentemente (nas últimas 24h),
             // removemos esse item duplicado da fila e continuamos o loop para pegar outro.
+            const USE_POSTGRES = isPostgres();
+            const timeCondition = USE_POSTGRES
+                ? "p.created_at >= NOW() - INTERVAL '24 hours'"
+                : "p.created_at >= datetime('now', '-24 hours')";
+
             const publishedProducts = await db.all(`
                 SELECT p.id, p.title, p.link, p.original_link, p.image_url 
                 FROM products p
                 LEFT JOIN queue q ON p.id = q.product_id
-                WHERE q.product_id IS NULL AND p.id != ?
+                WHERE q.product_id IS NULL AND p.id != ? AND (${timeCondition} OR p.created_at IS NULL)
             `, [item.product_id]);
 
+            const itemCleanLink = cleanLink(item.original_link || item.link);
             const itemMlbId = extractMlbId(item.original_link || item.link);
             const itemShopeeId = extractShopeeId(item.original_link || item.link) || extractShopeeId(item.product_id);
             const itemNormTitle = normalizeTitle(item.title);
  
             let isDup = false;
             for (const p of publishedProducts) {
-                if (itemMlbId && (extractMlbId(p.original_link) === itemMlbId || extractMlbId(p.link) === itemMlbId)) {
+                const pCleanLink = cleanLink(p.original_link || p.link);
+                const pMlbId = extractMlbId(p.original_link || p.link);
+                const pShopeeId = extractShopeeId(p.original_link || p.link) || extractShopeeId(p.id);
+
+                if (itemMlbId && pMlbId && itemMlbId === pMlbId) {
                     isDup = true;
                     break;
                 }
-                if (itemShopeeId && (extractShopeeId(p.original_link) === itemShopeeId || extractShopeeId(p.link) === itemShopeeId || extractShopeeId(p.id) === itemShopeeId)) {
+                if (itemShopeeId && pShopeeId && itemShopeeId === pShopeeId) {
                     isDup = true;
                     break;
                 }
-                if (itemNormTitle && (normalizeTitle(p.title) === itemNormTitle || titlesAreVerySimilar(p.title, item.title))) {
+                if (itemCleanLink && pCleanLink && itemCleanLink === pCleanLink) {
                     isDup = true;
                     break;
                 }
-                if (item.link && (p.original_link === item.link || p.link === item.link)) {
-                    isDup = true;
-                    break;
-                }
-                if (item.original_link && (p.original_link === item.original_link || p.link === item.original_link)) {
+                if (itemNormTitle && normalizeTitle(p.title) === itemNormTitle) {
                     isDup = true;
                     break;
                 }
@@ -411,13 +417,13 @@ const resetStuckSendingItems = async () => {
         const USE_POSTGRES = isPostgres();
         let query;
         if (USE_POSTGRES) {
-            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < NOW() - INTERVAL '10 minutes'`;
+            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < NOW() - INTERVAL '3 minutes'`;
         } else {
-            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < datetime('now', '-10 minutes')`;
+            query = `UPDATE queue SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'sending' AND updated_at < datetime('now', '-3 minutes')`;
         }
         const res = await db.run(query, []);
         if (res.rowCount > 0) {
-            logger.info(`🔄 Recuperação automática: ${res.rowCount} itens travados em 'sending' por mais de 10 minutos foram reativados.`);
+            logger.info(`🔄 Recuperação automática: ${res.rowCount} itens travados em 'sending' por mais de 3 minutos foram reativados.`);
         }
         return res.rowCount;
     } catch (err) {

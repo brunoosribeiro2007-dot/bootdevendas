@@ -208,15 +208,15 @@ class WhatsappPublisher {
             }
         });
 
-        // 🛡️ DETECÇÃO AUTOMÁTICA DE BAD MAC ERROR — sessão corrompida/desincronizada
+        // 🛡️ TRATAMENTO RESILIENTE DE ERROS NO WEBSOCKET
         this.sock.ev.on('messages.upsert', () => {}); // keep listener alive
         this.sock.ws.on('error', (err) => {
             const msg = (err && err.message) ? err.message : String(err);
             if (msg.includes('Bad MAC') || msg.includes('bad mac') || msg.includes('decrypt')) {
-                logger.error(`🔐 Bad MAC Error detectado — sessão desincronizada. Resetando sessão em 3s...`);
-                this.addLog('🔐 Bad MAC Error: sessão corrompida. Limpando e gerando novo QR Code...');
-                setTimeout(() => this.disconnectAndResetSession(), 3000);
+                logger.debug(`[WhatsApp WS] Erro de descriptografia libsignal suprimido: ${msg}`);
+                return;
             }
+            logger.warn(`[WhatsApp WS] Erro no socket: ${msg}`);
         });
 
         this.sock.ev.on('connection.update', (update) => {
@@ -241,15 +241,6 @@ class WhatsappPublisher {
             }
             
             const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-            // 🔐 Bad MAC Error — Baileys lança error com mensagem 'Bad MAC' ou código 500/440
-            const isBadMac = lastDisconnect?.error?.message?.includes('Bad MAC') ||
-                             lastDisconnect?.error?.message?.includes('bad mac') ||
-                             lastDisconnect?.error?.message?.includes('decrypt');
-            if (isBadMac) {
-                this.addLog('🔐 Bad MAC Error detectado na conexão — sessão corrompida. Resetando...');
-                setTimeout(() => this.disconnectAndResetSession(), 2000);
-                return;
-            }
             const shouldReconnect = !isLoggedOut;
             
             this.isReady = false;
@@ -919,7 +910,15 @@ class WhatsappPublisher {
       }
 
       let successCount = 0;
-      for (const dest of destinations) {
+      const errors = [];
+      for (let i = 0; i < destinations.length; i++) {
+        const dest = destinations[i];
+        
+        // Pausa preventiva de 2 segundos entre envios em destinos múltiplos para estabilidade do socket
+        if (i > 0) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
         try {
           let sent = false;
           if (imageBuffer) {
@@ -957,17 +956,20 @@ class WhatsappPublisher {
         } catch (destErr) {
           logger.error(`❌ Erro ao publicar item ${item.id} para [${dest.type}] "${dest.name}":`, destErr.message || destErr);
           this.addLog(`❌ Falha no envio para [${dest.type}] "${dest.name}": ${destErr.message}`);
-          if (
-              destErr.message?.includes('Connection Closed') || 
-              destErr.message?.includes('not open') || 
-              destErr.message?.includes('Timeout')
-          ) {
-              this.handleTimeoutOrConnectionIssue();
-          }
+          errors.push(destErr.message || String(destErr));
         }
       }
 
-      return successCount > 0;
+      if (successCount > 0) {
+        return true;
+      }
+
+      // Se nenhum destino recebeu e houve falha de conexão/timeout, reinicializa de forma controlada
+      if (errors.some(e => e.includes('Connection Closed') || e.includes('not open') || e.includes('Timeout'))) {
+        this.handleTimeoutOrConnectionIssue();
+      }
+
+      return false;
     } catch (error) {
       logger.error('❌ Erro geral ao publicar mensagem no WhatsApp:', error.message || error);
       if (error.message?.includes('Timeout') || error.message?.includes('closed') || error.message?.includes('not open')) {
@@ -980,26 +982,15 @@ class WhatsappPublisher {
 
 const publisherInstance = new WhatsappPublisher();
 
-// 🛡️ INTERCEPTAÇÃO AUTOMÁTICA DE BAD MAC ERROR NO LIBSIGNAL
-// O libsignal chama console.error("Session error:" + e) diretamente sem emitir eventos.
-// Esta trava detecta o loop, suprime o spam no log do Render e executa o reset automático.
+// 🛡️ SUPRESSÃO DE SPAM DE BAD MAC / DECRYPT ERROR DO LIBSIGNAL
+// O libsignal chama console.error("Session error:" + e) ao receber mensagens em grupos/canais
+// cujas chaves não pertencem à sessão ativa do bot. Isso é 100% inofensivo para envio de ofertas.
+// Suprimimos apenas o spam visual no log sem nunca desconectar ou resetar a sessão ativa.
 const origConsoleError = console.error;
-let badMacResetTimer = null;
-let badMacCounter = 0;
-
 console.error = function(...args) {
     const fullText = args.map(a => String(a?.stack || a)).join(' ');
     if (fullText.includes('Bad MAC Error') || fullText.includes('Failed to decrypt message')) {
-        badMacCounter++;
-        if (!badMacResetTimer && badMacCounter >= 2) {
-            badMacCounter = 0;
-            badMacResetTimer = setTimeout(() => {
-                badMacResetTimer = null;
-                logger.warn('🚨 Detectado loop de Bad MAC Error no WhatsApp. Limpando sessão corrompida e gerando novo QR Code...');
-                publisherInstance.disconnectAndResetSession().catch(e => logger.error('Erro no auto-reset pós Bad MAC:', e));
-            }, 2500);
-        }
-        return; // suprime o spam vermelho no console
+        return; // suprime o spam no console sem afetar o fluxo do bot
     }
     origConsoleError.apply(console, args);
 };

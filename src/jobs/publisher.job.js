@@ -88,6 +88,7 @@ const shouldSendGoodNight = () => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 let isPublishing = false;
+let publishingStartedAt = 0;
 let sentGoodNightMessage = false;
 let retryTimeout = null;
 
@@ -97,10 +98,16 @@ let retryTimeout = null;
 
 const publishTask = async (force = false) => {
   if (isPublishing) {
-    logger.debug('⚠️ [PublishTask] Tentativa de publicação ignorada: envio em andamento.');
-    return;
+    if (Date.now() - publishingStartedAt > 120000) {
+      logger.warn('⚠️ [PublishTask] Envio anterior travado por mais de 2 minutos. Forçando liberação do lock...');
+      isPublishing = false;
+    } else {
+      logger.debug('⚠️ [PublishTask] Tentativa de publicação ignorada: envio em andamento.');
+      return;
+    }
   }
   isPublishing = true;
+  publishingStartedAt = Date.now();
 
   try {
     // ─── 1. Validação da Janela de Horário ────────────────────────────────────
@@ -117,6 +124,9 @@ const publishTask = async (force = false) => {
         } catch (err) {
           logger.error('Erro ao enviar mensagem de boa noite:', err);
         }
+      } else {
+        const { hour, minute } = getPortoVelhoTime();
+        logger.info(`⏳ [PublishTask] Fora da janela de disparo (${env.publishStartTime || '08:00'} às ${env.publishEndTime || '22:00'}). Horário atual em Porto Velho: ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}. Publicação em pausa.`);
       }
       return;
     }
@@ -173,8 +183,12 @@ const publishTask = async (force = false) => {
       // ─── 5. Formatação Dinâmica da Mensagem Promocional ─────────────────────
       item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
 
-      // ─── 6. Disparo da Mensagem (Texto + Imagem) em todos os destinos ─────────
-      const success = await publisher.publish(item);
+      // ─── 6. Disparo da Mensagem (Texto + Imagem) em todos os destinos com Watchdog ───
+      const publishPromise = publisher.publish(item);
+      const success = await Promise.race([
+        publishPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Watchdog timeout: envio excedeu 60s')), 60000))
+      ]);
 
       if (success) {
         // Remove produto publicado do banco e da fila para economizar espaço
@@ -192,6 +206,7 @@ const publishTask = async (force = false) => {
     logger.error('❌ Erro no ciclo de publicação:', error);
   } finally {
     isPublishing = false;
+    publishingStartedAt = 0;
   }
 };
 
