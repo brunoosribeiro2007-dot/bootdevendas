@@ -300,13 +300,28 @@ class WhatsappPublisher {
             this.isReady = true;
             this.latestQr = null;
             this.latestPairingCode = null;
+            this._cachedDestinations = null;
+            this._destCache = null;
+            this._nicheDestCache = null;
+            this._cachedGroupList = null;
+            this._cachedGroupListTime = 0;
             this.addLog('✅ Conexão realizada com sucesso! Bot pronto para publicações.');
             
             this.syncSessionToPostgres().catch(err => logger.warn('Erro ao sincronizar sessão após conexão:', err.message));
 
-            // Pré-resolve destinos em background para prontidão imediata
-            setTimeout(() => {
-              this.getDestinations().catch(e => logger.debug('Pré-resolução de destinos:', e.message));
+            // Pré-resolve destinos em background assim que os chats sincronizam
+            setTimeout(async () => {
+              try {
+                this._cachedDestinations = null;
+                this._destCache = null;
+                this._nicheDestCache = null;
+                this._cachedGroupList = null;
+                this._cachedGroupListTime = 0;
+                await this.getParticipatingGroups(true);
+                await this.getDestinations();
+              } catch (e) {
+                logger.debug('Pré-resolução de destinos:', e.message);
+              }
             }, 3000);
           }
         });
@@ -739,7 +754,9 @@ class WhatsappPublisher {
       logger.info(`📱 Destino ativo (Fallback): [NÚMERO PRIVADO] ${targetNumber}`);
     }
 
-    if (destinations.length > 0) {
+    const hasOnlyFallback = destinations.length > 0 && destinations.every(d => d.type === 'number');
+
+    if (destinations.length > 0 && !hasOnlyFallback) {
       if (hasNicheOverride) {
         this._nicheDestCache = this._nicheDestCache || {};
         this._nicheDestCache[niche] = destinations;
