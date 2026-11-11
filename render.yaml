@@ -2,7 +2,7 @@
 # RENDER.YAML - CONFIGURAÇÃO DE DEPLOY DO BOT NO RENDER (MULTI-NICHO & MULTI-GRUPOS)
 # ==============================================================================
 # Define o serviço Web em container Docker, variáveis de ambiente e agendamentos cron.
-# Permite rodar com 1 única conexão de WhatsApp atendendo 1 ou múltiplos grupos simultâneos.
+# Utiliza IDs diretos e imutáveis dos grupos do WhatsApp para zero ambiguidades.
 # ==============================================================================
 
 services:
@@ -40,22 +40,25 @@ services:
         sync: false
 
       # ------------------------------------------------------------------------
-      # DESTINOS DO WHATSAPP (1 CONEXÃO -> MÚLTIPLOS GRUPOS)
+      # DESTINOS DO WHATSAPP (IDs EXATOS E IMUTÁVEIS DOS CHATS REAIS)
       # ------------------------------------------------------------------------
-      # Opção A: Lista separada por vírgula em WHATSAPP_TARGET_GROUP ou WHATSAPP_TARGET_CHANNEL
-      # Exemplo: "OFERTAS LAR 🏡, Ofertas PC Gamer 🎮"
-      - key: WHATSAPP_TARGET_CHANNEL
-        value: "OFERTAS LAR 🏡"
-      - key: WHATSAPP_TARGET_GROUP
-        value: "OFERTAS LAR 🏡"
-
-      # Opção B: Destinos separados por nicho (Roteamento inteligente automático)
+      # Grupo Casa: "OFERTAS LAR 🏡" (Chat Real dos membros)
       - key: WHATSAPP_GROUP_CASA
-        value: "OFERTAS LAR 🏡"
-      - key: WHATSAPP_CHANNEL_CASA
-        value: "OFERTAS LAR 🏡"
+        value: "120363429298492381@g.us"
+
+      # Grupo PC Gamer: "Infomarket 🎮" (Chat Real dos membros)
       - key: WHATSAPP_GROUP_PC_GAMER
-        value: "Ofertas PC Gamer 🎮"
+        value: "120363429098602670@g.us"
+
+      # Destino Geral: Envia simultaneamente para os dois grupos configurados
+      - key: WHATSAPP_TARGET_GROUP
+        value: "120363429298492381@g.us, 120363429098602670@g.us"
+
+      # Canais Oficiais (Deixados vazios pois o envio é em Grupos de Comunidade)
+      - key: WHATSAPP_TARGET_CHANNEL
+        value: ""
+      - key: WHATSAPP_CHANNEL_CASA
+        value: ""
       - key: WHATSAPP_CHANNEL_PC_GAMER
         value: ""
 
@@ -86,7 +89,7 @@ services:
       - key: ML_AFFILIATE_TAG
         sync: false
 
-      # Palavras-chave de busca (deixe vazio se quiser usar o pool dinâmico do nicho)
+      # Palavras-chave de busca
       - key: ML_SEARCH_KEYWORD
         value: "Panelas, frigideiras, Talheres, pratos, copos, Air Fryer, Liquidificador, Micro-ondas, Cafeteira, Potes herméticos, Porta temperos, Tábua de corte, Vassoura, Rodo, Mop esfregão, Balde, Panos de limpeza, Sabão líquido, Detergente, Desinfetante, Água sanitária, Amaciante, Esponjas, Luvas de limpeza, Máquina de lavar, Varal, Ferro de passar, Tábua de passar, Cesto de roupa, Organizadores de roupa, Sofá, Rack painel TV, Televisão, Tapete sala, Cortina, Ventilador, Cama colchão, Travesseiros, Lençóis, Cobertores, Guarda-roupa, Cabides, Chuveiro, Toalhas banho, Tapete de banheiro, Lixeira banheiro, Espelho banheiro, Porta sabonete, Caixas organizadoras, Organizadores de gaveta, Prateleiras, Nichos parede, Carrinho com rodinhas, Quadros decorativos, Luminárias decorativas, Plantas artificiais, Espelhos decorativos, Velas decorativas, Almofadas, Cortinas estilizadas, Tapetes decorativos"
 
