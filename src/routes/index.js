@@ -79,13 +79,21 @@ router.get('/database/clear', async (req, res) => {
 // Cupons do dia (busca do banco de dados com fallback para cache em memória)
 router.get('/coupons/daily', async (req, res) => {
     try {
-        let coupons = await repository.getActiveCoupons();
+        let coupons = await couponFetcher.fetchDailyCoupons();
         if (!coupons || coupons.length === 0) {
-            coupons = couponFetcher.getCachedCoupons();
+            coupons = await repository.getActiveCoupons();
         }
         const cacheInfo = couponFetcher.getCacheInfo();
         const activeCoupon = await couponFetcher.getActiveDailyCoupon();
-        res.json({ coupons, cacheInfo, activeCoupon });
+        const normalized = (coupons || []).map(c => ({
+            code: c.code,
+            rule: c.rule || c.discount || c.description || '',
+            discount: c.rule || c.discount || (c.discountValue ? `${c.discountValue}%` : ''),
+            description: c.description || c.rule || '',
+            minAmount: c.minAmount !== undefined ? c.minAmount : (c.min_amount || 0),
+            source: c.source || 'ml_cupons_page'
+        }));
+        res.json({ coupons: normalized, cacheInfo, activeCoupon });
     } catch (err) {
         logger.error('Erro ao buscar cupons diários:', err);
         res.status(500).json({ error: err.message });
@@ -126,8 +134,8 @@ router.post('/coupons', async (req, res) => {
 router.get('/coupons/daily/refresh', async (req, res) => {
     try {
         logger.info('[API] Refresh manual de cupons do dia solicitado.');
-        couponFetcher.fetchDailyCoupons(true).catch(e => logger.warn(`Erro no refresh de cupons: ${e.message}`));
-        res.json({ message: 'Refresh de cupons iniciado em background.' });
+        const updated = await couponFetcher.fetchDailyCoupons(true);
+        res.json({ success: true, count: (updated || []).length, message: 'Cupons atualizados com sucesso!' });
     } catch (err) {
         logger.error('Erro ao iniciar refresh de cupons:', err);
         res.status(500).json({ error: err.message });
@@ -148,6 +156,17 @@ router.get('/coupons/active', async (req, res) => {
 router.post('/coupons/active', async (req, res) => {
     try {
         const { coupon } = req.body;
+        if (coupon && typeof coupon === 'string' && coupon.trim()) {
+            const cleanCode = coupon.trim().toUpperCase();
+            await repository.saveCoupon({
+                code: cleanCode,
+                description: `Cupom ${cleanCode}`,
+                rule: 'Cupom ativado pelo painel',
+                minAmount: 0,
+                source: 'dashboard_manual',
+                isActive: 1
+            }).catch(() => {});
+        }
         await couponFetcher.setActiveDailyCoupon(coupon);
         const active = await couponFetcher.getActiveDailyCoupon();
         res.json({ success: true, activeCoupon: active, message: active ? `Cupom ${active} ativado com sucesso!` : 'Modo automático reativado!' });

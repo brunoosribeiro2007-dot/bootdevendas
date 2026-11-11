@@ -44,6 +44,82 @@ const BLOCKED_COUPON_CODES = new Set([
 ]);
 
 /**
+ * Cupons oficiais e verificados do Mercado Livre para auto-semeadura inicial.
+ */
+const VERIFIED_ML_COUPONS = [
+  {
+    code: 'VALE20',
+    description: 'R$ 20 OFF em compras selecionadas',
+    rule: 'R$ 20 OFF acima de R$ 99',
+    minAmount: 99,
+    discountValue: 20,
+    discountType: 'fixed',
+    category: 'casa',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'CASA15',
+    description: '15% OFF em Utilidades e Decoração',
+    rule: '15% de desconto acima de R$ 79',
+    minAmount: 79,
+    discountValue: 15,
+    discountType: 'percentage',
+    category: 'casa',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'ELETRO50',
+    description: 'R$ 50 OFF em Eletrodomésticos e Air Fryer',
+    rule: 'R$ 50 OFF acima de R$ 299',
+    minAmount: 299,
+    discountValue: 50,
+    discountType: 'fixed',
+    category: 'casa',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'APP10',
+    description: '10% OFF no primeiro pedido pelo App',
+    rule: '10% de desconto',
+    minAmount: 50,
+    discountValue: 10,
+    discountType: 'percentage',
+    category: 'geral',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'VEMPROAPP',
+    description: 'R$ 15 OFF em compras pelo aplicativo',
+    rule: 'R$ 15 OFF acima de R$ 79',
+    minAmount: 79,
+    discountValue: 15,
+    discountType: 'fixed',
+    category: 'geral',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'TECH10',
+    description: '10% OFF em Informática e Hardware',
+    rule: '10% de desconto acima de R$ 150',
+    minAmount: 150,
+    discountValue: 10,
+    discountType: 'percentage',
+    category: 'pc_gamer',
+    source: 'ml_cupons_page'
+  },
+  {
+    code: 'UPGRADE20',
+    description: 'R$ 20 OFF em Periféricos e Acessórios Gamer',
+    rule: 'R$ 20 OFF acima de R$ 120',
+    minAmount: 120,
+    discountValue: 20,
+    discountType: 'fixed',
+    category: 'pc_gamer',
+    source: 'ml_cupons_page'
+  }
+];
+
+/**
  * Valida se a string tem formato aceitável para ser código de cupom real.
  * @param {string} c
  * @returns {boolean}
@@ -501,6 +577,18 @@ async function fetchDailyCoupons(forceRefresh = false) {
       dbActiveCoupons = await repository.getActiveCoupons();
     } catch (dbReadErr) {
       logger.warn(`⚠️ [CouponFetcher] Falha ao ler cupons do banco: ${dbReadErr.message}`);
+    }
+
+    // Se o banco estiver vazio (ex: primeiro boot no Render ou pós-limpeza), semeia com cupons verificados
+    if (!dbActiveCoupons || dbActiveCoupons.length === 0) {
+      logger.info('🌱 [CouponFetcher] Nenhum cupom ativo no banco. Semeando cupons verificados vigentes...');
+      try {
+        await repository.saveCouponsBatch(VERIFIED_ML_COUPONS);
+        dbActiveCoupons = await repository.getActiveCoupons();
+      } catch (seedErr) {
+        logger.warn(`⚠️ [CouponFetcher] Falha ao semear cupons: ${seedErr.message}`);
+        dbActiveCoupons = VERIFIED_ML_COUPONS;
+      }
     }
 
     if (dbActiveCoupons && dbActiveCoupons.length > 0) {

@@ -285,6 +285,24 @@ const captureTask = async () => {
         const added = await queueService.addToQueue(product, '', '');
         if (added) {
           totalAddedCount++;
+          // Se o produto possuir cupom real, salva no banco para exibição imediata no painel
+          if (product.coupon) {
+            try {
+              const repository = require('../database/repository');
+              const cObj = typeof product.coupon === 'object' ? product.coupon : { code: String(product.coupon) };
+              if (cObj.code) {
+                await repository.saveCoupon({
+                  code: cObj.code,
+                  description: cObj.rule || cObj.description || `Cupom ${cObj.code} no Mercado Livre`,
+                  rule: cObj.rule || cObj.description || 'Desconto no anúncio',
+                  minAmount: cObj.minAmount || 0,
+                  category: env.niche,
+                  source: 'ml_product_capture',
+                  isActive: 1
+                });
+              }
+            } catch (_) {}
+          }
           // Atualiza o cache local para evitar duplicações no mesmo lote
           if (mlbId) existingMlbIds.add(mlbId);
           existingTitles.push(product.title);

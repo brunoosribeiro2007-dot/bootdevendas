@@ -1144,8 +1144,8 @@
 
                 list.innerHTML = coupons.map((c, idx) => {
                     const sourceLabel = sourceLabels[c.source] || '📋 Mercado Livre';
-                    const discountHtml = c.discount ? `<div class="daily-coupon-discount">💸 ${c.discount}</div>` : '';
-                    const minHtml = c.minAmount > 0 ? `<div style="font-size: 0.72rem; color: var(--text-muted); margin: 2px 0;">Mín: R$ ${c.minAmount}</div>` : '';
+                    const discText = c.discount || c.rule || c.description || ''; const discountHtml = discText ? `<div class="daily-coupon-discount">💸 ${discText}</div>` : '';
+                    const minVal = c.minAmount || c.min_amount || 0; const minHtml = minVal > 0 ? `<div style="font-size: 0.72rem; color: var(--text-muted); margin: 2px 0;">Mín: R$ ${minVal}</div>` : '';
                     return `
                         <div class="daily-coupon-card" id="dc-card-${idx}" onclick="copyDailyCoupon('${c.code}', ${idx})" title="Clique para copiar">
                             <div class="daily-coupon-code">🏷️ ${c.code}</div>
