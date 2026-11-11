@@ -38,6 +38,7 @@ class WhatsappPublisher {
     this.reconnectTimeout = null; // Referência para evitar agendamentos paralelos
     this._cachedDestination = null; // Legado: { id, name, type }
     this._cachedDestinations = null; // Multi-destino: Array<{ id, name, type: 'channel' | 'group' | 'number' }>
+    this._destCache = null;
     this._cachedChannels = null; // Cache dos canais aos quais a conta está inscrita
     this._cachedGroupId = null;
     
@@ -162,6 +163,8 @@ class WhatsappPublisher {
         this._cachedGroupId = null;
         this._cachedDestination = null;
         this._cachedDestinations = null;
+      this._destCache = null;
+        this._destCache = null;
         this._cachedChannels = null;
 
         if (this.reconnectTimeout) {
@@ -245,6 +248,8 @@ class WhatsappPublisher {
             
             this.isReady = false;
             this._cachedDestinations = null;
+      this._destCache = null;
+        this._destCache = null;
             this._cachedDestination = null;
             this._cachedChannels = null;
 
@@ -305,6 +310,7 @@ class WhatsappPublisher {
       this._cachedGroupId = null;
       this._cachedDestination = null;
       this._cachedDestinations = null;
+      this._destCache = null;
       this._cachedChannels = null;
       this.initStatus = 'Sessão resetada. Gerando novo QR Code...';
       this.addLog('🔄 Desconectando e limpando sessão corrompida do WhatsApp...');
@@ -348,6 +354,7 @@ class WhatsappPublisher {
       this._cachedGroupId = null;
       this._cachedDestination = null;
       this._cachedDestinations = null;
+      this._destCache = null;
       this._cachedChannels = null;
       this.addLog('⚠️ Instabilidade ou timeout detectado. Agendando reinicialização da conexão...');
       if (this.sock) {
@@ -578,48 +585,80 @@ class WhatsappPublisher {
 
   /**
    * Resolve TODOS os destinos ativos configurados:
-   * Se Canal E Grupo estiverem configurados, envia para AMBOS juntos!
+   * 1. Suporta múltiplos grupos ou canais separados por vírgula.
+   * 2. Suporta roteamento por nicho (WHATSAPP_GROUP_CASA / WHATSAPP_GROUP_PC_GAMER).
+   * @param {string|null} [niche] - 'casa' | 'pc_gamer'
    * @returns {Promise<Array<{ id: string, name: string, type: 'channel'|'group'|'number' }>>}
    */
-  async getDestinations() {
-    if (this._cachedDestinations && this._cachedDestinations.length > 0) {
+  async getDestinations(niche = null) {
+    const hasNicheOverride = niche && (
+      ((String(niche).toLowerCase().includes('pc') || String(niche).toLowerCase().includes('gamer') || String(niche).toLowerCase().includes('hardware')) && (env.whatsappGroupPcGamer || env.whatsappChannelPcGamer)) ||
+      ((String(niche).toLowerCase().includes('casa') || String(niche).toLowerCase().includes('lar')) && (env.whatsappGroupCasa || env.whatsappChannelCasa))
+    );
+
+    if (!hasNicheOverride && this._cachedDestinations && this._cachedDestinations.length > 0) {
       return this._cachedDestinations;
     }
 
-    const destinations = [];
-    const targetChannel = env.whatsappTargetChannel;
-    const targetGroup = env.whatsappTargetGroup;
+    if (hasNicheOverride && this._nicheDestCache && this._nicheDestCache[niche]) {
+      return this._nicheDestCache[niche];
+    }
+
+    let targetChannel = env.whatsappTargetChannel;
+    let targetGroup = env.whatsappTargetGroup;
     const targetNumber = env.whatsappTargetNumber;
 
-    // 1. Tenta resolver Canal do WhatsApp
-    if (targetChannel) {
-      try {
-        const channel = await this.resolveChannel(targetChannel);
-        if (channel && channel.id) {
-          destinations.push(channel);
-          logger.info(`📢 Destino ativo adicionado: [CANAL] "${channel.name}" (${channel.id})`);
-        } else {
-          logger.warn(`⚠️ Canal do WhatsApp "${targetChannel}" configurado mas não localizado.`);
-        }
-      } catch (err) {
-        logger.warn(`Erro ao resolver canal "${targetChannel}": ${err.message}`);
+    // Roteamento inteligente por nicho em instância única
+    if (hasNicheOverride) {
+      const cleanNiche = String(niche).toLowerCase();
+      if ((cleanNiche.includes('pc') || cleanNiche.includes('gamer') || cleanNiche.includes('hardware'))) {
+        targetGroup = env.whatsappGroupPcGamer || targetGroup;
+        targetChannel = env.whatsappChannelPcGamer || targetChannel;
+      } else if ((cleanNiche.includes('casa') || cleanNiche.includes('lar'))) {
+        targetGroup = env.whatsappGroupCasa || targetGroup;
+        targetChannel = env.whatsappChannelCasa || targetChannel;
       }
     }
 
-    // 2. Tenta resolver Grupo do WhatsApp
-    if (targetGroup) {
-      try {
-        const group = await this.resolveGroup(targetGroup);
-        if (group && group.id) {
-          if (!destinations.some(d => d.id === group.id)) {
-            destinations.push(group);
-            logger.info(`👥 Destino ativo adicionado: [GRUPO] "${group.name}" (${group.id})`);
+    const destinations = [];
+
+    // 1. Tenta resolver Canal(is) do WhatsApp (suporta múltiplos separados por vírgula)
+    if (targetChannel) {
+      const channelTargets = String(targetChannel).split(',').map(c => c.trim()).filter(Boolean);
+      for (const cTarget of channelTargets) {
+        try {
+          const channel = await this.resolveChannel(cTarget);
+          if (channel && channel.id) {
+            if (!destinations.some(d => d.id === channel.id)) {
+              destinations.push(channel);
+              logger.info(`📢 Destino ativo adicionado: [CANAL] "${channel.name}" (${channel.id})`);
+            }
+          } else {
+            logger.warn(`⚠️ Canal do WhatsApp "${cTarget}" configurado mas não localizado.`);
           }
-        } else {
-          logger.warn(`⚠️ Grupo do WhatsApp "${targetGroup}" configurado mas não localizado.`);
+        } catch (err) {
+          logger.warn(`Erro ao resolver canal "${cTarget}": ${err.message}`);
         }
-      } catch (err) {
-        logger.warn(`Erro ao resolver grupo "${targetGroup}": ${err.message}`);
+      }
+    }
+
+    // 2. Tenta resolver Grupo(s) do WhatsApp (suporta múltiplos separados por vírgula)
+    if (targetGroup) {
+      const groupTargets = String(targetGroup).split(',').map(g => g.trim()).filter(Boolean);
+      for (const gTarget of groupTargets) {
+        try {
+          const group = await this.resolveGroup(gTarget);
+          if (group && group.id) {
+            if (!destinations.some(d => d.id === group.id)) {
+              destinations.push(group);
+              logger.info(`👥 Destino ativo adicionado: [GRUPO] "${group.name}" (${group.id})`);
+            }
+          } else {
+            logger.warn(`⚠️ Grupo do WhatsApp "${gTarget}" configurado mas não localizado.`);
+          }
+        } catch (err) {
+          logger.warn(`Erro ao resolver grupo "${gTarget}": ${err.message}`);
+        }
       }
     }
 
@@ -631,9 +670,14 @@ class WhatsappPublisher {
     }
 
     if (destinations.length > 0) {
-      this._cachedDestinations = destinations;
-      this._cachedDestination = destinations[0];
-      this._cachedGroupId = destinations[0].id;
+      if (hasNicheOverride) {
+        this._nicheDestCache = this._nicheDestCache || {};
+        this._nicheDestCache[niche] = destinations;
+      } else {
+        this._cachedDestinations = destinations;
+        this._cachedDestination = destinations[0];
+        this._cachedGroupId = destinations[0].id;
+      }
     }
 
     return destinations;
@@ -806,7 +850,8 @@ class WhatsappPublisher {
     }
     
     try {
-      const destinations = await this.getDestinations();
+      const itemNiche = item.niche || item.category || env.niche;
+      const destinations = await this.getDestinations(itemNiche);
       if (!destinations || destinations.length === 0) {
           logger.error('❌ Não foi possível determinar nenhum destino ativo (Canal, Grupo ou Número).');
           return false;

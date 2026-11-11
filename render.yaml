@@ -1,7 +1,8 @@
 # ==============================================================================
-# RENDER.YAML - CONFIGURAÇÃO DE DEPLOY DO BOT NO RENDER
+# RENDER.YAML - CONFIGURAÇÃO DE DEPLOY DO BOT NO RENDER (MULTI-NICHO & MULTI-GRUPOS)
 # ==============================================================================
 # Define o serviço Web em container Docker, variáveis de ambiente e agendamentos cron.
+# Permite rodar com 1 única conexão de WhatsApp atendendo 1 ou múltiplos grupos simultâneos.
 # ==============================================================================
 
 services:
@@ -27,7 +28,44 @@ services:
       - key: ADMIN_PASS
         sync: false
 
-      # Filtros de Qualidade e Reputação de Ofertas (Busca Automática)
+      # ------------------------------------------------------------------------
+      # CONFIGURAÇÃO DE NICHO E IA
+      # ------------------------------------------------------------------------
+      # Nicho ativo: "casa" ou "pc_gamer"
+      - key: NICHE
+        value: "casa"
+
+      # Chave de Inteligência Artificial Gemini (Curadoria Dinâmica e Variação de Copy)
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # ------------------------------------------------------------------------
+      # DESTINOS DO WHATSAPP (1 CONEXÃO -> MÚLTIPLOS GRUPOS)
+      # ------------------------------------------------------------------------
+      # Opção A: Lista separada por vírgula em WHATSAPP_TARGET_GROUP ou WHATSAPP_TARGET_CHANNEL
+      # Exemplo: "OFERTAS LAR 🏡, Ofertas PC Gamer 🎮"
+      - key: WHATSAPP_TARGET_CHANNEL
+        value: "OFERTAS LAR 🏡"
+      - key: WHATSAPP_TARGET_GROUP
+        value: "OFERTAS LAR 🏡"
+
+      # Opção B: Destinos separados por nicho (Roteamento inteligente automático)
+      - key: WHATSAPP_GROUP_CASA
+        value: "OFERTAS LAR 🏡"
+      - key: WHATSAPP_CHANNEL_CASA
+        value: "OFERTAS LAR 🏡"
+      - key: WHATSAPP_GROUP_PC_GAMER
+        value: "Ofertas PC Gamer 🎮"
+      - key: WHATSAPP_CHANNEL_PC_GAMER
+        value: ""
+
+      # Número de WhatsApp para testes diretos (Fallback)
+      - key: WHATSAPP_TARGET_NUMBER
+        value: "5569984520192"
+
+      # ------------------------------------------------------------------------
+      # FILTROS DE QUALIDADE DE OFERTAS
+      # ------------------------------------------------------------------------
       - key: MIN_REVIEWS
         value: "0"
       - key: MIN_RATING
@@ -37,27 +75,18 @@ services:
       - key: REQUIRE_TRUSTED_SELLER
         value: "true"
 
+      # ------------------------------------------------------------------------
+      # BANCO DE DADOS & AFILIADOS
+      # ------------------------------------------------------------------------
       # URL de conexão do PostgreSQL (Supabase) - configurado nas secrets do Render
       - key: DATABASE_URL
         sync: false
 
-      # Número de WhatsApp para testes diretos
-      - key: WHATSAPP_TARGET_NUMBER
-        value: "5569984520192"
-
-      # Canal do WhatsApp onde as ofertas serão postadas
-      - key: WHATSAPP_TARGET_CHANNEL
-        value: "OfertaLar"
-
-      # Nome exato do grupo do WhatsApp onde as ofertas serão postadas
-      - key: WHATSAPP_TARGET_GROUP
-        value: "OfertaLar"
-
-      # Tag de afiliado do Mercado Livre - configurada nas secrets do Render
+      # Tag de afiliado do Mercado Livre
       - key: ML_AFFILIATE_TAG
         sync: false
 
-      # Lista de palavras-chave do nicho Casa e Eletrodomésticos para captura rotativa
+      # Palavras-chave de busca (deixe vazio se quiser usar o pool dinâmico do nicho)
       - key: ML_SEARCH_KEYWORD
         value: "Panelas, frigideiras, Talheres, pratos, copos, Air Fryer, Liquidificador, Micro-ondas, Cafeteira, Potes herméticos, Porta temperos, Tábua de corte, Vassoura, Rodo, Mop esfregão, Balde, Panos de limpeza, Sabão líquido, Detergente, Desinfetante, Água sanitária, Amaciante, Esponjas, Luvas de limpeza, Máquina de lavar, Varal, Ferro de passar, Tábua de passar, Cesto de roupa, Organizadores de roupa, Sofá, Rack painel TV, Televisão, Tapete sala, Cortina, Ventilador, Cama colchão, Travesseiros, Lençóis, Cobertores, Guarda-roupa, Cabides, Chuveiro, Toalhas banho, Tapete de banheiro, Lixeira banheiro, Espelho banheiro, Porta sabonete, Caixas organizadoras, Organizadores de gaveta, Prateleiras, Nichos parede, Carrinho com rodinhas, Quadros decorativos, Luminárias decorativas, Plantas artificiais, Espelhos decorativos, Velas decorativas, Almofadas, Cortinas estilizadas, Tapetes decorativos"
 
@@ -69,10 +98,24 @@ services:
       - key: CRON_PUBLISH_SCHEDULE
         value: "*/5 * * * *"
 
-      # OAuth 2.0 Mercado Livre
+      # ------------------------------------------------------------------------
+      # OAUTH MERCADO LIVRE
+      # ------------------------------------------------------------------------
       - key: ML_CLIENT_ID
         value: "7921110595606583"
       - key: ML_CLIENT_SECRET
         sync: false
       - key: ML_REDIRECT_URI
         value: "https://ml-afiliados-bot-f1w7.onrender.com/auth/callback"
+
+      # ------------------------------------------------------------------------
+      # SHOPEE (OPCIONAL)
+      # ------------------------------------------------------------------------
+      - key: USE_SHOPEE
+        value: "true"
+      - key: SHOPEE_APP_ID
+        sync: false
+      - key: SHOPEE_SECRET
+        sync: false
+      - key: SHOPEE_AFFILIATE_TAG
+        sync: false

@@ -132,3 +132,4 @@ module.exports = {
   getDynamicSearchQuery,
   extractRealCouponData
 };
+
