@@ -1468,7 +1468,7 @@
                 if (data.success) {
                     alert('✅ ' + (data.message || 'Mensagem de teste enviada com sucesso!'));
                 } else {
-                    alert('⚠️ ' + (data.error || 'Falha ao enviar mensagem'));
+                    let errDetails = data.error || 'Falha ao enviar mensagem'; if (data.availableGroups && data.availableGroups.length > 0) { errDetails += '\n\n📋 Grupos detectados:\n• ' + data.availableGroups.join('\n• '); } alert('⚠️ ' + errDetails);
                 }
             } catch (e) {
                 alert('❌ Erro na requisição: ' + e.message);

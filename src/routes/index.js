@@ -240,18 +240,54 @@ router.get('/whatsapp/channels', async (req, res) => {
     }
 });
 
+// 4.1. Listar grupos/comunidades do WhatsApp aos quais a conta conectada tem acesso
+router.get('/whatsapp/groups', async (req, res) => {
+    const whatsappPublisher = require('../publishers/whatsapp.publisher');
+    try {
+        const groups = await whatsappPublisher.getParticipatingGroups(true);
+        const list = Object.values(groups || {}).map(g => ({
+            id: g.id,
+            subject: g.subject,
+            isCommunity: !!g.isCommunity,
+            isAnnounce: !!(g.announce || g.isCommunityAnnounce),
+            participantsCount: g.participants?.length || 0
+        }));
+        const currentDest = await whatsappPublisher.getDestinationInfo();
+        return res.json({ success: true, count: list.length, currentDestination: currentDest, groups: list });
+    } catch (err) {
+        logger.error('[API /whatsapp/groups] Erro:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 // 5. Testar envio de mensagem para todos os destinos configurados (Canal e Grupo juntos)
 router.post('/whatsapp/test', async (req, res) => {
     const whatsappPublisher = require('../publishers/whatsapp.publisher');
     const { target, message } = req.body;
     try {
+        if (!whatsappPublisher.isReady || !whatsappPublisher.sock) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'WhatsApp não está conectado. Escaneie o QR Code no dashboard primeiro.' 
+            });
+        }
         const testText = message || '🚀 *OfertaLar Bot:* Teste de envio disparado com sucesso para o Canal e Grupo do WhatsApp!';
         const sent = await whatsappPublisher.sendTextMessage(testText, target || null);
         const dest = await whatsappPublisher.getDestinationInfo();
         if (sent) {
             return res.json({ success: true, message: 'Mensagem de teste enviada com sucesso para os destinos configurados!', destination: dest });
         } else {
-            return res.status(500).json({ success: false, error: 'Falha ao enviar mensagem de teste. Verifique se o WhatsApp está conectado e se os destinos foram encontrados.', destination: dest });
+            let availableGroups = [];
+            try {
+                const grps = await whatsappPublisher.getParticipatingGroups();
+                availableGroups = Object.values(grps || {}).map(g => g.subject);
+            } catch (_) {}
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Falha ao enviar mensagem de teste. Verifique se o nome do grupo está correto ou se o bot é administrador do grupo/comunidade.', 
+                destination: dest,
+                availableGroups
+            });
         }
     } catch (err) {
         logger.error('[API /whatsapp/test] Erro:', err);

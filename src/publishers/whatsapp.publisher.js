@@ -24,6 +24,20 @@ const upgradeToHdImageUrl = (url) => {
     return url;
 };
 
+/**
+ * Normaliza o nome de grupos/canais para busca resiliente (ignora acentos, emojis e símbolos).
+ */
+function normalizeGroupName(str) {
+  if (!str) return '';
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 class WhatsappPublisher {
   constructor() {
     this.sock = null;
@@ -503,11 +517,38 @@ class WhatsappPublisher {
   }
 
   /**
+   * Retorna os grupos dos quais a conta participa com cache de curta duração (60s).
+   */
+  async getParticipatingGroups(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && this._cachedGroupList && (now - (this._cachedGroupListTime || 0) < 60000)) {
+      return this._cachedGroupList;
+    }
+    if (!this.sock || typeof this.sock.groupFetchAllParticipating !== 'function') {
+      return {};
+    }
+    try {
+      const groups = await promiseTimeout(
+        this.sock.groupFetchAllParticipating(),
+        15000,
+        'Timeout ao buscar lista de grupos'
+      );
+      this._cachedGroupList = groups;
+      this._cachedGroupListTime = now;
+      return groups;
+    } catch (err) {
+      logger.error('Erro ao buscar lista de grupos participantes:', err.message || err);
+      return this._cachedGroupList || {};
+    }
+  }
+
+  /**
    * Resolve um alvo para Grupo do WhatsApp (@g.us).
    * Suporta:
    * 1. JID direto (...@g.us)
    * 2. Link de convite (https://chat.whatsapp.com/...)
-   * 3. Nome exato ou parcial do grupo na conta
+   * 3. Nome exato ou resiliente (ignora diferenças de emojis e acentos)
+   * 4. Comunidades e grupos de avisos
    */
   async resolveGroup(target) {
     if (!target || !this.sock) return null;
@@ -540,24 +581,46 @@ class WhatsappPublisher {
       }
     }
 
-    // 3. Busca por nome nos grupos em que a conta participa
+    // 3. Busca por nome nos grupos em que a conta participa (inclui comunidades)
     try {
-      const groups = await promiseTimeout(
-        this.sock.groupFetchAllParticipating(),
-        15000,
-        'Timeout ao buscar lista de grupos'
-      );
+      const groups = await this.getParticipatingGroups();
+      const groupList = Object.values(groups || {});
       const groupName = clean.toLowerCase();
-      let group = Object.values(groups).find(g => (g.subject || '').toLowerCase().trim() === groupName);
-      if (!group) {
-        group = Object.values(groups).find(g => (g.subject || '').toLowerCase().includes(groupName) || groupName.includes((g.subject || '').toLowerCase()));
+      const normClean = normalizeGroupName(clean);
+
+      // A. Match exato case-insensitive
+      let group = groupList.find(g => (g.subject || '').toLowerCase().trim() === groupName);
+
+      // B. Match normalizado (ignora emojis como 🏠 vs 🏡 e acentos)
+      if (!group && normClean) {
+        group = groupList.find(g => normalizeGroupName(g.subject) === normClean);
       }
+
+      // C. Match por substring normalizada
+      if (!group && normClean) {
+        group = groupList.find(g => {
+          const normSubject = normalizeGroupName(g.subject);
+          return normSubject && (normSubject.includes(normClean) || normClean.includes(normSubject));
+        });
+      }
+
+      // D. Se o alvo for o nome da comunidade, busca o grupo de avisos da comunidade
+      if (!group && normClean) {
+        group = groupList.find(g => {
+          const isComm = g.isCommunity || g.isCommunityAnnounce;
+          const normSubject = normalizeGroupName(g.subject);
+          return isComm && normSubject && (normSubject.includes(normClean) || normClean.includes(normSubject));
+        });
+      }
+
       if (group) {
-        this.addLog(`✅ Grupo encontrado: "${group.subject}" (${group.id})`);
-        return { id: group.id, name: group.subject, type: 'group' };
+        const isAnnounce = !!(group.announce || group.isCommunityAnnounce);
+        this.addLog(`✅ Grupo encontrado: "${group.subject}" (${group.id})${isAnnounce ? ' [Avisos/Somente Admins]' : ''}`);
+        return { id: group.id, name: group.subject, type: 'group', isAnnounce };
       } else {
-        const availableGroups = Object.values(groups).map(g => `"${g.subject}"`).join(', ');
+        const availableGroups = groupList.map(g => `"${g.subject}"`).join(', ');
         logger.warn(`❌ Grupo "${clean}" não encontrado. Grupos disponíveis: ${availableGroups}`);
+        this.addLog(`❌ Grupo "${clean}" não encontrado na conta.`);
       }
     } catch (gErr) {
       logger.error('Erro ao buscar grupos:', gErr.stack || gErr);
@@ -627,14 +690,21 @@ class WhatsappPublisher {
       const channelTargets = String(targetChannel).split(',').map(c => c.trim()).filter(Boolean);
       for (const cTarget of channelTargets) {
         try {
-          const channel = await this.resolveChannel(cTarget);
+          let channel = await this.resolveChannel(cTarget);
+          if (!channel) {
+            // Fallback: se o usuário configurou grupo/comunidade no campo de canal por engano
+            const grpFallback = await this.resolveGroup(cTarget);
+            if (grpFallback && grpFallback.id) {
+              channel = grpFallback;
+            }
+          }
           if (channel && channel.id) {
             if (!destinations.some(d => d.id === channel.id)) {
               destinations.push(channel);
-              logger.info(`📢 Destino ativo adicionado: [CANAL] "${channel.name}" (${channel.id})`);
+              logger.info(`📢 Destino ativo adicionado: [${channel.type.toUpperCase()}] "${channel.name}" (${channel.id})`);
             }
           } else {
-            logger.warn(`⚠️ Canal do WhatsApp "${cTarget}" configurado mas não localizado.`);
+            logger.warn(`⚠️ Canal/Grupo do WhatsApp "${cTarget}" configurado mas não localizado.`);
           }
         } catch (err) {
           logger.warn(`Erro ao resolver canal "${cTarget}": ${err.message}`);
