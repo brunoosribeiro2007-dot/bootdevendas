@@ -31,9 +31,13 @@ services:
       # ------------------------------------------------------------------------
       # CONFIGURAÇÃO DE NICHO E IA
       # ------------------------------------------------------------------------
-      # Nicho ativo: "casa" ou "pc_gamer"
+      # Nicho ativo: "multi" (Captura e publica para Casa E PC Gamer simultaneamente)
       - key: NICHE
-        value: "casa"
+        value: "multi"
+
+      # Desativa dados de seed falsos/estáticos para garantir 100% de promoções reais
+      - key: ENABLE_SEED_PRODUCTS
+        value: "false"
 
       # Chave de Inteligência Artificial Gemini (Curadoria Dinâmica e Variação de Copy)
       - key: GEMINI_API_KEY

@@ -328,6 +328,7 @@ const getNextApprovedItem = async () => {
             }
 
             item.status = 'sending';
+            item.niche = item.description || item.niche;
             return item;
         }
     } catch (err) {
@@ -615,8 +616,28 @@ const countUsers = async () => {
     }
 };
 
+const purgeSeedProducts = async () => {
+    try {
+        const seedIds = ['MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3'];
+        for (const sId of seedIds) {
+            await db.run("DELETE FROM queue WHERE product_id = ?", [sId]);
+            await db.run("DELETE FROM products WHERE id = ?", [sId]);
+        }
+        await db.run("DELETE FROM queue WHERE product_id IN (SELECT id FROM products WHERE quality_score = 100 AND rating = 4.8 AND reviews_count = 120 AND (original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%'))", []);
+        await db.run("DELETE FROM products WHERE quality_score = 100 AND rating = 4.8 AND reviews_count = 120 AND (original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%')", []);
+        logger.info('🧹 Limpeza preventiva de produtos estáticos de seed concluída.');
+    } catch (e) {
+        logger.debug(`[Repository] Erro ao limpar produtos de seed: ${e.message}`);
+    }
+};
+
 const seedInitialProductsIfEmpty = async () => {
     try {
+        if (!env.enableSeedProducts) {
+            logger.debug('[Seed] Importação de produtos estáticos desativada para priorizar promoções 100% reais (ENABLE_SEED_PRODUCTS = false).');
+            return 0;
+        }
+
         const approvedCountRow = await db.get("SELECT COUNT(*) as count FROM queue WHERE status = 'approved'");
         const approvedCount = approvedCountRow ? parseInt(approvedCountRow.count, 10) : 0;
         if (approvedCount > 0) {
@@ -786,6 +807,7 @@ module.exports = {
   saveOrUpdateUser,
   countUsers,
   seedInitialProductsIfEmpty,
+  purgeSeedProducts,
   saveOAuthTokens,
   getOAuthTokens,
   getSafeOAuthStatus,

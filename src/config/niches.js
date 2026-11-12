@@ -90,6 +90,9 @@ const NICHES = {
  */
 const normalizeNicheId = (niche) => {
   const clean = String(niche || '').toLowerCase().trim();
+  if (clean.includes('multi') || clean.includes('all') || clean.includes('both') || clean.includes('duplo')) {
+    return 'multi';
+  }
   if (clean.includes('pc') || clean.includes('gamer') || clean.includes('hardware') || clean.includes('tech')) {
     return 'pc_gamer';
   }

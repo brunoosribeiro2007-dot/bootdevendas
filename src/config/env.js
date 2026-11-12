@@ -6,6 +6,8 @@ const nicheProfile = getNicheProfile(activeNicheId);
 
 module.exports = {
   niche: activeNicheId,
+  isMultiNiche: activeNicheId === 'multi' || Boolean(process.env.WHATSAPP_GROUP_CASA && process.env.WHATSAPP_GROUP_PC_GAMER),
+  enableSeedProducts: (process.env.ENABLE_SEED_PRODUCTS || 'false').toLowerCase() === 'true',
   nicheProfile,
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'production',

@@ -19,13 +19,17 @@ const shopeeService = require('../services/shopee.service');
 const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 const couponFetcher = require('../services/couponFetcher.service');
+const { SEARCH_POOLS } = require('../helpers/miningSeeds');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BLOCO 1: ESTADO GLOBAL DO JOB
 // ──────────────────────────────────────────────────────────────────────────────
 
-// Controla qual fatia da lista de palavras-chave será processada no ciclo atual
-let keywordRotationIndex = 0;
+// Controla qual fatia da lista de palavras-chave será processada no ciclo atual por nicho
+const keywordRotationIndices = {
+  casa: 0,
+  pc_gamer: 0
+};
 
 // Trava atômica de concorrência para impedir múltiplos ciclos simultâneos
 let isCapturing = false;
@@ -145,83 +149,103 @@ const captureTask = async () => {
       }
     }
 
-    // 4. Seleção e rotação de palavras-chave para o ciclo atual
-    const keywordsString = env.mlSearchKeyword || '';
-    const allKeywords = keywordsString
-      .split(',')
-      .map(k => k.trim())
-      .filter(k => k.length > 0);
-
-    if (allKeywords.length === 0) {
-      logger.warn('⚠️ Nenhuma keyword configurada! Verifique ML_SEARCH_KEYWORD.');
-      return;
-    }
-
-    const maxPerCycle = 5; // Limita a 5 palavras por ciclo para economizar RAM no Render
-    const startIndex = keywordRotationIndex % allKeywords.length;
-    const selectedKeywords = [];
-
-    for (let i = 0; i < Math.min(maxPerCycle, allKeywords.length); i++) {
-      const idx = (startIndex + i) % allKeywords.length;
-      selectedKeywords.push(allKeywords[idx]);
-    }
-    keywordRotationIndex = (startIndex + maxPerCycle) % allKeywords.length;
-
-    logger.info(`📋 Ciclo de captura: ${selectedKeywords.length} de ${allKeywords.length} keywords (Bloco #${startIndex + 1})`);
-    logger.info(`📋 Keywords deste ciclo: ${selectedKeywords.join(', ')}`);
+    // 4. Identificação dos nichos a capturar no ciclo atual
+    const targetNiches = env.isMultiNiche ? ['casa', 'pc_gamer'] : [env.niche];
+    logger.info(`🎯 Nichos ativos para captura de ofertas: ${targetNiches.join(', ')}`);
 
     const allProductsInCycle = [];
 
-    // ─── 5. Captura das Abas Oficiais de Ofertas do Mercado Livre ──────────────
-    // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa; MLB1648 (Informática) para PC Gamer
-    const dealsCategories = env.niche === 'pc_gamer' ? ['MLB1648'] : ['MLB1574', 'MLB5726'];
-    const dealsOffsets = [1, 49, 97, 145, 193]; // 5 páginas por categoria
+    for (const currentNiche of targetNiches) {
+      logger.info(`📂 [${currentNiche.toUpperCase()}] Iniciando coleta de promoções...`);
 
-    logger.info('🔥 Coletando ofertas reais das abas oficiais de promoções do Mercado Livre...');
-    for (const catId of dealsCategories) {
-      for (const offset of dealsOffsets) {
-        try {
-          const deals = await mlService.searchDealsByCategory(catId, offset);
-          if (deals && deals.length > 0) {
-            allProductsInCycle.push(...deals);
-          } else {
-            // Se o offset retornou 0 (ou bloqueio anti-bot), pula os próximos offsets desta categoria
+      // ─── 5. Captura das Abas Oficiais de Ofertas do Mercado Livre ──────────────
+      // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa; MLB1648 (Informática) para PC Gamer
+      const dealsCategories = currentNiche === 'pc_gamer' ? ['MLB1648'] : ['MLB1574', 'MLB5726'];
+      const dealsOffsets = [1, 49, 97]; // Coleta até 3 páginas por categoria
+
+      logger.info(`🔥 [${currentNiche.toUpperCase()}] Coletando ofertas das abas oficiais de promoções...`);
+      for (const catId of dealsCategories) {
+        for (const offset of dealsOffsets) {
+          try {
+            const deals = await mlService.searchDealsByCategory(catId, offset);
+            if (deals && deals.length > 0) {
+              for (const d of deals) {
+                d.niche = currentNiche;
+                d.description = currentNiche;
+              }
+              allProductsInCycle.push(...deals);
+            } else {
+              break;
+            }
+            await new Promise(r => setTimeout(r, 600));
+          } catch (err) {
+            logger.error(`❌ Erro ao capturar aba de ofertas para categoria ${catId} (offset ${offset}): ${err.message}`);
             break;
           }
-          // Pausa entre requisições para evitar rate-limit
-          await new Promise(r => setTimeout(r, 800));
-        } catch (err) {
-          logger.error(`❌ Erro ao capturar aba de ofertas para categoria ${catId} (offset ${offset}): ${err.message}`);
-          break;
         }
       }
-    }
 
-    // ─── 6. Captura por Palavras-Chave (Mercado Livre e Shopee) ───────────────
-    for (const keyword of selectedKeywords) {
-      try {
-        logger.info(`🔎 Buscando por: ${keyword}`);
+      // ─── 6. Captura por Palavras-Chave do Nicho (Mercado Livre e Shopee) ─────────
+      let nicheKeywords = [];
+      if (currentNiche === 'pc_gamer') {
+        nicheKeywords = (SEARCH_POOLS && SEARCH_POOLS.pc_gamer) || [
+          'ssd nvme 1tb', 'memoria ram ddr4', 'memoria ram ddr5', 'teclado mecanico gamer',
+          'mouse gamer sem fio', 'placa de video rtx', 'processador ryzen', 'monitor 144hz', 'fonte 650w'
+        ];
+      } else {
+        const configuredCasaKeywords = (env.mlSearchKeyword || '')
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
+        nicheKeywords = configuredCasaKeywords.length > 0 ? configuredCasaKeywords : ((SEARCH_POOLS && SEARCH_POOLS.casa) || ['air fryer', 'jogo de panelas', 'micro-ondas']);
+      }
 
-        // Busca no Mercado Livre
-        const mlProducts = await mlService.searchProducts(keyword, env.mlCategory);
-        logger.info(`📦 Busca no ML por '${keyword}' retornou ${mlProducts.length} produtos.`);
-        if (mlProducts.length > 0) {
-          allProductsInCycle.push(...mlProducts);
-        }
+      const maxPerCycle = env.isMultiNiche ? 3 : 5;
+      const startIndex = (keywordRotationIndices[currentNiche] || 0) % nicheKeywords.length;
+      const selectedKeywords = [];
 
-        // Busca na Shopee (caso ativada)
-        if (env.useShopee && env.shopeeAppId && env.shopeeSecret) {
-          const shopeeProducts = await shopeeService.searchProducts(keyword);
-          logger.info(`📦 Busca na Shopee por '${keyword}' retornou ${shopeeProducts.length} produtos.`);
-          if (shopeeProducts.length > 0) {
-            allProductsInCycle.push(...shopeeProducts);
+      for (let i = 0; i < Math.min(maxPerCycle, nicheKeywords.length); i++) {
+        const idx = (startIndex + i) % nicheKeywords.length;
+        selectedKeywords.push(nicheKeywords[idx]);
+      }
+      keywordRotationIndices[currentNiche] = (startIndex + maxPerCycle) % nicheKeywords.length;
+
+      logger.info(`📋 [${currentNiche.toUpperCase()}] Keywords deste ciclo: ${selectedKeywords.join(', ')}`);
+
+      for (const keyword of selectedKeywords) {
+        try {
+          logger.info(`🔎 [${currentNiche.toUpperCase()}] Buscando por: "${keyword}"`);
+
+          // Busca no Mercado Livre
+          const catParam = currentNiche === 'pc_gamer' ? 'MLB1648' : env.mlCategory;
+          const mlProducts = await mlService.searchProducts(keyword, catParam);
+          logger.info(`📦 [${currentNiche.toUpperCase()}] Busca no ML por '${keyword}' retornou ${mlProducts.length} produtos.`);
+          if (mlProducts.length > 0) {
+            for (const p of mlProducts) {
+              p.niche = currentNiche;
+              p.description = currentNiche;
+            }
+            allProductsInCycle.push(...mlProducts);
           }
-        }
 
-        // Intervalo de segurança com jitter entre termos
-        await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-      } catch (keywordError) {
-        logger.error(`❌ Erro ao processar palavra-chave "${keyword}": ${keywordError.message}`);
+          // Busca na Shopee (caso ativada)
+          if (env.useShopee && env.shopeeAppId && env.shopeeSecret) {
+            const shopeeProducts = await shopeeService.searchProducts(keyword);
+            logger.info(`📦 [${currentNiche.toUpperCase()}] Busca na Shopee por '${keyword}' retornou ${shopeeProducts.length} produtos.`);
+            if (shopeeProducts.length > 0) {
+              for (const sp of shopeeProducts) {
+                sp.niche = currentNiche;
+                sp.description = currentNiche;
+              }
+              allProductsInCycle.push(...shopeeProducts);
+            }
+          }
+
+          // Intervalo de segurança com jitter entre termos
+          await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500));
+        } catch (keywordError) {
+          logger.error(`❌ [${currentNiche.toUpperCase()}] Erro ao processar palavra-chave "${keyword}": ${keywordError.message}`);
+        }
       }
     }
 
@@ -284,6 +308,7 @@ const captureTask = async () => {
 
         product.originalLink = product.link;
         product.link = finalLink;
+        product.description = product.niche || env.niche;
 
         // Salva na fila de publicações aprovadas
         const added = await queueService.addToQueue(product, '', '');
@@ -300,7 +325,7 @@ const captureTask = async () => {
                   description: cObj.rule || cObj.description || `Cupom ${cObj.code} no Mercado Livre`,
                   rule: cObj.rule || cObj.description || 'Desconto no anúncio',
                   minAmount: cObj.minAmount || 0,
-                  category: env.niche,
+                  category: product.niche || env.niche,
                   source: 'ml_product_capture',
                   isActive: 1
                 });

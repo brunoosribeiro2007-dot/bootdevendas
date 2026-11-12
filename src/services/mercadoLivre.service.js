@@ -135,10 +135,12 @@ function validarQualidadeProduto(produto, customThresholds = {}) {
 
     // ── 2. FILTRO DE NOTA MÉDIA (MÍNIMO: 4.5 ESTRELAS) ────────────────────────
     let rating = 0;
-    if (typeof produto.rating === 'number') {
+    if (typeof produto.rating === 'number' && produto.rating > 0) {
         rating = produto.rating;
     } else if (typeof produto.rating === 'string') {
         rating = parseFloat(produto.rating.replace(',', '.')) || 0;
+    } else if (!produto.rating && (reviews === 0 || minReviews === 0)) {
+        rating = minRating;
     }
 
     if (rating < minRating) {
@@ -854,8 +856,8 @@ const searchProducts = async (searchTerm, category = '') => {
     // 2ª TENTATIVA: SCRAPER DIRETO
     // ─────────────────────────────────────────────────────────────────
     const userAgents = [
-        'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
     ];
 
     try {

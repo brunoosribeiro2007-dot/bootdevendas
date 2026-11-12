@@ -65,7 +65,10 @@ const startServer = async () => {
       // Destrava itens que ficaram com status 'sending' no boot anterior
       const repository = require('./database/repository');
       await repository.resetSendingStatus();
-      await repository.seedInitialProductsIfEmpty();
+      await repository.purgeSeedProducts();
+      if (env.enableSeedProducts) {
+        await repository.seedInitialProductsIfEmpty();
+      }
       break;
     } catch (err) {
       logger.error(`❌ Tentativa de conexão ao banco ${tentativa}/3 falhou: ${err.message}`);

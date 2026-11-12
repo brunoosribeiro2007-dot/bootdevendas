@@ -939,7 +939,7 @@ class WhatsappPublisher {
     }
     
     try {
-      const itemNiche = item.niche || item.category || env.niche;
+      const itemNiche = item.niche || item.description || item.category || env.niche;
       const destinations = await this.getDestinations(itemNiche);
       if (!destinations || destinations.length === 0) {
           logger.error('❌ Não foi possível determinar nenhum destino ativo (Canal, Grupo ou Número).');

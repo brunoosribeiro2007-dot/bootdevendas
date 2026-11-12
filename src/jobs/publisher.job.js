@@ -154,14 +154,14 @@ const publishTask = async (force = false) => {
 
     // ─── 4. Busca do Próximo Item Aprovado na Fila ───────────────────────────
     let item = await repository.getNextApprovedItem();
-    if (!item) {
+    if (!item && env.enableSeedProducts) {
       logger.info('ℹ️ Fila de publicações aprovadas está vazia. Verificando seed inicial...');
       await repository.seedInitialProductsIfEmpty();
       item = await repository.getNextApprovedItem();
     }
 
     if (!item) {
-      logger.info('ℹ️ Fila continua vazia após verificação de seed. Disparando captura emergencial em segundo plano...');
+      logger.info('ℹ️ Fila de publicações aprovadas está vazia. Disparando captura de promoções reais em segundo plano...');
       const captureJob = require('./capture.job');
       const capturePromise = captureJob.captureTask();
       if (capturePromise && typeof capturePromise.catch === 'function') {
@@ -170,7 +170,7 @@ const publishTask = async (force = false) => {
       return;
     }
 
-    logger.info(`📤 Tentando publicar item com ID da fila: ${item.id} ("${item.title}")`);
+    logger.info(`📤 Tentando publicar item com ID da fila: ${item.id} ("${item.title}") [Nicho: ${item.niche || item.description || 'geral'}]`);
 
     try {
       // Revalida a prontidão do WhatsApp antes de disparar a mídia
@@ -181,7 +181,9 @@ const publishTask = async (force = false) => {
       }
 
       // ─── 5. Formatação Dinâmica da Mensagem Promocional ─────────────────────
-      if (env.nicheProfile && env.nicheProfile.copywriter === 'gamer') {
+      const itemNiche = item.niche || item.description || env.niche;
+      item.niche = itemNiche;
+      if (itemNiche === 'pc_gamer' || (env.nicheProfile && env.nicheProfile.copywriter === 'gamer')) {
         try {
           const gamerCopywriter = require('../services/gamerCopywriter.service');
           item.formatted_message = await gamerCopywriter.formatForWhatsApp(item, item.link);
