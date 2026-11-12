@@ -20,6 +20,7 @@ const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 const couponFetcher = require('../services/couponFetcher.service');
 const { SEARCH_POOLS } = require('../helpers/miningSeeds');
+const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BLOCO 1: ESTADO GLOBAL DO JOB
@@ -260,6 +261,12 @@ const captureTask = async () => {
 
     for (const product of allProductsInCycle) {
       if (!product.title || !product.price || !product.link) continue;
+
+      // 🛡️ ANTI-ACESSÓRIO ENGANOSO: Bloqueia suportes plásticos, capinhas, películas, etc.
+      if (isDeceptiveAccessory(product)) {
+        logger.info(`⏩ [Anti-Accessory] Produto ignorado por ser acessório/suporte: "${product.title}"`);
+        continue;
+      }
 
       // 🛡️ VALIDAÇÃO RIGOROSA DE QUALIDADE E REPUTAÇÃO DO PRODUTO
       // Exige: >= 100 avaliações de compradores, nota média >= 4.5, promoção/desconto ativo e vendedor qualificado

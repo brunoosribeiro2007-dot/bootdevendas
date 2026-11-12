@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
+const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PARÂMETROS CONFIGURÁVEIS DE QUALIDADE E REPUTAÇÃO DO PRODUTO (BUSCA AUTOMÁTICA)
@@ -118,6 +119,12 @@ function validarQualidadeProduto(produto, customThresholds = {}) {
 
     const title = produto.title || 'Produto sem título';
 
+    // ── 0. FILTRO DE ACESSÓRIOS SECUNDÁRIOS / ENGANOSOS ──────────────────────
+    if (isDeceptiveAccessory(produto)) {
+        logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": acessório secundário/enganoso (suporte, capa, película, etc.).`);
+        return false;
+    }
+
     // ── 1. FILTRO DE QUANTIDADE DE AVALIAÇÕES (MÍNIMO: 100) ────────────────────
     let reviews = 0;
     if (typeof produto.reviewsCount === 'number') {
@@ -203,6 +210,10 @@ function validarQualidadeProduto(produto, customThresholds = {}) {
  */
 function obterMotivoReprovacao(produto, customThresholds = {}) {
     if (!produto || typeof produto !== 'object') return 'Produto inexistente ou inválido';
+
+    if (isDeceptiveAccessory(produto)) {
+        return 'Acessório descartado (suporte, capa, película ou skin incompatível com produto principal)';
+    }
 
     const minReviews = customThresholds.minReviews !== undefined ? customThresholds.minReviews : (env.minReviews || MIN_REVIEWS);
     const minRating = customThresholds.minRating !== undefined ? customThresholds.minRating : (env.minRating || MIN_RATING);

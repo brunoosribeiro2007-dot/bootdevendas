@@ -13,28 +13,27 @@ const logger = require('../config/logger');
 const SEARCH_POOLS = {
   pc_gamer: [
     // Gabinetes Gamer
-    'gabinete gamer aquario',
+    'gabinete gamer aquario rise mode',
     'gabinete gamer lateral vidro',
-    'gabinete mesh argb',
+    'gabinete mesh argb mid tower',
+    'gabinete gamer redragon',
     // Consoles e Controles (PS5, DualSense)
     'console playstation 5 slim',
-    'playstation 5',
-    'controle ps5 dualsense',
-    'controle playstation 5 sem fio',
+    'playstation 5 slim 1tb',
+    'controle sony dualsense ps5',
+    'controle sem fio dualsense ps5',
     // Televisão / Smart TV
-    'smart tv 4k 50 polegadas',
-    'smart tv 4k 55 polegadas',
+    'smart tv 50 polegadas 4k',
+    'smart tv 55 polegadas 4k',
     'smart tv oled 120hz',
-    'smart tv gamer 4k',
+    'smart tv gamer 4k 120hz',
     // Celulares de Alto Desempenho (Linha S25, iPhone)
-    'samsung galaxy s25',
+    'smartphone samsung galaxy s25',
     'samsung galaxy s25 ultra',
     'samsung galaxy s24 ultra',
-    'galaxy s25 5g',
-    'iphone 16 pro max',
-    'iphone 16',
-    'iphone 15 pro max',
-    'iphone 15',
+    'smartphone apple iphone 16',
+    'smartphone apple iphone 16 pro',
+    'smartphone apple iphone 15',
     // Informática & Hardware PC Gamer
     'notebook gamer rtx',
     'monitor gamer ips 144hz',

@@ -18,6 +18,7 @@ const logger = require('../config/logger');
 const repository = require('../database/repository');
 const publisher = require('../publishers/whatsapp.publisher');
 const formatterService = require('../services/formatter.service');
+const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BLOCO 1: UTILITÁRIOS DE FUSO HORÁRIO E JANELA DE OPERAÇÃO
@@ -162,6 +163,13 @@ const publishTask = async (force = false) => {
         item = await repository.getNextApprovedItem();
       }
 
+      // 🛡️ Filtro de Proteção: se o item da fila for suporte/acessório falso-positivo, descarta imediatamente
+      while (item && isDeceptiveAccessory(item)) {
+        logger.warn(`🚫 [PublisherJob] Rejeitando acessório da fila ID ${item.id} ("${item.title}") por ser suporte/capa em vez de produto principal.`);
+        await repository.deleteProductAndQueueItem(item.product_id, item.description);
+        item = await repository.getNextApprovedItemByNiche(targetNiche);
+      }
+
       if (item) {
         logger.info(`📤 Tentando publicar item para o nicho [${targetNiche}]: ID ${item.id} ("${item.title}")`);
         try {
@@ -215,6 +223,12 @@ const publishTask = async (force = false) => {
       if (!anyItem && env.enableSeedProducts) {
         await repository.seedInitialProductsIfEmpty();
         anyItem = await repository.getNextApprovedItem();
+      }
+
+      if (anyItem && isDeceptiveAccessory(anyItem)) {
+        logger.warn(`🚫 [PublisherJob] Rejeitando acessório avulso da fila ID ${anyItem.id} ("${anyItem.title}") por ser suporte/capa.`);
+        await repository.deleteProductAndQueueItem(anyItem.product_id, anyItem.description);
+        anyItem = null;
       }
 
       if (anyItem) {

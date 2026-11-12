@@ -3,6 +3,8 @@
  * Classifica e extrai especificações técnicas de ofertas de computadores e hardware gamer.
  */
 
+const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+
 class GamerClassifierService {
   constructor() {
     this.CATEGORIES = {
@@ -81,6 +83,18 @@ class GamerClassifierService {
 
     const t = title.toLowerCase();
     const specs = this.extractSpecs(title, t);
+
+    // 0. VERIFICAÇÃO: Acessórios secundários / enganosos (suporte plástico, capinha, película, etc.)
+    if (isDeceptiveAccessory({ title, price: metadata.price })) {
+      return {
+        category: this.CATEGORIES.OTHER_GAMER,
+        subCategory: 'Acessórios Secundários',
+        specs,
+        appealScore: 20,
+        appealBadge: null,
+        isGamer: false
+      };
+    }
 
     // 1. VERIFICAÇÃO: GPUs (Placas de Vídeo)
     const gpuMatch = this.matchGpu(t);

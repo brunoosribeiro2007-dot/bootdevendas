@@ -371,14 +371,19 @@ class FormatterService {
     if (/notebook gamer|laptop gamer/.test(tNorm)) return 'NOTEBOOK GAMER DE ALTO DESEMPENHO';
 
     // ─── Consoles e Controles (PS5, DualSense, Xbox) ─────────────────────────
-    if (/controle (sem fio )?(dualsense|ps5)|dualsense/.test(tNorm)) return 'CONTROLE PS5 DUALSENSE EM OFERTA';
-    if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'CONSOLE PLAYSTATION 5 EM SUPER OFERTA';
-    if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM OFERTA';
-    if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM OFERTA';
+    const isAccessory = /\b(suporte|base|porta|capa|capinha|case|silicone|skin|adesivo|grip|grips|protetor|cabo|dock|extensor|pelicula|pelicula|lente)\b/i.test(tNorm);
 
-    // ─── Celulares de Alto Desempenho (Linha S25, iPhone) ────────────────────
-    if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE TOP DE LINHA COM DESCONTO';
-    if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY LINHA S EM OFERTA';
+    if (!isAccessory) {
+      if (/controle (sem fio )?(dualsense|ps5)|dualsense/.test(tNorm)) return 'CONTROLE PS5 DUALSENSE EM OFERTA';
+      if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'CONSOLE PLAYSTATION 5 EM SUPER OFERTA';
+      if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM OFERTA';
+      if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM OFERTA';
+      if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE TOP DE LINHA COM DESCONTO';
+      if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY LINHA S EM OFERTA';
+    } else {
+      if (/suporte.*(controle|ps5|dualsense|video game|videogame)/.test(tNorm) || /porta.*controle/.test(tNorm)) return 'SUPORTE PARA CONTROLES';
+      if (/suporte.*tv/.test(tNorm)) return 'SUPORTE PARA SMART TV';
+    }
 
     // ─── Câmera de segurança e monitoramento ─────────────────────────────────
     if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';

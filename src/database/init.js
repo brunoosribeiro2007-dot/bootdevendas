@@ -383,13 +383,25 @@ const initializeDB = async () => {
                 WHERE coupon IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA') 
                    OR LENGTH(coupon) < 3;
             `;
+            const cleanupAccessoriesQuery = `
+                DELETE FROM queue WHERE product_id IN (
+                    SELECT id FROM products WHERE 
+                       (LOWER(title) LIKE '%suporte%' AND (LOWER(title) LIKE '%controle%' OR LOWER(title) LIKE '%ps5%' OR LOWER(title) LIKE '%ps4%' OR LOWER(title) LIKE '%dualsense%'))
+                    OR (LOWER(title) LIKE '%porta base%')
+                    OR (LOWER(title) LIKE '%capa%' AND (LOWER(title) LIKE '%controle%' OR LOWER(title) LIKE '%iphone%' OR LOWER(title) LIKE '%galaxy%'))
+                    OR (LOWER(title) LIKE '%pelicula%' OR LOWER(title) LIKE '%película%')
+                    OR (LOWER(title) LIKE '%skin%' AND (LOWER(title) LIKE '%ps5%' OR LOWER(title) LIKE '%playstation%'))
+                );
+            `;
             if (USE_POSTGRES && pool) {
                 await pool.query(cleanupCouponsQuery);
                 await pool.query(cleanupProductsQuery);
+                await pool.query(cleanupAccessoriesQuery);
             } else {
                 const sDb = getSqliteDb();
                 sDb.exec(cleanupCouponsQuery);
                 sDb.exec(cleanupProductsQuery);
+                sDb.exec(cleanupAccessoriesQuery);
             }
         } catch (cleanErr) {}
 
