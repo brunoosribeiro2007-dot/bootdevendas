@@ -253,6 +253,30 @@ class FormatterService {
   }
 
   /**
+   * Encurtador de fallback para links que não puderam ser encurtados via API oficial do ML (meli.la)
+   */
+  async shortenUrlFallback(longUrl) {
+    if (!longUrl || process.env.NODE_ENV === 'test') return longUrl;
+    try {
+      const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, { timeout: 3500 });
+      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
+        logger.info(`✅ Link encurtado via TinyURL: ${res.data.trim()}`);
+        return res.data.trim();
+      }
+    } catch (_) {}
+
+    try {
+      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, { timeout: 3500 });
+      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
+        logger.info(`✅ Link encurtado via is.gd: ${res.data.trim()}`);
+        return res.data.trim();
+      }
+    } catch (_) {}
+
+    return longUrl;
+  }
+
+  /**
    * Roteador e formatador central de links.
    * Identifica a plataforma (Shopee vs Mercado Livre) e executa as estratégias em cascata.
    * 
@@ -311,10 +335,10 @@ class FormatterService {
       }
     }
 
-    // Estratégia D: Fallback oficial do Mercado Livre com parâmetro matt_tool
+    // Estratégia D: Fallback oficial do Mercado Livre com parâmetro matt_tool (encurtado se possível)
     const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
-    logger.warn('⚠️ FALLBACK: Retornando link oficial do Mercado Livre com tag de afiliado.');
-    return longAffiliateLink;
+    const cleanShortLink = await this.shortenUrlFallback(longAffiliateLink);
+    return cleanShortLink;
   }
 
   /**

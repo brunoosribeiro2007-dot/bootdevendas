@@ -152,67 +152,99 @@ const publishTask = async (force = false) => {
     // ─── 3. Recuperação de Itens Travados ─────────────────────────────────────
     await repository.resetStuckSendingItems();
 
-    // ─── 4. Busca do Próximo Item Aprovado na Fila ───────────────────────────
-    let item = await repository.getNextApprovedItem();
-    if (!item && env.enableSeedProducts) {
-      logger.info('ℹ️ Fila de publicações aprovadas está vazia. Verificando seed inicial...');
-      await repository.seedInitialProductsIfEmpty();
-      item = await repository.getNextApprovedItem();
-    }
+    // ─── 4. Busca e Disparo Concorrente por Nicho (Zero Espera entre Grupos) ────
+    const targetNiches = env.isMultiNiche ? ['pc_gamer', 'casa'] : [env.niche];
+    let totalPublished = 0;
 
-    if (!item) {
-      logger.info('ℹ️ Fila de publicações aprovadas está vazia. Disparando captura de promoções reais em segundo plano...');
-      const captureJob = require('./capture.job');
-      const capturePromise = captureJob.captureTask();
-      if (capturePromise && typeof capturePromise.catch === 'function') {
-        capturePromise.catch(err => logger.error('Erro na captura emergencial:', err));
-      }
-      return;
-    }
-
-    logger.info(`📤 Tentando publicar item com ID da fila: ${item.id} ("${item.title}") [Nicho: ${item.niche || item.description || 'geral'}]`);
-
-    try {
-      // Revalida a prontidão do WhatsApp antes de disparar a mídia
-      if (!publisher.isReady) {
-        logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
-        await repository.updateQueueStatus(item.id, 'approved');
-        return;
+    for (const targetNiche of targetNiches) {
+      let item = await repository.getNextApprovedItemByNiche(targetNiche);
+      if (!item && !env.isMultiNiche) {
+        item = await repository.getNextApprovedItem();
       }
 
-      // ─── 5. Formatação Dinâmica da Mensagem Promocional ─────────────────────
-      const itemNiche = item.niche || item.description || env.niche;
-      item.niche = itemNiche;
-      if (itemNiche === 'pc_gamer' || (env.nicheProfile && env.nicheProfile.copywriter === 'gamer')) {
+      if (item) {
+        logger.info(`📤 Tentando publicar item para o nicho [${targetNiche}]: ID ${item.id} ("${item.title}")`);
         try {
-          const gamerCopywriter = require('../services/gamerCopywriter.service');
-          item.formatted_message = await gamerCopywriter.formatForWhatsApp(item, item.link);
-        } catch (gamerErr) {
-          logger.warn(`[PublisherJob] Falha no copywriter gamer (${gamerErr.message}). Usando fallback padrão.`);
-          item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+          if (!publisher.isReady) {
+            logger.warn('⚠️ WhatsApp desconectou entre busca e envio. Item preservado na fila.');
+            await repository.updateQueueStatus(item.id, 'approved');
+            break;
+          }
+
+          item.niche = targetNiche;
+          if (targetNiche === 'pc_gamer' || (env.nicheProfile && env.nicheProfile.copywriter === 'gamer')) {
+            try {
+              const gamerCopywriter = require('../services/gamerCopywriter.service');
+              item.formatted_message = await gamerCopywriter.formatForWhatsApp(item, item.link);
+            } catch (gamerErr) {
+              logger.warn(`[PublisherJob] Falha no copywriter gamer (${gamerErr.message}). Usando fallback padrão.`);
+              item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+            }
+          } else {
+            item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+          }
+
+          const publishPromise = publisher.publish(item);
+          const success = await Promise.race([
+            publishPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Watchdog timeout: envio excedeu 60s')), 60000))
+          ]);
+
+          if (success) {
+            await repository.deleteProductAndQueueItem(item.product_id, item.description);
+            logger.info(`✅ Item ${item.id} ("${item.title}") publicado com sucesso para [${targetNiche.toUpperCase()}] e removido da fila.`);
+            totalPublished++;
+          } else {
+            logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
+            await repository.updateQueueStatus(item.id, 'approved');
+          }
+
+          // Intervalo seguro de 3 segundos entre disparos para grupos diferentes
+          await new Promise(r => setTimeout(r, 3000));
+        } catch (itemError) {
+          logger.error(`❌ Erro crítico ao processar/publicar item ${item.id}:`, itemError.stack || itemError.message || itemError);
+          await repository.updateQueueStatus(item.id, 'approved');
         }
       } else {
-        item.formatted_message = await formatterService.generateFormattedMessage(item, item.link);
+        logger.info(`ℹ️ Fila sem produtos aprovados no momento para o nicho [${targetNiche}].`);
+      }
+    }
+
+    if (totalPublished === 0) {
+      let anyItem = await repository.getNextApprovedItem();
+      if (!anyItem && env.enableSeedProducts) {
+        await repository.seedInitialProductsIfEmpty();
+        anyItem = await repository.getNextApprovedItem();
       }
 
-      // ─── 6. Disparo da Mensagem (Texto + Imagem) em todos os destinos com Watchdog ───
-      const publishPromise = publisher.publish(item);
-      const success = await Promise.race([
-        publishPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Watchdog timeout: envio excedeu 60s')), 60000))
-      ]);
-
-      if (success) {
-        // Remove produto publicado do banco e da fila para economizar espaço
-        await repository.deleteProductAndQueueItem(item.product_id, item.description);
-        logger.info(`✅ Item ${item.id} ("${item.title}") publicado com sucesso e removido da fila.`);
+      if (anyItem) {
+        try {
+          const itemNiche = anyItem.niche || anyItem.description || env.niche;
+          anyItem.niche = itemNiche;
+          if (itemNiche === 'pc_gamer' || (env.nicheProfile && env.nicheProfile.copywriter === 'gamer')) {
+            const gamerCopywriter = require('../services/gamerCopywriter.service');
+            anyItem.formatted_message = await gamerCopywriter.formatForWhatsApp(anyItem, anyItem.link);
+          } else {
+            anyItem.formatted_message = await formatterService.generateFormattedMessage(anyItem, anyItem.link);
+          }
+          const ok = await publisher.publish(anyItem);
+          if (ok) {
+            await repository.deleteProductAndQueueItem(anyItem.product_id, anyItem.description);
+            logger.info(`✅ Item avulso ${anyItem.id} publicado com sucesso.`);
+          } else {
+            await repository.updateQueueStatus(anyItem.id, 'approved');
+          }
+        } catch (e) {
+          await repository.updateQueueStatus(anyItem.id, 'approved');
+        }
       } else {
-        logger.error(`❌ Falha ao publicar item ${item.id}. Item permanece na fila para reprocessamento.`);
-        await repository.updateQueueStatus(item.id, 'approved');
+        logger.info('ℹ️ Fila de publicações aprovadas vazia. Disparando captura de promoções reais em segundo plano...');
+        const captureJob = require('./capture.job');
+        const capturePromise = captureJob.captureTask();
+        if (capturePromise && typeof capturePromise.catch === 'function') {
+          capturePromise.catch(err => logger.error('Erro na captura emergencial:', err));
+        }
       }
-    } catch (itemError) {
-      logger.error(`❌ Erro crítico ao processar/publicar item ${item.id}:`, itemError.stack || itemError.message || itemError);
-      await repository.updateQueueStatus(item.id, 'approved');
     }
   } catch (error) {
     logger.error('❌ Erro no ciclo de publicação:', error);

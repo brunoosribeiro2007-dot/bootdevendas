@@ -337,6 +337,38 @@ const getNextApprovedItem = async () => {
     }
 };
 
+const getNextApprovedItemByNiche = async (niche) => {
+    try {
+        const cleanNiche = String(niche || '').toLowerCase();
+        let query = `
+            SELECT q.*, p.title, p.price, p.link, p.original_link, p.image_url, p.description, p.coupon, p.old_price, p.discount_percent, p.rating, p.reviews_count, p.quality_score
+            FROM queue q 
+            JOIN products p ON q.product_id = p.id 
+            WHERE q.status = 'approved' 
+            AND (p.description = ? OR p.description LIKE ?)
+            ORDER BY p.quality_score DESC NULLS LAST, p.created_at ASC
+            LIMIT 1
+        `;
+        let item = await db.get(query, [cleanNiche, `%${cleanNiche}%`]);
+        if (!item) return null;
+
+        const updateQuery = `
+            UPDATE queue 
+            SET status = 'sending', updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ? AND status = 'approved'
+        `;
+        const lockRes = await db.run(updateQuery, [item.id]);
+        if (lockRes.rowCount === 0) return null;
+
+        item.status = 'sending';
+        item.niche = cleanNiche;
+        return item;
+    } catch (err) {
+        logger.error(`Erro ao buscar próximo item do nicho ${niche}:`, err);
+        return null;
+    }
+};
+
 const deleteProductAndQueueItem = async (productId, niche) => {
     try {
         if (niche) {
@@ -789,6 +821,7 @@ module.exports = {
   getQueue,
   updateQueueStatus,
   getNextApprovedItem,
+  getNextApprovedItemByNiche,
   deleteProductAndQueueItem,
   clearQueue,
   clearQueueOnly,
