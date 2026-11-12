@@ -24,8 +24,12 @@ class PromoParserService {
 
     // Termos que não devem ser confundidos com códigos de cupom
     this.invalidCouponTerms = new Set([
-      'OFF', 'DESCONTO', 'FRETE', 'GRATIS', 'GRÁTIS', 'REAIS', 'PRODUTO',
-      'OFERTA', 'CONFIRA', 'ACESSE', 'LINK', 'AQUI', 'LIMITADO', 'ESGOTANDO'
+      'OFF', 'DESCONTO', 'DESCONTOS', 'FRETE', 'GRATIS', 'GRÁTIS', 'REAIS', 'PRODUTO', 'PRODUTOS',
+      'OFERTA', 'OFERTAS', 'CONFIRA', 'ACESSE', 'LINK', 'AQUI', 'LIMITADO', 'ESGOTANDO',
+      'COM', 'SEM', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'EM', 'NO', 'NA', 'NOS', 'NAS',
+      'POR', 'PARA', 'PRA', 'PRO', 'PELO', 'PELA', 'ATE', 'ATÉ', 'MAIS', 'MENOS', 'QUE',
+      'SEU', 'SUA', 'TODO', 'TODA', 'TUDO', 'NADA', 'QUALQUER', 'APENAS', 'SOMENTE',
+      'VALE', 'LEVE', 'PAGUE', 'GANHE', 'LOJA', 'OFICIAL', 'NOVO', 'NOVA', 'ESPECIAL'
     ]);
   }
 
@@ -108,6 +112,13 @@ class PromoParserService {
   extractCouponCode(text) {
     if (!text || typeof text !== 'string') return null;
 
+    try {
+      const couponFetcher = require('./couponFetcher.service');
+      if (couponFetcher && typeof couponFetcher.extractCouponCode === 'function') {
+        return couponFetcher.extractCouponCode(text);
+      }
+    } catch (e) {}
+
     const match = text.match(this.couponRegex);
     if (!match || !match[1]) return null;
 
@@ -117,6 +128,7 @@ class PromoParserService {
     if (this.invalidCouponTerms.has(code)) return null;
     if (code.length < 3 || code.length > 25) return null;
     if (!/^[A-Z0-9_-]+$/.test(code)) return null;
+    if (!/\d/.test(code) && code.length < 4) return null;
 
     return code;
   }

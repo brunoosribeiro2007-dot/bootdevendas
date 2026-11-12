@@ -38,9 +38,21 @@ const BLOCKED_COUPON_CODES = new Set([
   'ACESSRIOSPRAVOC', 'ITENSPARASUAMOTO', 'SOPAULOAUTOPEAS', 'VERECOMPRAR2024',
   'CAMAINBOXLOJAOFICIAL', 'OOCEANDROPSA97032', 'UNIVERSALCASES2', 'BLMOTOPARTS',
   'SAOPAULOACESSORIOS', 'ANIMAFESTCAMPINAS', 'BRIMPORTSPEAS', 'SHOPFLEXCOM',
-  'CASA', 'LAR', 'ELETRO', 'OFF', 'CUPOM', 'DESCONTO', 'PRODUTO', 'PRODUTOS',
-  'SELECIONADOS', 'COMPRA', 'MINIMA', 'SEMCOMPRA', 'FRETE', 'FRETEGRATIS',
-  'CONFIRA', 'OFERTA', 'MELI', 'BR', 'MERCADOLIVRE'
+  'CASA', 'LAR', 'ELETRO', 'OFF', 'CUPOM', 'CUPONS', 'DESCONTO', 'DESCONTOS',
+  'PRODUTO', 'PRODUTOS', 'SELECIONADOS', 'SELECIONADAS', 'COMPRA', 'COMPRAS',
+  'MINIMA', 'MÍNIMA', 'SEMCOMPRA', 'FRETE', 'FRETEGRATIS', 'GRATIS', 'GRÁTIS',
+  'CONFIRA', 'OFERTA', 'OFERTAS', 'MELI', 'BR', 'MERCADOLIVRE', 'MERCADO', 'LIVRE',
+  'COM', 'SEM', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'EM', 'NO', 'NA', 'NOS', 'NAS',
+  'POR', 'PARA', 'PRA', 'PRO', 'PELO', 'PELA', 'PELOS', 'PELAS', 'ATE', 'ATÉ',
+  'MAIS', 'MENOS', 'QUE', 'SEU', 'SUA', 'SEUS', 'SUAS', 'ESTE', 'ESTA', 'ESSE', 'ESSA',
+  'ISTO', 'ISSO', 'AQUI', 'ALI', 'HOJE', 'ONTEM', 'TODO', 'TODA', 'TODOS', 'TODAS',
+  'TUDO', 'NADA', 'QUALQUER', 'APENAS', 'SOMENTE', 'BEM', 'MUITO', 'POUCO', 'SIM',
+  'NAO', 'NÃO', 'VOCE', 'VOCÊ', 'CODIGO', 'CÓDIGO', 'COD', 'CODS', 'PROMO', 'PROMOS',
+  'PROMOCAO', 'PROMOÇÃO', 'VALE', 'LEVE', 'PAGUE', 'GANHE', 'LOJA', 'OFICIAL',
+  'NOVO', 'NOVA', 'NOVOS', 'NOVAS', 'CATEGORIA', 'CLIQUE', 'ACESSE', 'VEJA', 'PEGA',
+  'PEGUE', 'USE', 'RESGATE', 'APROVEITE', 'BENEFICIO', 'VANTAGEM', 'LINK', 'URL',
+  'SITE', 'APP', 'APLICATIVO', 'EXCLUSIVO', 'ESPECIAL', 'VALOR', 'PRECO', 'PREÇO',
+  'CARRINHO', 'CHECKOUT', 'ITEM', 'ITENS', 'SHOPEE', 'AMAZON', 'MAGALU'
 ]);
 
 /**
@@ -128,10 +140,24 @@ function isValidRealCouponCode(c) {
   if (!c || typeof c !== 'string') return false;
   const clean = c.trim().toUpperCase();
   if (clean.length < 3 || clean.length > 25) return false;
+  if (!/^[A-Z0-9_-]+$/.test(clean)) return false;
+
+  // Cupons válidos no Mercado Livre quase invariavelmente contêm números (ex: CASA15, TECH10, APP10).
+  // Se for puramente alfabético (sem dígitos):
+  // 1) Rejeita qualquer código com menos de 4 caracteres (ex: COM, PRA, POR, SEM, APP, LAR, PIX).
+  // 2) Rejeita qualquer palavra da lista de bloqueio ou termos comuns.
+  if (!/\d/.test(clean)) {
+    if (clean.length < 4) return false;
+  }
+
   if (BLOCKED_COUPON_CODES.has(clean)) return false;
-  // Bloqueia termos que são apenas palavras-chave soltas
-  if (/^(OFF|DESCONTO|CUPOM|FRETE|REAIS)$/i.test(clean)) return false;
-  return /^[A-Z0-9_-]+$/.test(clean);
+
+  // Bloqueia termos que são apenas palavras-chave soltas ou variações
+  if (/^(OFF|DESCONTO|CUPOM|FRETE|REAIS|GRATIS|PRODUTO|OFERTA|CONFIRA|COMPRA|MINIMA|ACESSE|APROVEITE|ESPECIAL|SELECAO|CATEGORIA|VALIDO|VALIDA)$/i.test(clean)) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -406,10 +432,7 @@ async function fetchFromHtml() {
         if (explicitCodeEl.length > 0) {
           code = explicitCodeEl.first().text().trim().replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
         } else {
-          const matchCode = fullText.match(/(?:c[oó]digo|cupom|use o cupom|c[oó]d\.?)\s*[:=-]?\s*([A-Za-z0-9_-]{3,20})/i);
-          if (matchCode) {
-            code = matchCode[1].toUpperCase();
-          }
+          code = extractCouponCode(fullText) || '';
         }
 
         if (!code || !isValidRealCouponCode(code)) return;
@@ -853,24 +876,29 @@ async function setActiveDailyCoupon(code) {
  */
 function extractCouponCode(input) {
   if (!input || typeof input !== 'string') return null;
-  const cleanStr = input.trim().toUpperCase();
 
-  if (isValidRealCouponCode(cleanStr)) {
-    return cleanStr;
+  // 1. Caso a string inteira já seja um código limpo (ex: "CASA15", "PROMO50")
+  const trimmed = input.trim().replace(/^[*_`"'“”‘’]+|[*_`"'“”‘’]+$/g, '');
+  if (/^[A-Z0-9_-]{3,25}$/i.test(trimmed) && isValidRealCouponCode(trimmed)) {
+    return trimmed.toUpperCase();
   }
 
-  const matchPrefix = input.match(/(?:cupom|c[oó]digo|use o cupom|c[oó]d\.?)\s*[:=-]?\s*([A-Za-z0-9_-]{3,25})/i);
-  if (matchPrefix) {
-    const candidate = matchPrefix[1].trim().toUpperCase();
+  // 2. Procura com prefixos explícitos de cupom (suporta markdown *, _, emojis 🎟️, 🏷️)
+  const prefixRegex = /(?:cupom|use\s+o\s+cupom|c[oó]digo|c[oó]d\.?|🎟️|🏷️)\s*[:=-]?\s*[*_`"'“”‘’]?\s*([A-Za-z0-9_-]{3,25})\b/gi;
+  let match;
+  while ((match = prefixRegex.exec(input)) !== null) {
+    const candidate = match[1].trim().replace(/^[*_`"'“”‘’]+|[*_`"'“”‘’]+$/g, '').toUpperCase();
     if (isValidRealCouponCode(candidate)) {
       return candidate;
     }
   }
 
-  const tokens = input.split(/[\s,.:;!?"'()\[\]{}–—-]+/);
+  // 3. Fallback: Procura por tokens alfanuméricos que CONTENHAM DÍGITOS (ex: "Use CASA15 para economizar")
+  // Importante: Exige ao menos um dígito para evitar que palavras em português da frase (ex: "Brasil", "Mesa") sejam tratadas como cupom
+  const tokens = input.split(/[\s,.:;!?"'“”‘’()\[\]{}–—\-/%]+/);
   for (const token of tokens) {
-    const cleanToken = token.trim().toUpperCase();
-    if (isValidRealCouponCode(cleanToken)) {
+    const cleanToken = token.trim().replace(/^[*_`"'“”‘’]+|[*_`"'“”‘’]+$/g, '').toUpperCase();
+    if (/\d/.test(cleanToken) && isValidRealCouponCode(cleanToken)) {
       return cleanToken;
     }
   }

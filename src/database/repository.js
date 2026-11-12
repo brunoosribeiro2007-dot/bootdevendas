@@ -497,6 +497,11 @@ const saveCoupon = async (coupon) => {
     try {
         if (!coupon || !coupon.code) return 0;
         const code = String(coupon.code).trim().toUpperCase();
+        if (code.length < 3 || code.length > 25) return 0;
+        if (!/\d/.test(code) && code.length < 4) return 0;
+        if (/^(COM|SEM|PARA|PRA|POR|DE|DO|DA|DOS|DAS|OFF|DESCONTO|CUPOM|FRETE|REAIS|GRATIS|PRODUTO|OFERTA)$/i.test(code)) {
+            return 0;
+        }
         const description = coupon.description || coupon.title || '';
         const rule = coupon.rule || coupon.discount || '';
         const category = coupon.category || null;

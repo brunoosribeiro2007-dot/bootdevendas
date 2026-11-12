@@ -370,6 +370,29 @@ const initializeDB = async () => {
         } else {
             runSqliteDDL();
         }
+
+        try {
+            const cleanupCouponsQuery = `
+                DELETE FROM coupons 
+                WHERE code IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA') 
+                   OR LENGTH(code) < 3;
+            `;
+            const cleanupProductsQuery = `
+                UPDATE products 
+                SET coupon = '' 
+                WHERE coupon IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA') 
+                   OR LENGTH(coupon) < 3;
+            `;
+            if (USE_POSTGRES && pool) {
+                await pool.query(cleanupCouponsQuery);
+                await pool.query(cleanupProductsQuery);
+            } else {
+                const sDb = getSqliteDb();
+                sDb.exec(cleanupCouponsQuery);
+                sDb.exec(cleanupProductsQuery);
+            }
+        } catch (cleanErr) {}
+
         logger.info('✅ Banco de dados inicializado com sucesso.');
     } catch (err) {
         logger.error('❌ Erro ao inicializar banco de dados:', err.message);

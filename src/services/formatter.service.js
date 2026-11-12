@@ -40,10 +40,17 @@ if (env.useMlAffiliateUi) {
  */
 const isValidCouponCode = (coupon) => {
   if (!coupon || typeof coupon !== 'string') return false;
-  const clean = coupon.trim();
-  if (/\s|%|R\$|off|desconto|grátis|gratis/i.test(clean)) {
+  const clean = coupon.trim().toUpperCase();
+  if (/\s|%|R\$/i.test(clean)) {
     return false;
   }
+  if (/^(off|desconto|grátis|gratis)$/i.test(clean)) {
+    return false;
+  }
+  if (couponFetcher && typeof couponFetcher.isValidRealCouponCode === 'function') {
+    return couponFetcher.isValidRealCouponCode(clean);
+  }
+  if (!/\d/.test(clean) && clean.length < 4) return false;
   return /^[A-Z0-9_-]{3,25}$/i.test(clean);
 };
 
@@ -559,6 +566,11 @@ class FormatterService {
         if (clean.startsWith('CUPOM ')) clean = clean.substring(6).trim();
         couponCode = clean;
       }
+    }
+
+    if (couponCode && !isValidCouponCode(couponCode)) {
+      couponCode = null;
+      couponRule = '';
     }
 
     product.coupon = couponCode || '';
