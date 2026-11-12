@@ -43,6 +43,12 @@ module.exports = {
   // Configurações do Módulo de IA Gemini
   geminiApiKey: process.env.GEMINI_API_KEY || '',
 
+  // Parâmetros de Afiliado Mercado Livre & Amazon
+  mlAccessToken: process.env.ML_ACCESS_TOKEN || '',
+  mlMattTool: process.env.ML_MATT_TOOL || process.env.ML_AFFILIATE_TAG || 'bv20260330080614',
+  mlMattWord: process.env.ML_MATT_WORD || '',
+  amazonPartnerTag: process.env.AMAZON_PARTNER_TAG || process.env.AMAZON_TAG || '',
+
   // Configurações do Módulo de Marca d'Água e Postagem
   watermarkPath: process.env.WATERMARK_PATH || '',
   defaultStoreName: process.env.DEFAULT_STORE_NAME || nicheProfile.defaultStoreName,

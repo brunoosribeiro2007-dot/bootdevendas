@@ -75,3 +75,4 @@ describe('AccessoryDetector - Anti-Deceptive Filter', () => {
     expect(isDeceptiveAccessory(realGabinete)).toBe(false);
   });
 });
+

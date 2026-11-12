@@ -92,3 +92,4 @@ function isDeceptiveAccessory(produto) {
 module.exports = {
   isDeceptiveAccessory
 };
+
