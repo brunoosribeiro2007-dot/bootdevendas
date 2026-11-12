@@ -91,7 +91,11 @@ services:
 
       # Tag de afiliado do Mercado Livre
       - key: ML_AFFILIATE_TAG
-        sync: false
+        value: "bv20260330080614"
+
+      # Cookies oficiais da conta de afiliado para geração 100% garantida do link meli.la
+      - key: ML_COOKIE_STRING
+        value: "cp=76890000; hide-cookie-banner=3301797589-COOKIE_PREFERENCES_ALREADY_SET; cookiesPreferencesLoggedFallback=%7B%22userId%22%3A3301797589%2C%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Atrue%2C%22performance%22%3Atrue%2C%22traceability%22%3Atrue%7D%7D; cookiesPreferencesLogged=%7B%22userId%22%3A3301797589%2C%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Atrue%2C%22performance%22%3Atrue%2C%22traceability%22%3Atrue%7D%7D; cookiesPreferencesNotLogged=%7B%22categories%22%3A%7B%22advertising%22%3Atrue%2C%22functionality%22%3Atrue%2C%22performance%22%3Atrue%2C%22traceability%22%3Atrue%7D%7D; ssid=ghy-070211-naArCx0meW6bjZzt0RVKWusDeRyyzM-__-3301797589-__-1877699609409--RRR_0-RRR_0; _gcl_au=1.1.1655135422.1783005118; _csrf=SQiMoXJ2V7o1IyRFvMBpKrec; orgnickp=BV20260330080614; _d2id=786ebc68-7f6c-4a54-bb83-e860a8ca0eaf; _hjSession_1160754=eyJpZCI6Ijk1ZTI1MzZjLTFlOTAtNDM2Yy1hMTJhLTMyOWEzZWYwNDIyNSIsImMiOjE3ODMwMDUxMTg5OTIsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MH0=; _fbp=fb.2.1783005118749.10617763184172618; NSESSIONID_qrtsid=s%3Al2bSE-ygO8DmZRJF_u3C2ar3DWr3M2wW.Ru1lALsBIVjF0Vseffsq23WMhaLLyII5nWq49iTP1TQ; orguserid=0HHtdd0h4h974; ftid=3xkk27u5qzq5DHrCcWNb2w3Bwil7yfgT-1783005120851; c_ZCvNdd=1; _hjSessionUser_1160754=eyJpZCI6ImQ3MTNiY2IwLWJmNGYtNTc5Ny1iZTk3LWY1YjUzMDNjZjQ1NyIsImNyZWF0ZWQiOjE3ODMwMDUxMTg5OTEsImV4aXN0aW5nIjpmYWxzZX0=; orguseridp=3301797589; _mldataSessionId=f9bac547-9277-43e7-b314-385c4e336a13"
 
       # Palavras-chave de busca
       - key: ML_SEARCH_KEYWORD
