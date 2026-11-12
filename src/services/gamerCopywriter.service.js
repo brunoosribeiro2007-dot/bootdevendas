@@ -169,13 +169,17 @@ class GamerCopywriterService {
 
     let emoji = '🔥';
     if (/placa de v[ií]deo|rtx|gtx|radeon|rx \d{4}/.test(t)) emoji = '🎮';
+    else if (/playstation|ps5|dualsense|controle ps5|controle playstation|xbox|nintendo|console/.test(t)) emoji = '🎮';
+    else if (/iphone|galaxy s2[345]|smartphone|celular/.test(t)) emoji = '📱';
+    else if (/smart tv|televis[aã]o|tv \d{2}|tv 4k|tv oled/.test(t)) emoji = '📺';
     else if (/monitor/.test(t)) emoji = '🖥️';
+    else if (/gabinete/.test(t)) emoji = '🕹️';
     else if (/teclado/.test(t)) emoji = '⌨️';
     else if (/mouse/.test(t)) emoji = '🖱️';
     else if (/headset|fone|audio/.test(t)) emoji = '🎧';
     else if (/processador|ryzen|core i[3579]/.test(t)) emoji = '⚡';
     else if (/ssd|nvme|mem[oó]ria ram/.test(t)) emoji = '🚀';
-    else if (/gabinete|fonte|cooler|water/.test(t)) emoji = '💻';
+    else if (/fonte|cooler|water/.test(t)) emoji = '💻';
     else if (/cadeira|mesa/.test(t)) emoji = '🪑';
 
     return { emoji, headline };

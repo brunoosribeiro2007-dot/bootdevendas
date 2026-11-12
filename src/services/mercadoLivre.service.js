@@ -743,9 +743,24 @@ const searchDailyDeals = async () => {
  * Identifica a categoria do Mercado Livre ideal com base na palavra-chave
  */
 const getCategoryForKeyword = (keyword) => {
-    const kw = keyword.toLowerCase();
+    const kw = (keyword || '').toLowerCase();
     
-    // Palavras-chave associadas a Eletrodomésticos
+    // Games e Consoles (PS5, Controles, etc.)
+    if (/ps5|playstation|dualsense|controle ps5|controle playstation|xbox|nintendo|console|jogos/i.test(kw)) {
+        return 'MLB1144'; // Games
+    }
+    
+    // Celulares e Telefones (Galaxy S25, iPhone, etc.)
+    if (/galaxy s25|galaxy s24|galaxy s23|iphone|smartphone|celular|xiaomi/i.test(kw)) {
+        return 'MLB1051'; // Celulares e Telefones
+    }
+    
+    // Informática e Hardware Gamer (Gabinete, SSD, Placa de Vídeo, etc.)
+    if (/gabinete|ssd|nvme|m\.2|ram|ddr[45]|placa de v[ií]deo|rtx|rx \d{4}|processador|ryzen|core i[3579]|monitor|teclado|mouse|headset|cooler|water cooler|fonte|notebook/i.test(kw)) {
+        return 'MLB1648'; // Informática
+    }
+    
+    // Palavras-chave associadas a Eletrodomésticos e TVs
     const applianceKeywords = [
         'air fryer', 'fryer', 'liquidificador', 'cafeteira', 'aspirador', 
         'ventilador', 'micro-ondas', 'microondas', 'batedeira', 'geladeira', 

@@ -11,6 +11,9 @@ class GamerClassifierService {
       MONITORS: 'Monitores',
       PERIPHERALS_VALUE: 'Periféricos & Custo-Benefício',
       HARDWARE_CORE: 'Hardware & Refrigeração',
+      CONSOLES_GAMES: 'Consoles & Games',
+      SMARTPHONES_TECH: 'Smartphones & Tech',
+      TVS_DISPLAYS: 'Smart TVs & Telas',
       OTHER_GAMER: 'Outros Gamer'
     };
 
@@ -112,9 +115,10 @@ class GamerClassifierService {
       };
     }
 
-    // 3. VERIFICAÇÃO: Monitores Gamer
+    // 3. VERIFICAÇÃO: Monitores Gamer (exclui TVs para não confundir com monitores de 120Hz)
+    const isTv = /smart\s*tv|televis[aã]o|\btv\b/i.test(t);
     const isMonitor = /\bmonitor\b/i.test(title) && !/press[aã]o|card[ií]aco|beb[eê]|bab[aá]|hospitalar/i.test(t);
-    if (isMonitor || specs.refreshRate || /painel\s*ips|oled\s*gamer|ultrawide/i.test(title)) {
+    if (!isTv && (isMonitor || specs.refreshRate || /painel\s*ips|oled\s*gamer|ultrawide/i.test(title))) {
       const appealScore = this.calculateMonitorAppeal(specs, metadata);
       return {
         category: this.CATEGORIES.MONITORS,
@@ -151,6 +155,45 @@ class GamerClassifierService {
         specs,
         appealScore: 70,
         appealBadge: '⚡ SETUP ESSENCIAL',
+        isGamer: true
+      };
+    }
+
+    // 6. Consoles & Controles (PS5, DualSense, Xbox, Nintendo Switch)
+    if (/playstation|ps5|dualsense|controle\s*(?:sem\s*fio|gamer|ps5|xbox)|xbox\s*(?:series|one)|nintendo\s*switch/i.test(t)) {
+      const isConsole = /console|playstation\s*5|ps5\s*(?:slim|pro)|xbox\s*series/i.test(t) && !/controle|suporte|capa|skin|cabo/i.test(t);
+      return {
+        category: this.CATEGORIES.CONSOLES_GAMES,
+        subCategory: isConsole ? 'Consoles' : 'Controles & Acessórios',
+        model: isConsole ? 'PlayStation 5 / Console' : 'Controle Gamer',
+        specs,
+        appealScore: 85,
+        appealBadge: '🎮 DESEJO GAMER',
+        isGamer: true
+      };
+    }
+
+    // 7. Smartphones de Alto Desempenho (Linha S25, iPhone)
+    if (/galaxy\s*s2[345]|samsung\s*s2[345]|iphone\s*(?:1[456]|pro|promax)|smartphone\s*(?:gamer|top)/i.test(t)) {
+      return {
+        category: this.CATEGORIES.SMARTPHONES_TECH,
+        subCategory: /iphone/i.test(t) ? 'Apple iPhone' : 'Samsung Galaxy S',
+        model: /ultra/i.test(t) ? 'Top de Linha Ultra' : 'Smartphone de Alto Desempenho',
+        specs,
+        appealScore: 85,
+        appealBadge: '📱 ALTO DESEMPENHO',
+        isGamer: true
+      };
+    }
+
+    // 8. Smart TVs & Telas Grandes (4K, OLED, Neo QLED)
+    if (/smart\s*tv|televis[aã]o|tv\s*\d{2}\b/i.test(t)) {
+      return {
+        category: this.CATEGORIES.TVS_DISPLAYS,
+        subCategory: /oled|qled|neo\s*qled/i.test(t) ? 'Smart TV Premium' : 'Smart TV 4K',
+        specs,
+        appealScore: 80,
+        appealBadge: '📺 TELA DE CINEMA',
         isGamer: true
       };
     }

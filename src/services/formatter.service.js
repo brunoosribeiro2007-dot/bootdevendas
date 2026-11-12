@@ -367,6 +367,18 @@ class FormatterService {
     if (/headset|headphone gamer/.test(tNorm)) return 'HEADSET GAMER COM SOM IMERSIVO';
     if (/cadeira gamer/.test(tNorm)) return 'CADEIRA GAMER CONFORTÁVEL';
     if (/mesa gamer|escrivaninha gamer/.test(tNorm)) return 'MESA PRA SETUP GAMER';
+    if (/gabinete/.test(tNorm)) return 'GABINETE GAMER COM ÓTIMO FLUXO DE AR';
+    if (/notebook gamer|laptop gamer/.test(tNorm)) return 'NOTEBOOK GAMER DE ALTO DESEMPENHO';
+
+    // ─── Consoles e Controles (PS5, DualSense, Xbox) ─────────────────────────
+    if (/controle (sem fio )?(dualsense|ps5)|dualsense/.test(tNorm)) return 'CONTROLE PS5 DUALSENSE EM OFERTA';
+    if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'CONSOLE PLAYSTATION 5 EM SUPER OFERTA';
+    if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM OFERTA';
+    if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM OFERTA';
+
+    // ─── Celulares de Alto Desempenho (Linha S25, iPhone) ────────────────────
+    if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE TOP DE LINHA COM DESCONTO';
+    if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY LINHA S EM OFERTA';
 
     // ─── Câmera de segurança e monitoramento ─────────────────────────────────
     if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';

@@ -110,4 +110,38 @@ describe('GamerClassifierService - Hardware & Peripheral Categorization', () => 
       expect(headset.brand).toBe('Hyperx');
     });
   });
+
+  describe('5. Consoles, Gabinetes, Smartphones & Smart TVs Classification', () => {
+    test('should classify PS5 console and DualSense controllers', () => {
+      const ps5 = gamerClassifier.classify('Console PlayStation 5 Slim 1TB Edição Digital');
+      expect(ps5.category).toBe('Consoles & Games');
+      expect(ps5.isGamer).toBe(true);
+      expect(ps5.appealScore).toBeGreaterThanOrEqual(80);
+
+      const dualsense = gamerClassifier.classify('Controle Sem Fio DualSense PS5 Midnight Black');
+      expect(dualsense.category).toBe('Consoles & Games');
+      expect(dualsense.isGamer).toBe(true);
+    });
+
+    test('should classify high-performance smartphones (Galaxy S25, iPhone)', () => {
+      const s25 = gamerClassifier.classify('Smartphone Samsung Galaxy S25 Ultra 512GB 5G Titânio');
+      expect(s25.category).toBe('Smartphones & Tech');
+      expect(s25.isGamer).toBe(true);
+
+      const iphone = gamerClassifier.classify('Apple iPhone 16 Pro 256GB Titânio Preto');
+      expect(iphone.category).toBe('Smartphones & Tech');
+      expect(iphone.isGamer).toBe(true);
+    });
+
+    test('should classify Smart TVs and Gaming Cases (Gabinetes)', () => {
+      const tv = gamerClassifier.classify('Smart TV 55 4K UHD Samsung Neo QLED 120Hz');
+      expect(tv.category).toBe('Smart TVs & Telas');
+      expect(tv.isGamer).toBe(true);
+
+      const gabinete = gamerClassifier.classify('Gabinete Gamer Aquario Rise Mode Galaxy Glass');
+      expect(gabinete.category).toBe('Hardware & Refrigeração');
+      expect(gabinete.subCategory).toBe('Gabinete Gamer');
+      expect(gabinete.isGamer).toBe(true);
+    });
+  });
 });

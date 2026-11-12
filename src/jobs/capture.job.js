@@ -159,8 +159,11 @@ const captureTask = async () => {
       logger.info(`📂 [${currentNiche.toUpperCase()}] Iniciando coleta de promoções...`);
 
       // ─── 5. Captura das Abas Oficiais de Ofertas do Mercado Livre ──────────────
-      // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa; MLB1648 (Informática) para PC Gamer
-      const dealsCategories = currentNiche === 'pc_gamer' ? ['MLB1648'] : ['MLB1574', 'MLB5726'];
+      // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa;
+      // MLB1648 (Informática), MLB1144 (Games/PS5), MLB1051 (Celulares/S25/iPhone) e MLB1000 (Smart TVs/Eletrônicos) para Informática/Tech
+      const dealsCategories = currentNiche === 'pc_gamer' 
+        ? ['MLB1648', 'MLB1144', 'MLB1051', 'MLB1000'] 
+        : ['MLB1574', 'MLB5726'];
       const dealsOffsets = [1, 49, 97]; // Coleta até 3 páginas por categoria
 
       logger.info(`🔥 [${currentNiche.toUpperCase()}] Coletando ofertas das abas oficiais de promoções...`);
@@ -216,8 +219,8 @@ const captureTask = async () => {
         try {
           logger.info(`🔎 [${currentNiche.toUpperCase()}] Buscando por: "${keyword}"`);
 
-          // Busca no Mercado Livre
-          const catParam = currentNiche === 'pc_gamer' ? 'MLB1648' : env.mlCategory;
+          // Busca no Mercado Livre com a categoria específica da palavra-chave
+          const catParam = currentNiche === 'pc_gamer' ? (mlService.getCategoryForKeyword ? mlService.getCategoryForKeyword(keyword) : 'MLB1648') : env.mlCategory;
           const mlProducts = await mlService.searchProducts(keyword, catParam);
           logger.info(`📦 [${currentNiche.toUpperCase()}] Busca no ML por '${keyword}' retornou ${mlProducts.length} produtos.`);
           if (mlProducts.length > 0) {
