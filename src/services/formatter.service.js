@@ -351,12 +351,13 @@ class FormatterService {
 
     // Remove tags de marketing e lixo de SEO comum de marketplaces
     t = t.replace(/\b(envio imediato|pronta entrega|com nota fiscal|nota fiscal|\bnf\b|original|lacrado|lancamento|lançamento|full|novo|promocao|promoção|oferta|imperdivel|imperdível)\b/gi, '');
-    t = t.replace(/\b(frete gr[aá]tis|melhor pre[cç]o|top|barato|de qualidade)\b/gi, '');
+    t = t.replace(/\b(frete gr[aá]tis|melhor pre[cç]o|top|barato|de qualidade|alta performance|premium|super|ultra)\b/gi, '');
     t = t.replace(/\b(para pc gamer|pc gamer|gamer)\b/gi, '');
 
     // Remove redundâncias entre parênteses como (1x8gb), (2x8gb) etc.
     t = t.replace(/\(\s*\d+x\d+gb\s*\)/gi, '');
     t = t.replace(/\(\s*\d+gb\s*\)/gi, '');
+    t = t.replace(/\(\s*\)/g, '');
 
     // Limpa pontuações repetidas e espaços
     t = t.replace(/[,;|+–—]+/g, ' ');
@@ -434,8 +435,10 @@ class FormatterService {
       if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'PLAYSTATION 5 EM PROMOÇÃO';
       if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM PROMOÇÃO';
       if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM PROMOÇÃO';
-      if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE EM PROMOÇÃO';
-      if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY EM PROMOÇÃO';
+      if (/\b(iphone)\b/.test(tNorm)) return 'IPHONE EM PROMOÇÃO';
+      if (/\b(galaxy|samsung)\b/.test(tNorm) && /s2[345]|ultra|plus/.test(tNorm)) return 'SAMSUNG GALAXY EM PROMOÇÃO';
+      if (/\b(xiaomi|redmi|poco)\b/.test(tNorm)) return 'SMARTPHONE XIAOMI EM PROMOÇÃO';
+      if (/\b(smartphone|celular)\b/.test(tNorm)) return 'SMARTPHONE EM PROMOÇÃO';
     } else {
       if (/suporte.*(controle|ps5|dualsense|video game|videogame)/.test(tNorm) || /porta.*controle/.test(tNorm)) return 'SUPORTE PARA CONTROLES';
       if (/suporte.*tv/.test(tNorm)) return 'SUPORTE PARA SMART TV';
@@ -502,8 +505,16 @@ class FormatterService {
     if (/\bcolchao\b|\bcolchoes\b/.test(tNorm)) return 'COLCHÃO EM PROMOÇÃO';
     if (/\b(parafusadeira|parafusadeiras|furadeira|furadeiras)\b/.test(tNorm)) return 'PARAFUSADEIRA EM PROMOÇÃO';
 
-    // ─── Fallback inteligente: Direto e elegante ────────────────────────────
-    return 'PRODUTO EM PROMOÇÃO';
+    // ─── Fallback inteligente: Ganchos de alta conversão e impacto ─────────
+    const emotionalGanchos = [
+      'PREÇO DESPENCOU!',
+      'MENOR PREÇO!',
+      'CUSTO-BENEFÍCIO INSANO!',
+      'OFERTA IMPERDÍVEL!',
+      'OPORTUNIDADE ÚNICA!',
+      'SUPER DESCONTO!'
+    ];
+    return emotionalGanchos[Math.floor(Math.random() * emotionalGanchos.length)];
   }
 
   /**

@@ -21,6 +21,12 @@ describe('AccessoryDetector - Anti-Deceptive Filter', () => {
       price: 19.90
     };
     expect(isDeceptiveAccessory(peliculaGalaxy)).toBe(true);
+
+    const peliculaIphone = {
+      title: 'Kit 2 Películas Cerâmica Fosca Premium Para iPhone',
+      price: 26.13
+    };
+    expect(isDeceptiveAccessory(peliculaIphone)).toBe(true);
   });
 
   test('deve detectar e bloquear suportes de TV e skins de console', () => {

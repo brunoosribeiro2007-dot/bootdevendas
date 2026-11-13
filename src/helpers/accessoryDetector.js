@@ -22,6 +22,14 @@ function isDeceptiveAccessory(produto) {
   const t = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const price = Number(produto.price) || 0;
 
+  // 0. Películas, Capinhas e Cases Genéricos (Proibido postar em qualquer nicho)
+  if (/\b(pelicula|peliculas|hidrogel|vidro temperado|ceramica fosca|pelicula 3d|pelicula 9d)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(capa|capinha|case|cases)\s*(para|p\/|de silicone|antishock|antichoque|carteira|tpu|transparente|veludo|magsafe)\b/i.test(t)) {
+    return true;
+  }
+
   // 1. Controles de Videogame (PS5 DualSense, Xbox Controller)
   // Um controle DualSense / Xbox original novo custa no mínimo R$ 250 a R$ 450.
   // Qualquer item abaixo de R$ 150 ou contendo palavras de suporte/capa/grip NÃO é o controle.
@@ -45,13 +53,13 @@ function isDeceptiveAccessory(produto) {
     }
   }
 
-  // 3. Smartphones Top de Linha (iPhone, Galaxy S25 / S24 / S23)
-  // Um smartphone topo de linha custa no mínimo R$ 1.200 a R$ 8.000+.
-  if (/galaxy\s*s2[345]|iphone\s*(?:1[3456]|pro|promax)|smartphone|celular/i.test(t)) {
-    if (/\b(capa|capinha|case|cases|pelicula|pelicula|vidro|lente|protetor|protetores|camera|câmera|cabo|carregador|fonte|adaptador|suporte|skin|adesivo|pop\s*socket)\b/i.test(t)) {
+  // 3. Smartphones Top de Linha (iPhone, Galaxy S25 / S24 / S23, Xiaomi)
+  // Um smartphone topo de linha custa no mínimo R$ 1.000 a R$ 8.000+.
+  if (/\b(galaxy|iphone|smartphone|celular|xiaomi|redmi|poco|motorola)\b/i.test(t)) {
+    if (/\b(capa|capinha|case|cases|pelicula|peliculas|vidro|lente|protetor|protetores|camera|câmera|cabo|carregador|fonte|adaptador|suporte|skin|adesivo|pop\s*socket)\b/i.test(t)) {
       return true;
     }
-    if (/iphone|galaxy\s*s2/i.test(t) && price > 0 && price < 1000) {
+    if (/\b(iphone|galaxy\s*s2)\b/i.test(t) && price > 0 && price < 900) {
       return true;
     }
   }
@@ -115,7 +123,7 @@ function isDeceptiveAccessory(produto) {
   }
 
   // 9. Produtos cujo título COMEÇA com termos típicos de acessório
-  if (/^(suporte|porta|base|capa|capinha|case|pelicula|adesivo|skin|cabo|adaptador|dissipador)\b/i.test(t)) {
+  if (/^(?:kit\s*(?:\d+\s*)?)?(suporte|porta|base|capa|capinha|case|pelicula|adesivo|skin|cabo|adaptador|dissipador)\b/i.test(t)) {
     // Se não for categoria de suporte doméstico de baixo custo aceitável do nicho Casa
     if (/ps5|playstation|controle|dualsense|xbox|gamer|iphone|galaxy|celular|tv|monitor|ram|ddr|ssd|nvme/i.test(t)) {
       return true;
