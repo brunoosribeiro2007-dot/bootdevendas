@@ -342,6 +342,51 @@ class FormatterService {
    * @param {string} productTitle - Título original do produto.
    * @returns {string} Frase de efeito promocional em maiúsculas.
    */
+  // ────────────────────────────────────────────────────────────────────────────
+  // LIMPEZA E SIMPLIFICAÇÃO DE TÍTULOS
+  // ────────────────────────────────────────────────────────────────────────────
+  cleanProductTitle(rawTitle) {
+    if (!rawTitle) return '';
+    let t = rawTitle;
+
+    // Remove tags de marketing e lixo de SEO comum de marketplaces
+    t = t.replace(/\b(envio imediato|pronta entrega|com nota fiscal|nota fiscal|\bnf\b|original|lacrado|lancamento|lançamento|full|novo|promocao|promoção|oferta|imperdivel|imperdível)\b/gi, '');
+    t = t.replace(/\b(frete gr[aá]tis|melhor pre[cç]o|top|barato|de qualidade)\b/gi, '');
+    t = t.replace(/\b(para pc gamer|pc gamer|gamer)\b/gi, '');
+
+    // Remove redundâncias entre parênteses como (1x8gb), (2x8gb) etc.
+    t = t.replace(/\(\s*\d+x\d+gb\s*\)/gi, '');
+    t = t.replace(/\(\s*\d+gb\s*\)/gi, '');
+
+    // Limpa pontuações repetidas e espaços
+    t = t.replace(/[,;|+–—]+/g, ' ');
+    t = t.replace(/\s{2,}/g, ' ').trim();
+
+    // Se o título ultrapassar 60 caracteres, encurta de forma inteligente nas palavras inteiras
+    if (t.length > 60) {
+      const words = t.split(' ');
+      let shortened = '';
+      for (const w of words) {
+        if ((shortened + ' ' + w).trim().length <= 60) {
+          shortened = (shortened + ' ' + w).trim();
+        } else {
+          break;
+        }
+      }
+      if (shortened.length >= 25) {
+        t = shortened;
+      }
+    }
+
+    return t;
+  }
+
+  /**
+   * Identifica o produto e gera uma chamada curta, direta e de alta conversão.
+   * 
+   * @param {string} productTitle - Título do anúncio.
+   * @returns {string} Headline concisa e vendedora em MAIÚSCULAS.
+   */
   generateHeadline(productTitle) {
     if (!productTitle) return 'ACHADO IMPERDÍVEL';
 
@@ -349,132 +394,116 @@ class FormatterService {
     const tNorm = productTitle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     // ─── PC / Hardware / Periféricos / Setup Gamer ───────────────────────────
-    if (/placa[- ]m[aã]e|motherboard/.test(tNorm)) return 'PLACA-MÃE PARA SEU SETUP';
-    if (/processador|ryzen|core i[3579]|intel core/.test(tNorm) && !/pasta|thermal|cooler|dissipador/.test(tNorm)) return 'PROCESSADOR DE ALTA PERFORMANCE';
-    if (/placa de v[ií]deo|placa de video|rtx|gtx|radeon|rx \d{4}/.test(tNorm) && !/suporte|cabo riser|backplate|pasta|thermal/.test(tNorm)) return 'PLACA DE VÍDEO EM SUPER PROMOÇÃO';
-    if (/mem[oó]ria ram|memoria ram|ram ddr[45]/.test(tNorm) && !/dissipador|thermal|heatsink|cooler|suporte|espelho/.test(tNorm)) return 'MEMÓRIA RAM GAMER EM OFERTA';
-    if (/ssd|nvme|m\.2/.test(tNorm) && !/dissipador|thermal|heatsink|case|adaptador|gaveta/.test(tNorm)) return 'SSD ULTRA RÁPIDO EM OFERTA';
+    if (/placa[- ]m[aã]e|motherboard/.test(tNorm)) return 'PLACA-MÃE EM PROMOÇÃO';
+    if (/processador|ryzen|core i[3579]|intel core/.test(tNorm) && !/pasta|thermal|cooler|dissipador/.test(tNorm)) return 'PROCESSADOR EM PROMOÇÃO';
+    if (/placa de v[ií]deo|placa de video|rtx|gtx|radeon|rx \d{4}/.test(tNorm) && !/suporte|cabo riser|backplate|pasta|thermal/.test(tNorm)) return 'PLACA DE VÍDEO EM PROMOÇÃO';
+    if (/\b(mem[oó]ria|ram)\b/.test(tNorm) && /(ddr[345]|3200|2666|4800|5600|6000|dimm|sodimm|desktop|notebook|\d+gb)/.test(tNorm) && !/dissipador|thermal|heatsink|cooler|suporte|espelho/.test(tNorm)) return 'MEMÓRIA RAM EM PROMOÇÃO';
+    if (/ssd|nvme|m\.2/.test(tNorm) && !/dissipador|thermal|heatsink|case|adaptador|gaveta/.test(tNorm)) return 'SSD NVME EM PROMOÇÃO';
     if (/fonte (atx|gamer|real|\d+w|de alimenta[çc][aã]o)|80 plus/.test(tNorm) || (/\bfonte\b/.test(tNorm) && !/água|agua|pet|gato|cão|cao|chocolate|decorat|chafariz/.test(tNorm) && /pc|watt|w\b|atx|tens[aã]o|bivolt/.test(tNorm))) {
-      return 'FONTE GAMER POTENTE E SEGURA';
+      return 'FONTE GAMER EM PROMOÇÃO';
     }
-    if (/water[- ]?cooler|air[- ]?cooler|cooler para processador/.test(tNorm)) return 'WATER COOLER PRA RESFRIAR SEU PC';
+    if (/water[- ]?cooler|air[- ]?cooler|cooler para processador/.test(tNorm)) return 'WATER COOLER EM PROMOÇÃO';
     if (/monitor gamer|monitor (144hz|240hz|165hz|75hz|60hz|ultrawide|ips|led|pc|para pc|curvo)|monitor \d{2}["'’]/.test(tNorm)) {
-      return 'MONITOR GAMER COM DESCONTO';
+      return 'MONITOR GAMER EM PROMOÇÃO';
     }
-    if (/teclado mec[aâ]nico|teclado mecanico|teclado gamer/.test(tNorm)) return 'TECLADO MECÂNICO GAMER EM PROMOÇÃO';
-    if (/mousepad|mouse pad/.test(tNorm)) return 'MOUSEPAD GAMER SPEED/CONTROL';
-    if (/mouse gamer|mouse sem fio/.test(tNorm)) return 'MOUSE GAMER PRECISO EM OFERTA';
-    if (/headset|headphone gamer/.test(tNorm)) return 'HEADSET GAMER COM SOM IMERSIVO';
-    if (/cadeira gamer/.test(tNorm)) return 'CADEIRA GAMER CONFORTÁVEL';
-    if (/mesa gamer|escrivaninha gamer/.test(tNorm)) return 'MESA PRA SETUP GAMER';
-    if (/gabinete/.test(tNorm)) return 'GABINETE GAMER COM ÓTIMO FLUXO DE AR';
-    if (/notebook gamer|laptop gamer/.test(tNorm)) return 'NOTEBOOK GAMER DE ALTO DESEMPENHO';
+    if (/teclado mec[aâ]nico|teclado mecanico|teclado gamer/.test(tNorm)) return 'TECLADO MECÂNICO EM PROMOÇÃO';
+    if (/mousepad|mouse pad/.test(tNorm)) return 'MOUSEPAD GAMER EM PROMOÇÃO';
+    if (/mouse gamer|mouse sem fio/.test(tNorm)) return 'MOUSE GAMER EM PROMOÇÃO';
+    if (/headset|headphone gamer/.test(tNorm)) return 'HEADSET GAMER EM PROMOÇÃO';
+    if (/cadeira gamer/.test(tNorm)) return 'CADEIRA GAMER EM PROMOÇÃO';
+    if (/mesa gamer|escrivaninha gamer/.test(tNorm)) return 'MESA PRA SETUP EM PROMOÇÃO';
+    if (/gabinete/.test(tNorm)) return 'GABINETE GAMER EM PROMOÇÃO';
+    if (/notebook gamer|laptop gamer/.test(tNorm)) return 'NOTEBOOK GAMER EM PROMOÇÃO';
 
     // ─── Áudio de Alta Qualidade (JBL, Edifier, Soundbars) ─────────────────────
     if (/\bjbl\b/.test(tNorm) && /caixa|som|flip|charge|go\s*\d|boombox|partybox|soundbar/.test(tNorm)) {
-      return 'CAIXA DE SOM JBL EM SUPER OFERTA';
+      return 'CAIXA DE SOM JBL EM PROMOÇÃO';
     }
     if (/soundbar/.test(tNorm)) {
-      return 'SOUNDBAR POTENTE COM DESCONTO';
+      return 'SOUNDBAR EM PROMOÇÃO';
     }
     if (/caixa de som bluetooth|caixa bluetooth/.test(tNorm) && !/mini|3w/.test(tNorm)) {
-      return 'CAIXA DE SOM BLUETOOTH EM OFERTA';
+      return 'CAIXA DE SOM EM PROMOÇÃO';
     }
 
     // ─── Consoles e Controles (PS5, DualSense, Xbox) ─────────────────────────
     const isAccessory = /\b(suporte|base|porta|capa|capinha|case|silicone|skin|adesivo|grip|grips|protetor|cabo|dock|extensor|pelicula|pelicula|lente)\b/i.test(tNorm);
 
     if (!isAccessory) {
-      if (/controle (sem fio )?(dualsense|ps5)|dualsense/.test(tNorm)) return 'CONTROLE PS5 DUALSENSE EM OFERTA';
-      if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'CONSOLE PLAYSTATION 5 EM SUPER OFERTA';
-      if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM OFERTA';
-      if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM OFERTA';
-      if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE TOP DE LINHA COM DESCONTO';
-      if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY LINHA S EM OFERTA';
+      if (/controle (sem fio )?(dualsense|ps5)|dualsense/.test(tNorm)) return 'CONTROLE PS5 EM PROMOÇÃO';
+      if (/playstation 5|ps5|console ps5/.test(tNorm)) return 'PLAYSTATION 5 EM PROMOÇÃO';
+      if (/xbox (series|one)|console xbox/.test(tNorm)) return 'CONSOLE XBOX EM PROMOÇÃO';
+      if (/nintendo switch/.test(tNorm)) return 'NINTENDO SWITCH EM PROMOÇÃO';
+      if (/iphone 1[456]|iphone pro/.test(tNorm)) return 'IPHONE EM PROMOÇÃO';
+      if (/galaxy s2[345]|samsung s2[345]/.test(tNorm)) return 'SAMSUNG GALAXY EM PROMOÇÃO';
     } else {
       if (/suporte.*(controle|ps5|dualsense|video game|videogame)/.test(tNorm) || /porta.*controle/.test(tNorm)) return 'SUPORTE PARA CONTROLES';
       if (/suporte.*tv/.test(tNorm)) return 'SUPORTE PARA SMART TV';
     }
 
     // ─── Câmera de segurança e monitoramento ─────────────────────────────────
-    if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA WI-FI';
+    if (/\b(filmadora|cftv)s?\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA EM PROMOÇÃO';
     if (/\bcameras?\b/.test(tNorm) && /\b(seguranca|vigilancia|monitoramento)\b/.test(tNorm)) {
-      if (/\b(4k|dupla lente|visao noturna)\b/.test(tNorm)) return 'CÂMERA DE SEGURANÇA 4K';
-      return 'CÂMERA DE SEGURANÇA WI-FI';
+      return 'CÂMERA DE SEGURANÇA EM PROMOÇÃO';
     }
 
     // ─── Moda e Vestuário ────────────────────────────────────────────────────
-    if (/\b(trico|sueter|cardigan)s?\b/.test(tNorm)) return 'TRICO PRA FICAR NO ESTILO';
-    if (/\bcamisetas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
-    if (/\bcamisas?\b/.test(tNorm)) return 'CAMISA PRA FICAR NO ESTILO';
-    if (/\b(tenis|sapato|sapatos|calcado|calcados)\b/.test(tNorm)) return 'TÊNIS CONFORTÁVEL PRA QUALQUER HORA';
+    if (/\b(trico|sueter|cardigan)s?\b/.test(tNorm)) return 'TRICO EM PROMOÇÃO';
+    if (/\bcamisetas?\b|\bcamisas?\b/.test(tNorm)) return 'CAMISA EM PROMOÇÃO';
+    if (/\b(tenis|sapato|sapatos|calcado|calcados)\b/.test(tNorm)) return 'TÊNIS EM PROMOÇÃO';
 
     // ─── Geladeiras e Refrigeração ───────────────────────────────────────────
     if (/\b(geladeira|refrigerador)s?\b/.test(tNorm)) {
-      if (/frost free/i.test(tNorm)) return 'GELADEIRA FROST FREE ESPAÇOSA';
-      return 'GELADEIRA PERFEITA PRA SUA COZINHA';
+      return 'GELADEIRA EM PROMOÇÃO';
     }
 
     // ─── Air Fryer e Fritadeiras Sem Óleo ────────────────────────────────────
-    if (/\bair fryer\b/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
-    if (/\bfritadeiras?\b/.test(tNorm) && /sem oleo|eletrica/.test(tNorm)) return 'AIR FRYER PRA FACILITAR SUA VIDA';
+    if (/\bair fryer\b/.test(tNorm) || (/\bfritadeiras?\b/.test(tNorm) && /sem oleo|eletrica/.test(tNorm))) {
+      return 'AIR FRYER EM PROMOÇÃO';
+    }
 
     // ─── Micro-ondas e Cooktops/Fogões ───────────────────────────────────────
-    if (/\b(micro[- ]?ondas|microondas)\b/.test(tNorm)) return 'MICRO-ONDAS PRÁTICO E POTENTE';
-    if (/\b(fogao|fogoes|cooktop|cooktops)\b/.test(tNorm)) return 'COOKTOP MODERNO PRA SUA COZINHA';
+    if (/\b(micro[- ]?ondas|microondas)\b/.test(tNorm)) return 'MICRO-ONDAS EM PROMOÇÃO';
+    if (/\b(fogao|fogoes|cooktop|cooktops)\b/.test(tNorm)) return 'FOGÃO/COOKTOP EM PROMOÇÃO';
 
     // ─── Eletroportáteis de Cozinha ──────────────────────────────────────────
-    if (/\bliquidificador(es)?\b/.test(tNorm)) return 'LIQUIDIFICADOR POTENTE E RESISTENTE';
-    if (/\bbatedeiras?\b/.test(tNorm)) return 'BATEDEIRA PLANETÁRIA COMPLETA';
-    if (/\bcafeteiras?\b/.test(tNorm)) return 'CAFETEIRA PRA QUEM AMA CAFÉ';
+    if (/\bliquidificador(es)?\b/.test(tNorm)) return 'LIQUIDIFICADOR EM PROMOÇÃO';
+    if (/\bbatedeiras?\b/.test(tNorm)) return 'BATEDEIRA EM PROMOÇÃO';
+    if (/\bcafeteiras?\b/.test(tNorm)) return 'CAFETEIRA EM PROMOÇÃO';
 
     // ─── Purificadores e Filtros de Água (avaliado antes de panelas) ───────────
     if (/\b(purificador|purificadores|bebedouro|bebedouros)\b|\bfiltro de agua\b/.test(tNorm)) {
-      return 'PURIFICADOR DE ÁGUA PRÁTICO';
+      return 'PURIFICADOR DE ÁGUA EM PROMOÇÃO';
     }
 
     // ─── Panelas e Frigideiras ───────────────────────────────────────────────
-    if (/\bpanela de pressao\b/.test(tNorm)) return 'PANELA DE PRESSÃO PRÁTICA';
-    if (/\bfrigideiras?\b/.test(tNorm)) return 'FRIGIDEIRA ANTIADERENTE DE QUALIDADE';
-    if (/\bpanelas?\b/.test(tNorm)) return 'JOGO DE PANELAS COMPLETO';
+    if (/\bpanela de pressao\b/.test(tNorm)) return 'PANELA DE PRESSÃO EM PROMOÇÃO';
+    if (/\bfrigideiras?\b/.test(tNorm)) return 'FRIGIDEIRA EM PROMOÇÃO';
+    if (/\bpanelas?\b/.test(tNorm)) return 'JOGO DE PANELAS EM PROMOÇÃO';
 
     // ─── Televisores e Áudio ─────────────────────────────────────────────────
     if (/\bsmart tv\b|\btelevisao\b/.test(tNorm) || (/\btv\b/.test(tNorm) && /\d{2,3}['"]\s*(polegada|pol\b)/.test(tNorm))) {
-      return 'SMART TV COM IMAGEM DE CINEMA';
+      return 'SMART TV EM PROMOÇÃO';
     }
-    if (/\b(soundbar|caixa de som)\b/.test(tNorm)) return 'SOUNDBAR COM SOM DE CINEMA';
+    if (/\b(soundbar|caixa de som)\b/.test(tNorm)) return 'SOUNDBAR EM PROMOÇÃO';
 
     // ─── Limpeza e Aspiradores ───────────────────────────────────────────────
     if (/\baspirador(es)?\b/.test(tNorm)) {
-      if (/\brobos?\b/.test(tNorm)) return 'ASPIRADOR ROBÔ PRA LIMPAR TUDO';
-      return 'ASPIRADOR DE PÓ POTENTE';
+      if (/\brobos?\b/.test(tNorm)) return 'ASPIRADOR ROBÔ EM PROMOÇÃO';
+      return 'ASPIRADOR DE PÓ EM PROMOÇÃO';
     }
 
     // ─── Climatização, Lavanderia e Outros Itens de Casa ─────────────────────
-    if (/\bventilador(es)?\b/.test(tNorm)) return 'VENTILADOR POTENTE E SILENCIOSO';
-    if (/\bar[- ]condicionado\b/.test(tNorm)) return 'AR-CONDICIONADO PRA REFRESCAR';
-    if (/\bmaquina de lavar\b|\blava e seca\b/.test(tNorm)) return 'MÁQUINA DE LAVAR EFICIENTE';
-    if (/\bferro de passar\b/.test(tNorm)) return 'FERRO DE PASSAR A VAPOR';
-    if (/\b(adega|adegas|cervejeira|cervejeiras)\b/.test(tNorm)) return 'CERVEJEIRA PRA BEBIDAS GELADAS';
-    if (/\bcolchao\b|\bcolchoes\b/.test(tNorm)) return 'COLCHÃO PRA DORMIR NAS NUVENS';
-    if (/\b(parafusadeira|parafusadeiras|furadeira|furadeiras)\b/.test(tNorm)) return 'PARAFUSADEIRA POTENTE PRA TUDO';
+    if (/\bventilador(es)?\b/.test(tNorm)) return 'VENTILADOR EM PROMOÇÃO';
+    if (/\bar[- ]condicionado\b/.test(tNorm)) return 'AR-CONDICIONADO EM PROMOÇÃO';
+    if (/\bmaquina de lavar\b|\blava e seca\b/.test(tNorm)) return 'MÁQUINA DE LAVAR EM PROMOÇÃO';
+    if (/\bferro de passar\b/.test(tNorm)) return 'FERRO DE PASSAR EM PROMOÇÃO';
+    if (/\b(adega|adegas|cervejeira|cervejeiras)\b/.test(tNorm)) return 'CERVEJEIRA EM PROMOÇÃO';
+    if (/\bcolchao\b|\bcolchoes\b/.test(tNorm)) return 'COLCHÃO EM PROMOÇÃO';
+    if (/\b(parafusadeira|parafusadeiras|furadeira|furadeiras)\b/.test(tNorm)) return 'PARAFUSADEIRA EM PROMOÇÃO';
 
-    // ─── Fallback inteligente: Extrai termos significativos do próprio título ─
-    const stopWords = new Set([
-      'de', 'da', 'do', 'das', 'dos', 'com', 'para', 'pra', 'por', 'em',
-      'no', 'na', 'nos', 'nas', 'um', 'uma', 'uns', 'umas', 'e', 'ou', 'que', 'sem',
-      'kit', 'pro', 'max', 'bivolt', 'volts', 'unidade', 'unidades', 'modelo', 'cor', 'marca'
-    ]);
-
-    const cleanWords = productTitle
-      .replace(/[^\w\sÀ-ú]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !stopWords.has(w.toLowerCase()))
-      .slice(0, 4)
-      .join(' ')
-      .toUpperCase();
-
-    return cleanWords || 'PRODUTO EM SUPER OFERTA';
+    // ─── Fallback inteligente: Direto e elegante ────────────────────────────
+    return 'PRODUTO EM PROMOÇÃO';
   }
 
   /**
@@ -608,8 +637,8 @@ class FormatterService {
     // 1. Título / Chamada em destaque no topo (sem negrito)
     lines.push(headline);
     lines.push('');
-    // 2. Título original do produto sem alterações (sem negrito)
-    lines.push(product.title.trim());
+    // 2. Título limpo e simplificado do produto
+    lines.push(this.cleanProductTitle(product.title));
     lines.push('');
 
     // 3. Preço antigo riscado (se houver) + Preço atual formatado

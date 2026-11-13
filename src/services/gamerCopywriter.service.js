@@ -245,6 +245,7 @@ class GamerCopywriterService {
 
     const finance = this.extractFinancialDetails(product);
     const { emoji, headline } = this.getHeadlineWithEmoji(product.title);
+    const formatterService = require('./formatter.service');
 
     const lines = [];
 
@@ -252,8 +253,8 @@ class GamerCopywriterService {
     lines.push(`${emoji} *${headline}*`);
     lines.push('');
 
-    // 2. Título do produto (limpo)
-    lines.push(product.title.trim());
+    // 2. Título do produto (limpo e simplificado)
+    lines.push(formatterService.cleanProductTitle(product.title));
     lines.push('');
 
     // 3. Preços
@@ -333,8 +334,9 @@ class GamerCopywriterService {
     lines.push(`${emoji} <b>${escapeHtml(headline)}</b>`);
     lines.push('');
 
-    // Título
-    lines.push(`<b>${escapeHtml(product.title.trim())}</b>`);
+    // Título limpo e simplificado
+    const formatterService = require('./formatter.service');
+    lines.push(`<b>${escapeHtml(formatterService.cleanProductTitle(product.title))}</b>`);
     lines.push('');
 
     // Preços

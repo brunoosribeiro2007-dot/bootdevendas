@@ -39,7 +39,7 @@ describe('Formatter Service', () => {
     const title = 'Bebedouro de mesa Cadence gela água refrigerado elétrico galão aguô BEB110 branco';
     const headline = formatterService.generateHeadline(title);
     expect(headline).not.toContain('TRICO');
-    expect(headline).toBe('PURIFICADOR DE ÁGUA PRÁTICO');
+    expect(headline).toBe('PURIFICADOR DE ÁGUA EM PROMOÇÃO');
   });
 
   test('generateFormattedMessage should extract and link coupon code from text like "Cupom DESCONTO10"', async () => {
@@ -52,8 +52,32 @@ describe('Formatter Service', () => {
     };
 
     const msg = await formatterService.generateFormattedMessage(productWithTextCoupon);
-    expect(msg).not.toContain('TRICO PRA FICAR NO ESTILO');
-    expect(msg).toContain('PURIFICADOR DE ÁGUA PRÁTICO');
+    expect(msg).not.toContain('TRICO');
+    expect(msg).toContain('PURIFICADOR DE ÁGUA EM PROMOÇÃO');
     expect(msg).toContain('*DESCONTO10*');
+  });
+
+  test('cleanProductTitle and generateHeadline should simplify RAM title and headline', () => {
+    const rawTitle = 'Memoria Mancer Lumina, Rgb, 8gb (1x8gb), Ddr4, 3200mhz, Cl19';
+    const headline = formatterService.generateHeadline(rawTitle);
+    const cleaned = formatterService.cleanProductTitle(rawTitle);
+
+    expect(headline).toBe('MEMÓRIA RAM EM PROMOÇÃO');
+    expect(cleaned).not.toContain('(1x8gb)');
+    expect(cleaned).not.toContain(',');
+    expect(cleaned).toBe('Memoria Mancer Lumina Rgb 8gb Ddr4 3200mhz Cl19');
+  });
+
+  test('generateHeadline should not call a controller stand "CONTROLE PS5"', () => {
+    const standTitle = 'Suporte Duplo Para Controles De Ps5 Ps4 Porta Base Dualsense';
+    const headline = formatterService.generateHeadline(standTitle);
+    expect(headline).not.toContain('CONTROLE PS5');
+    expect(headline).toBe('SUPORTE PARA CONTROLES');
+  });
+
+  test('generateHeadline should not call a RAM dissipator "MEMÓRIA RAM EM PROMOÇÃO"', () => {
+    const dissipatorTitle = 'Dissipador De Memória Ram Ddr3/ddr4/ddr5 + Thermal Pad';
+    const headline = formatterService.generateHeadline(dissipatorTitle);
+    expect(headline).not.toBe('MEMÓRIA RAM EM PROMOÇÃO');
   });
 });
