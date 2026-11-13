@@ -117,8 +117,13 @@ const publishTask = async (force = false) => {
         try {
           logger.info('Tentando enviar mensagem de boa noite...');
           if (env.isMultiNiche) {
-            const casaMsg = env.goodNightMessageCasa || env.goodNightMessage || `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
-            const gamerMsg = env.goodNightMessagePcGamer || env.goodNightMessage || `🎮 *Fim de jogo por hoje, pessoal!*\n\nEncerramos as ofertas de tecnologia e games por aqui. Amanhã voltamos com mais lançamentos, cupons e quedas de preço! Tenham uma excelente noite e bom descanso! 🕹️💤`;
+            const casaMsg = env.goodNightMessageCasa || env.goodNightMessage || `🌙 *Boa noite, pessoal!*
+
+Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
+
+            const gamerMsg = env.goodNightMessagePcGamer || env.goodNightMessage || `🎮 *Fim de jogo por hoje, pessoal!*
+
+Encerramos as ofertas de tecnologia e games por aqui. Amanhã voltamos com mais lançamentos, cupons e quedas de preço! Tenham uma excelente noite e bom descanso! 🕹️💤`;
 
             let anySent = false;
             if (env.whatsappGroupCasa || env.whatsappChannelCasa) {
@@ -139,8 +144,12 @@ const publishTask = async (force = false) => {
             logger.info('✅ Mensagens de boa noite enviadas com sucesso para os grupos!');
           } else {
             const defaultMsg = env.niche === 'pc_gamer' 
-              ? `🎮 *Fim de jogo por hoje, pessoal!*\n\nEncerramos as ofertas de tecnologia e games por aqui. Amanhã voltamos com mais lançamentos, cupons e quedas de preço! Tenham uma excelente noite e bom descanso! 🕹️💤`
-              : `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
+              ? `🎮 *Fim de jogo por hoje, pessoal!*
+
+Encerramos as ofertas de tecnologia e games por aqui. Amanhã voltamos com mais lançamentos, cupons e quedas de preço! Tenham uma excelente noite e bom descanso! 🕹️💤`
+              : `🌙 *Boa noite, pessoal!*
+
+Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
             const goodNightMsg = env.goodNightMessage || defaultMsg;
             const sent = await publisher.sendTextMessage(goodNightMsg);
             if (sent) {
