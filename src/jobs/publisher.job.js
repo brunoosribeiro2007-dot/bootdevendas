@@ -116,11 +116,34 @@ const publishTask = async (force = false) => {
       if (!sentGoodNightMessage && shouldSendGoodNight()) {
         try {
           logger.info('Tentando enviar mensagem de boa noite...');
-          const goodNightMsg = `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Fiquem com Deus e tenham uma excelente noite! ✨💤`;
-          const sent = await publisher.sendTextMessage(goodNightMsg);
-          if (sent) {
+          if (env.isMultiNiche) {
+            const casaMsg = env.goodNightMessageCasa || env.goodNightMessage || `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
+            const gamerMsg = env.goodNightMessagePcGamer || env.goodNightMessage || `🎮 *Boa noite, pessoal!*\n\nPor hoje encerramos as ofertas de tecnologia e games. Amanhã voltamos com mais promoções e cupons imperdíveis! Tenham uma excelente noite! 🕹️💤`;
+
+            let anySent = false;
+            if (env.whatsappGroupCasa || env.whatsappChannelCasa) {
+              const target = env.whatsappGroupCasa || env.whatsappChannelCasa;
+              await publisher.sendTextMessage(casaMsg, target);
+              anySent = true;
+            }
+            if (env.whatsappGroupPcGamer || env.whatsappChannelPcGamer) {
+              const target = env.whatsappGroupPcGamer || env.whatsappChannelPcGamer;
+              await publisher.sendTextMessage(gamerMsg, target);
+              anySent = true;
+            }
+            if (!anySent) {
+              const defaultMsg = env.goodNightMessage || casaMsg;
+              await publisher.sendTextMessage(defaultMsg);
+            }
             sentGoodNightMessage = true;
-            logger.info('✅ Mensagem de boa noite enviada com sucesso!');
+            logger.info('✅ Mensagens de boa noite enviadas com sucesso!');
+          } else {
+            const goodNightMsg = env.goodNightMessage || `🌙 *Boa noite, pessoal!*\n\nPor hoje encerramos nossas ofertas. Amanhã voltamos com mais achados e cupons imperdíveis! Tenham uma excelente noite! ✨💤`;
+            const sent = await publisher.sendTextMessage(goodNightMsg);
+            if (sent) {
+              sentGoodNightMessage = true;
+              logger.info('✅ Mensagem de boa noite enviada com sucesso!');
+            }
           }
         } catch (err) {
           logger.error('Erro ao enviar mensagem de boa noite:', err);

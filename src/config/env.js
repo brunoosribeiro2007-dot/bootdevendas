@@ -38,6 +38,9 @@ module.exports = {
   initialCaptureDelay: 60000,
   publishStartTime: process.env.PUBLISH_START_TIME || '08:00',
   publishEndTime: process.env.PUBLISH_END_TIME || '22:00',
+  goodNightMessage: process.env.GOOD_NIGHT_MESSAGE ? process.env.GOOD_NIGHT_MESSAGE.replace(/\\n/g, '\n') : null,
+  goodNightMessageCasa: process.env.GOOD_NIGHT_MESSAGE_CASA ? process.env.GOOD_NIGHT_MESSAGE_CASA.replace(/\\n/g, '\n') : null,
+  goodNightMessagePcGamer: process.env.GOOD_NIGHT_MESSAGE_PC_GAMER ? process.env.GOOD_NIGHT_MESSAGE_PC_GAMER.replace(/\\n/g, '\n') : null,
   renderExternalUrl: process.env.RENDER_EXTERNAL_URL || null,
 
   // Configurações do Módulo de IA Gemini
