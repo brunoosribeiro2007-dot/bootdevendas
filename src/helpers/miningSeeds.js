@@ -55,9 +55,19 @@ const SEARCH_POOLS = {
     'mouse sem fio paw3395',
     'headset 7.1 surround',
     'microfone condensador usb',
-    'mousepad gamer speed grande'
+    'mousepad gamer speed grande',
+    // Áudio e Caixas de Som de Qualidade
+    'caixa de som bluetooth jbl',
+    'caixa de som jbl flip',
+    'caixa de som jbl charge',
+    'caixa de som jbl go',
+    'caixa de som edifier bluetooth',
+    'soundbar gamer'
   ],
   casa: [
+    'caixa de som bluetooth jbl',
+    'soundbar jbl cinema',
+    'soundbar samsung',
     'panela de pressao eletrica inox',
     'aspirador vertical sem fio',
     'fritadeira sem oleo digital',

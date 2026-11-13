@@ -350,10 +350,10 @@ class FormatterService {
 
     // ─── PC / Hardware / Periféricos / Setup Gamer ───────────────────────────
     if (/placa[- ]m[aã]e|motherboard/.test(tNorm)) return 'PLACA-MÃE PARA SEU SETUP';
-    if (/processador|ryzen|core i[3579]|intel core/.test(tNorm)) return 'PROCESSADOR DE ALTA PERFORMANCE';
-    if (/placa de v[ií]deo|placa de video|rtx|gtx|radeon|rx \d{4}/.test(tNorm)) return 'PLACA DE VÍDEO EM SUPER PROMOÇÃO';
-    if (/mem[oó]ria ram|memoria ram|ram ddr[45]/.test(tNorm)) return 'MEMÓRIA RAM GAMER EM OFERTA';
-    if (/ssd|nvme|m\.2/.test(tNorm)) return 'SSD ULTRA RÁPIDO EM OFERTA';
+    if (/processador|ryzen|core i[3579]|intel core/.test(tNorm) && !/pasta|thermal|cooler|dissipador/.test(tNorm)) return 'PROCESSADOR DE ALTA PERFORMANCE';
+    if (/placa de v[ií]deo|placa de video|rtx|gtx|radeon|rx \d{4}/.test(tNorm) && !/suporte|cabo riser|backplate|pasta|thermal/.test(tNorm)) return 'PLACA DE VÍDEO EM SUPER PROMOÇÃO';
+    if (/mem[oó]ria ram|memoria ram|ram ddr[45]/.test(tNorm) && !/dissipador|thermal|heatsink|cooler|suporte|espelho/.test(tNorm)) return 'MEMÓRIA RAM GAMER EM OFERTA';
+    if (/ssd|nvme|m\.2/.test(tNorm) && !/dissipador|thermal|heatsink|case|adaptador|gaveta/.test(tNorm)) return 'SSD ULTRA RÁPIDO EM OFERTA';
     if (/fonte (atx|gamer|real|\d+w|de alimenta[çc][aã]o)|80 plus/.test(tNorm) || (/\bfonte\b/.test(tNorm) && !/água|agua|pet|gato|cão|cao|chocolate|decorat|chafariz/.test(tNorm) && /pc|watt|w\b|atx|tens[aã]o|bivolt/.test(tNorm))) {
       return 'FONTE GAMER POTENTE E SEGURA';
     }
@@ -369,6 +369,17 @@ class FormatterService {
     if (/mesa gamer|escrivaninha gamer/.test(tNorm)) return 'MESA PRA SETUP GAMER';
     if (/gabinete/.test(tNorm)) return 'GABINETE GAMER COM ÓTIMO FLUXO DE AR';
     if (/notebook gamer|laptop gamer/.test(tNorm)) return 'NOTEBOOK GAMER DE ALTO DESEMPENHO';
+
+    // ─── Áudio de Alta Qualidade (JBL, Edifier, Soundbars) ─────────────────────
+    if (/\bjbl\b/.test(tNorm) && /caixa|som|flip|charge|go\s*\d|boombox|partybox|soundbar/.test(tNorm)) {
+      return 'CAIXA DE SOM JBL EM SUPER OFERTA';
+    }
+    if (/soundbar/.test(tNorm)) {
+      return 'SOUNDBAR POTENTE COM DESCONTO';
+    }
+    if (/caixa de som bluetooth|caixa bluetooth/.test(tNorm) && !/mini|3w/.test(tNorm)) {
+      return 'CAIXA DE SOM BLUETOOTH EM OFERTA';
+    }
 
     // ─── Consoles e Controles (PS5, DualSense, Xbox) ─────────────────────────
     const isAccessory = /\b(suporte|base|porta|capa|capinha|case|silicone|skin|adesivo|grip|grips|protetor|cabo|dock|extensor|pelicula|pelicula|lente)\b/i.test(tNorm);

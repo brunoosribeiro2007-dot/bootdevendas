@@ -78,10 +78,46 @@ function isDeceptiveAccessory(produto) {
     }
   }
 
-  // 6. Produtos cujo título COMEÇA com termos típicos de acessório
-  if (/^(suporte|porta|base|capa|capinha|case|pelicula|adesivo|skin|cabo|adaptador)\b/i.test(t)) {
+  // 6. Memória RAM, SSDs, Processadores e Hardware (Dissipadores, Thermal Pads, Pastas Térmicas)
+  if (/mem[oó]ria\s*ram|ram\s*ddr|ddr[345]|nvme|ssd|m\.2|processador|placa\s*de\s*v[ií]deo|rtx|gtx|radeon/i.test(t)) {
+    if (/\b(dissipador|dissipadores|thermal\s*pad|thermal\s*pads|heatsink|pasta\s*t[eé]rmica|suporte\s*gpu|suporte\s*vga|cabo\s*riser|backplate|case\s*para\s*ssd|case\s*ssd|gaveta\s*ssd|adaptador\s*ssd|adaptador\s*m\.?2|espelho|espaguete)\b/i.test(t)) {
+      return true;
+    }
+    // Pisos de preço real para peças de hardware
+    if (/(mem[oó]ria\s*ram|ram\s*ddr[45])/i.test(t) && price > 0 && price < 75) {
+      return true;
+    }
+    if (/\bssd\b|\bnvme\b/i.test(t) && price > 0 && price < 80) {
+      return true;
+    }
+    if (/\b(rtx|gtx|radeon|placa\s*de\s*v[ií]deo)\b/i.test(t) && price > 0 && price < 350) {
+      return true;
+    }
+  }
+
+  // 7. Caixas de Som de Baixa Qualidade (Mini caixinhas 3W genéricas, speakers USB/P2 baratos)
+  if (/caix(a|inha)\s*de\s*som/i.test(t) || /alto[- ]falante/i.test(t)) {
+    if (/\b(mini\s*caixinha|3w|2\.0.*3w|caixinha.*usb|mini.*p2|usb\s*p2.*3w|som\s*notebook\s*3w)\b/i.test(t)) {
+      return true;
+    }
+    const isReputableAudioBrand = /\b(jbl|edifier|anker|soundcore|sony|philips|tronsmart|logitech|redragon|samsung|lg|xiaomi|w-king)\b/i.test(t);
+    if (!isReputableAudioBrand && price > 0 && price < 60) {
+      return true;
+    }
+  }
+
+  // 8. Peças e Acessórios Automotivos (Tapetes de Carro, Assoalhos, Peças Mecânicas de Veículos)
+  if (/\b(assoalho|porta[- ]malas|carpete\s*automotivo|tapete\s*automotivo|capota|estribo|engate|para[- ]choque|parachoque|calha\s*de\s*chuva|insulfilm|amortecedor|pastilha\s*de\s*freio|disco\s*de\s*freio|embreagem|escapamento|volante\s*esportivo|painel\s*automotivo|macaco\s*jacar[eé]|chave\s*de\s*roda|bico\s*injetor|sensor\s*estacionamento|c[aâ]mera\s*de\s*r[eé]|quebra[- ]sol|friso\s*lateral|aerof[oó]lio|lanterna\s*traseira)\b/i.test(t)) {
+    return true;
+  }
+  if (/\b(tapete|carpete|capa|assoalho)\b/i.test(t) && /\b(ford|fiat|chevrolet|volkswagen|vw|toyota|honda|hyundai|renault|nissan|jeep|peugeot|citroen|mitsubishi|pampa|gol|palio|uno|corsa|celta|onix|hb20|corolla|civic|strada|hilux|saveiro|s10|ranger|toro|veiculo|veicular|automotivo|automotiva|carro)\b/i.test(t)) {
+    return true;
+  }
+
+  // 9. Produtos cujo título COMEÇA com termos típicos de acessório
+  if (/^(suporte|porta|base|capa|capinha|case|pelicula|adesivo|skin|cabo|adaptador|dissipador)\b/i.test(t)) {
     // Se não for categoria de suporte doméstico de baixo custo aceitável do nicho Casa
-    if (/ps5|playstation|controle|dualsense|xbox|gamer|iphone|galaxy|celular|tv|monitor/i.test(t)) {
+    if (/ps5|playstation|controle|dualsense|xbox|gamer|iphone|galaxy|celular|tv|monitor|ram|ddr|ssd|nvme/i.test(t)) {
       return true;
     }
   }

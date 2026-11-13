@@ -391,6 +391,11 @@ const initializeDB = async () => {
                     OR (LOWER(title) LIKE '%capa%' AND (LOWER(title) LIKE '%controle%' OR LOWER(title) LIKE '%iphone%' OR LOWER(title) LIKE '%galaxy%'))
                     OR (LOWER(title) LIKE '%pelicula%' OR LOWER(title) LIKE '%película%')
                     OR (LOWER(title) LIKE '%skin%' AND (LOWER(title) LIKE '%ps5%' OR LOWER(title) LIKE '%playstation%'))
+                    OR (LOWER(title) LIKE '%dissipador%' AND (LOWER(title) LIKE '%ram%' OR LOWER(title) LIKE '%ddr%' OR LOWER(title) LIKE '%ssd%' OR LOWER(title) LIKE '%nvme%'))
+                    OR (LOWER(title) LIKE '%thermal pad%')
+                    OR (LOWER(title) LIKE '%assoalho%' OR LOWER(title) LIKE '%pampa%' OR LOWER(title) LIKE '%carpete assoalho%')
+                    OR (LOWER(title) LIKE '%tapete%' AND (LOWER(title) LIKE '%carro%' OR LOWER(title) LIKE '%ford%' OR LOWER(title) LIKE '%fiat%' OR LOWER(title) LIKE '%gol%' OR LOWER(title) LIKE '%palio%'))
+                    OR (LOWER(title) LIKE '%mini caixinha%' OR LOWER(title) LIKE '%caixinha de som%3w%' OR LOWER(title) LIKE '%caixa de som%3w%')
                 );
             `;
             if (USE_POSTGRES && pool) {

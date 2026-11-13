@@ -37,6 +37,52 @@ describe('AccessoryDetector - Anti-Deceptive Filter', () => {
     expect(isDeceptiveAccessory(skinPs5)).toBe(true);
   });
 
+  test('deve detectar e bloquear dissipadores/thermal pads que se passam por memória RAM', () => {
+    const dissipadorRam = {
+      title: 'Dissipador De Memória Ram Ddr3/ddr4/ddr5 + Thermal Pad',
+      price: 37.87
+    };
+    expect(isDeceptiveAccessory(dissipadorRam)).toBe(true);
+  });
+
+  test('deve detectar e bloquear acessórios automotivos (tapete ford pampa, assoalho)', () => {
+    const tapetePampa = {
+      title: 'Tapete Carpete Assoalho Couro Sintético Ford Pampa',
+      price: 96.00
+    };
+    expect(isDeceptiveAccessory(tapetePampa)).toBe(true);
+  });
+
+  test('deve detectar e bloquear mini caixinhas de som 3W de baixa qualidade', () => {
+    const miniCaixinha = {
+      title: 'Mini Caixinha De Som 2.0 Para Pc Notebook 3w Usb P2',
+      price: 36.89
+    };
+    expect(isDeceptiveAccessory(miniCaixinha)).toBe(true);
+  });
+
+  test('deve permitir caixas de som de qualidade (JBL, Edifier)', () => {
+    const jblFlip = {
+      title: 'Caixa de Som Bluetooth JBL Flip 6 30W RMS À Prova D’Água',
+      price: 599.00
+    };
+    expect(isDeceptiveAccessory(jblFlip)).toBe(false);
+
+    const jblGo = {
+      title: 'Caixa De Som Bluetooth Jbl Go 4 Portatil 4.2w Rms',
+      price: 249.00
+    };
+    expect(isDeceptiveAccessory(jblGo)).toBe(false);
+  });
+
+  test('deve permitir memória RAM legítima de marca conceituada', () => {
+    const ramReal = {
+      title: 'Memória RAM Corsair Vengeance LPX 16GB (2x8GB) DDR4 3200MHz',
+      price: 269.00
+    };
+    expect(isDeceptiveAccessory(ramReal)).toBe(false);
+  });
+
   test('deve permitir produtos legítimos de alto valor e hardware real', () => {
     const realDualsense = {
       title: 'Controle Sem Fio DualSense PS5 Midnight Black',
