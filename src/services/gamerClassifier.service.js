@@ -322,7 +322,7 @@ class GamerClassifierService {
     if (/headset\s*gamer|fone\s*gamer|headphone\s*gamer/i.test(titleLower)) {
       return { name: 'Headset Gamer', brand: brand || 'Gamer' };
     }
-    if (/microfone\s*(condensador|gamer|streamer|usb)|fifine|quadcast/i.test(titleLower)) {
+    if ((/microfone\s*(condensador|gamer|streamer|usb)|fifine|quadcast/i.test(titleLower)) && !/jornalismo|reportagem|rep[oó]rter|entrevista|karaok[eê]|dslr/i.test(titleLower)) {
       return { name: 'Microfone de Stream', brand: brand || 'Áudio' };
     }
     if (/mousepad\s*gamer|mouse\s*pad\s*(speed|control|deskmat|900x400)/i.test(titleLower)) {

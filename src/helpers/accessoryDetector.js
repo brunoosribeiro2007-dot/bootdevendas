@@ -122,6 +122,17 @@ function isDeceptiveAccessory(produto) {
     }
   }
 
+  // 10. Microfones de Reportagem, Jornalismo, Entrevista e Kits Genéricos (Sem apelo Tech/Gamer)
+  if (/\bmicrofone\b|\bmic\b/i.test(t)) {
+    if (/\b(jornalismo|reportagem|rep[oó]rter|entrevista|karaok[eê]|p\/\s*c[aâ]meras?\s*dslr|p\/\s*c[aâ]mera|c[aâ]meras?\s*dslr)\b/i.test(t)) {
+      return true;
+    }
+    const isQualityMicBrand = /\b(fifine|hyperx|quadcast|solocast|shure|rode|audio-technica|redragon|razer|elgato|boya|dji|hollyland|samson|behringer|maono)\b/i.test(t);
+    if (!isQualityMicBrand && price > 0 && price < 150) {
+      return true;
+    }
+  }
+
   return false;
 }
 

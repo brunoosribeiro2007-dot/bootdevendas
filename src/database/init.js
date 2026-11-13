@@ -396,6 +396,7 @@ const initializeDB = async () => {
                     OR (LOWER(title) LIKE '%assoalho%' OR LOWER(title) LIKE '%pampa%' OR LOWER(title) LIKE '%carpete assoalho%')
                     OR (LOWER(title) LIKE '%tapete%' AND (LOWER(title) LIKE '%carro%' OR LOWER(title) LIKE '%ford%' OR LOWER(title) LIKE '%fiat%' OR LOWER(title) LIKE '%gol%' OR LOWER(title) LIKE '%palio%'))
                     OR (LOWER(title) LIKE '%mini caixinha%' OR LOWER(title) LIKE '%caixinha de som%3w%' OR LOWER(title) LIKE '%caixa de som%3w%')
+                    OR (LOWER(title) LIKE '%jornalismo%' OR LOWER(title) LIKE '%reportagem%' OR LOWER(title) LIKE '%repórter%' OR LOWER(title) LIKE '%reporter%' OR LOWER(title) LIKE '%entrevista%')
                 );
             `;
             if (USE_POSTGRES && pool) {

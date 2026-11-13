@@ -32,6 +32,7 @@ const PRODUCT_BLACKLIST = [
     'capa de banco', 'suporte celular carro', 'transmissor fm',
     'carregador veicular', 'p/ carro', 'para carro',
     'mini caixinha', 'caixinha 3w', 'caixa de som 2.0 3w',
+    'jornalismo', 'reportagem', 'repórter', 'reporter', 'entrevista',
     // 💊 Suplementos e saúde
     'creatina', 'whey', 'suplemento', 'proteína', 'bcaa', 'termogênico', 'emagrecer',
     'vitamina', 'ômega 3', 'colágeno', 'pré-treino', 'albumina', 'glutamina',

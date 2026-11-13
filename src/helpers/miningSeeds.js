@@ -54,7 +54,8 @@ const SEARCH_POOLS = {
     'teclado mecanico switch red',
     'mouse sem fio paw3395',
     'headset 7.1 surround',
-    'microfone condensador usb',
+    'microfone fifine ampligame',
+    'microfone hyperx solocast',
     'mousepad gamer speed grande',
     // Áudio e Caixas de Som de Qualidade
     'caixa de som bluetooth jbl',

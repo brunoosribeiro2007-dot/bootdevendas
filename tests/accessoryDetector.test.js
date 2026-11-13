@@ -61,6 +61,34 @@ describe('AccessoryDetector - Anti-Deceptive Filter', () => {
     expect(isDeceptiveAccessory(miniCaixinha)).toBe(true);
   });
 
+  test('deve detectar e bloquear microfones de jornalismo/reportagem/repórter genéricos', () => {
+    const micJornalismo = {
+      title: 'Kit Microfone P/ Câmeras Dslr, Jornalismo, Reportagem, Lives',
+      price: 140.00
+    };
+    expect(isDeceptiveAccessory(micJornalismo)).toBe(true);
+
+    const micReporter = {
+      title: 'Kit Repórter Microfone No Celular Live Gravações Entrevista',
+      price: 94.86
+    };
+    expect(isDeceptiveAccessory(micReporter)).toBe(true);
+  });
+
+  test('deve permitir microfones gamer e de streaming de marcas conceituadas (Fifine, HyperX)', () => {
+    const fifineMic = {
+      title: 'Microfone Gamer Fifine AmpliGame A6V USB Condensador RGB',
+      price: 199.00
+    };
+    expect(isDeceptiveAccessory(fifineMic)).toBe(false);
+
+    const hyperxMic = {
+      title: 'Microfone HyperX SoloCast USB Preto para Streamer',
+      price: 299.00
+    };
+    expect(isDeceptiveAccessory(hyperxMic)).toBe(false);
+  });
+
   test('deve permitir caixas de som de qualidade (JBL, Edifier)', () => {
     const jblFlip = {
       title: 'Caixa de Som Bluetooth JBL Flip 6 30W RMS À Prova D’Água',
