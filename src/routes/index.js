@@ -28,6 +28,16 @@ router.get('/publish/force', async (req, res) => {
     publishTask(true).catch(err => logger.error('Erro na publicação manual:', err));
 });
 
+// Forçar Envio Manual das Mensagens de Convite / Compartilhamento
+router.get('/invite/force', async (req, res) => {
+    logger.info('Solicitação de envio manual de convite recebida via API.');
+    const { sendInviteTask } = require('../jobs/invite.job');
+    sendInviteTask(true)
+        .then(result => logger.info('Resultado do envio manual de convite:', result))
+        .catch(err => logger.error('Erro no envio manual de convite:', err));
+    res.json({ message: 'Disparo de mensagens de convite iniciado em background. Acompanhe os logs!' });
+});
+
 // Testar Scraper
 router.get('/search/test', async (req, res) => {
     const q = req.query.q || 'Xiaomi';

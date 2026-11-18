@@ -25,6 +25,7 @@ const { initializeDB } = require('./database/init');
 const { startCaptureJob } = require('./jobs/capture.job');
 const { startPublishJob } = require('./jobs/publisher.job');
 const { startCleanupJob } = require('./jobs/cleanup.job');
+const { startInviteJob } = require('./jobs/invite.job');
 const whatsappPublisher = require('./publishers/whatsapp.publisher');
 
 // Captura de rejeições e exceções não tratadas para evitar encerramento inesperado
@@ -97,6 +98,7 @@ const startServer = async () => {
   startCleanupJob(); // Limpeza diária de fila à meia-noite
   startCaptureJob(); // Coleta periódica de produtos
   startPublishJob(); // Publicação periódica de mensagens no WhatsApp
+  startInviteJob();  // Disparo de mensagens de convite / compartilhamento nos grupos
 
   // Monitor preventivo de renovação OAuth 2.0 (Mercado Livre)
   const tokenManager = require('./auth/tokenManager');

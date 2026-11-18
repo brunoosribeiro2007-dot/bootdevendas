@@ -71,6 +71,18 @@ services:
         value: "5569984520192"
 
       # ------------------------------------------------------------------------
+      # MENSAGENS DE CONVITE E COMPARTILHAMENTO DOS GRUPOS
+      # ------------------------------------------------------------------------
+      - key: LINK_INVITE_CASA
+        value: "https://chat.whatsapp.com/Ljx9pOsMFxxIBIL1omOHVM"
+      - key: LINK_INVITE_PC_GAMER
+        value: "https://chat.whatsapp.com/HLkYPwQzkGh7xUkA13p6e4"
+      - key: INVITE_SCHEDULE_HOURS
+        value: "12:15,19:00"
+      - key: ENABLE_INVITE_JOB
+        value: "true"
+
+      # ------------------------------------------------------------------------
       # FILTROS DE QUALIDADE DE OFERTAS
       # ------------------------------------------------------------------------
       - key: MIN_REVIEWS

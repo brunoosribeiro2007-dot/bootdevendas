@@ -29,6 +29,12 @@ module.exports = {
   whatsappGroupPcGamer: process.env.WHATSAPP_GROUP_PC_GAMER || '',
   whatsappChannelPcGamer: process.env.WHATSAPP_CHANNEL_PC_GAMER || '',
 
+  // Links de convite para compartilhamento e crescimento dos grupos
+  linkInviteCasa: process.env.LINK_INVITE_CASA || 'https://chat.whatsapp.com/Ljx9pOsMFxxIBIL1omOHVM',
+  linkInvitePcGamer: process.env.LINK_INVITE_PC_GAMER || 'https://chat.whatsapp.com/HLkYPwQzkGh7xUkA13p6e4',
+  inviteScheduleHours: process.env.INVITE_SCHEDULE_HOURS || '12:15,19:00',
+  enableInviteJob: (process.env.ENABLE_INVITE_JOB || 'true').toLowerCase() === 'true',
+
   mlAffiliateTag: process.env.ML_AFFILIATE_TAG || 'bv20260330080614',
   useMlAffiliateApi: (process.env.ML_USE_AFFILIATE_API || 'false').toLowerCase() === 'true',
   mlAffiliateApiUrl: process.env.ML_AFFILIATE_API_URL || 'https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink',
