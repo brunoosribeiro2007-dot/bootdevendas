@@ -593,7 +593,10 @@ const fetchFromBackupAPI = async (searchTerm) => {
             // Injeta token OAuth se disponível para evitar bloqueio 403
             try {
                 const tokenManager = require('../auth/tokenManager');
-                const oauthToken = await tokenManager.getValidAccessToken();
+                let oauthToken = await tokenManager.getValidAccessToken();
+                if (!oauthToken && (process.env.ML_ACCESS_TOKEN || env.mlAccessToken)) {
+                    oauthToken = process.env.ML_ACCESS_TOKEN || env.mlAccessToken;
+                }
                 if (oauthToken) {
                     headers['Authorization'] = `Bearer ${oauthToken}`;
                     logger.debug('🔑 Usando token OAuth oficial para busca na API do Mercado Livre');
@@ -1006,7 +1009,10 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
   // ─────────────────────────────────────────────────────────────────
   try {
       const tokenManager = require('../auth/tokenManager');
-      const oauthToken = await tokenManager.getValidAccessToken();
+      let oauthToken = await tokenManager.getValidAccessToken();
+      if (!oauthToken && (process.env.ML_ACCESS_TOKEN || env.mlAccessToken)) {
+          oauthToken = process.env.ML_ACCESS_TOKEN || env.mlAccessToken;
+      }
 
       if (oauthToken) {
           const apiOffset = Math.max(0, offset - 1);

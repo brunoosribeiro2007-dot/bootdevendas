@@ -296,13 +296,27 @@ function createCouponObject(data) {
 async function fetchFromApi() {
   const found = [];
 
+  let oauthToken = null;
+  try {
+    const tokenManager = require('../auth/tokenManager');
+    oauthToken = await tokenManager.getValidAccessToken();
+    if (!oauthToken && (process.env.ML_ACCESS_TOKEN || env.mlAccessToken)) {
+      oauthToken = process.env.ML_ACCESS_TOKEN || env.mlAccessToken;
+    }
+  } catch (_) {}
+
+  const baseHeaders = {
+    'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
+    'Accept': 'application/json',
+    'Accept-Language': 'pt-BR,pt;q=0.9',
+  };
+  if (oauthToken) {
+    baseHeaders['Authorization'] = `Bearer ${oauthToken}`;
+  }
+
   try {
     const res = await axios.get('https://api.mercadolibre.com/sites/MLB/search?tag=best_seller&has_discount=true&limit=50&sort=relevance', {
-      headers: {
-        'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
-        'Accept': 'application/json',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-      },
+      headers: baseHeaders,
       httpsAgent,
       timeout: 8000
     });
@@ -331,11 +345,7 @@ async function fetchFromApi() {
 
   try {
     const res2 = await axios.get('https://api.mercadolibre.com/sites/MLB/promotions?type=coupon', {
-      headers: {
-        'User-Agent': 'MercadoLibre/10.428.1 (iPhone; iOS 17.5.1; Mobile/21F90)',
-        'Accept': 'application/json',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-      },
+      headers: baseHeaders,
       httpsAgent,
       timeout: 8000
     });

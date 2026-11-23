@@ -566,13 +566,15 @@ class WhatsappPublisher {
    * 4. Comunidades e grupos de avisos
    */
   async resolveGroup(target) {
-    if (!target || !this.sock) return null;
+    if (!target) return null;
     const clean = String(target).trim();
 
-    // 1. Já é JID de grupo direto
+    // 1. Já é JID de grupo direto (não precisa do sock para saber que é um grupo válido!)
     if (clean.endsWith('@g.us')) {
       return { id: clean, name: clean, type: 'group' };
     }
+
+    if (!this.sock) return null;
 
     // 2. Link de convite de grupo (chat.whatsapp.com/...)
     const groupLinkMatch = clean.match(/chat\.whatsapp\.com\/([a-zA-Z0-9_-]+)/i);
@@ -753,12 +755,10 @@ class WhatsappPublisher {
     if (destinations.length === 0 && targetNumber) {
       const numId = `${String(targetNumber).replace(/\D/g, '')}@s.whatsapp.net`;
       destinations.push({ id: numId, name: targetNumber, type: 'number' });
-      logger.info(`📱 Destino ativo (Fallback): [NÚMERO PRIVADO] ${targetNumber}`);
+      logger.debug(`📱 Destino ativo (Fallback): [NÚMERO PRIVADO] ${targetNumber}`);
     }
 
-    const hasOnlyFallback = destinations.length > 0 && destinations.every(d => d.type === 'number');
-
-    if (destinations.length > 0 && !hasOnlyFallback) {
+    if (destinations.length > 0) {
       if (hasNicheOverride) {
         this._nicheDestCache = this._nicheDestCache || {};
         this._nicheDestCache[niche] = destinations;

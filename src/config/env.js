@@ -82,7 +82,9 @@ module.exports = {
   // 🛡️ Credenciais Oficiais OAuth 2.0 Mercado Livre
   mlClientId: process.env.ML_CLIENT_ID || '7921110595606583',
   mlClientSecret: process.env.ML_CLIENT_SECRET || '1Hzeh0kF7u5OXli5cqp9Bsg3zyMZdOPI',
-  mlRedirectUri: process.env.ML_REDIRECT_URI || 'https://ml-afiliados-bot-f1w7.onrender.com/auth/callback',
+  mlRedirectUri: process.env.ML_REDIRECT_URI || 
+    (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}/auth/callback` : 
+     (process.env.RENDER_EXTERNAL_URL ? `${process.env.RENDER_EXTERNAL_URL}/auth/callback` : 'https://ml-afiliados-bot-f1w7.onrender.com/auth/callback')),
   mlRefreshToken: process.env.ML_REFRESH_TOKEN || null,
   webhookSecret: process.env.WEBHOOK_SECRET || null,
 };

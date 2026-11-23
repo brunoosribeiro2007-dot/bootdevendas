@@ -354,6 +354,13 @@ const captureTask = async () => {
 
     logger.info(`✅ Job de captura finalizado. ${totalAddedCount} novos produtos adicionados à fila.`);
 
+    if (totalAddedCount === 0) {
+      const pendingItems = await queueService.getQueueByStatus('approved');
+      if (!pendingItems || pendingItems.length === 0) {
+        logger.warn('⚠️ [CaptureJob] Nenhum produto adicionado e a fila de envio está vazia. Certifique-se de conectar a conta do Mercado Livre pelo painel web (/auth/login) para liberar as buscas na API oficial sem restrição 403.');
+      }
+    }
+
   } catch (error) {
     logger.error('❌ Erro crítico no job de captura multi-item:', error);
   } finally {
