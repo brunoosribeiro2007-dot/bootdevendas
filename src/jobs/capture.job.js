@@ -357,7 +357,8 @@ const captureTask = async () => {
     if (totalAddedCount === 0) {
       const pendingItems = await queueService.getQueueByStatus('approved');
       if (!pendingItems || pendingItems.length === 0) {
-        logger.warn('⚠️ [CaptureJob] Nenhum produto adicionado e a fila de envio está vazia. Certifique-se de conectar a conta do Mercado Livre pelo painel web (/auth/login) para liberar as buscas na API oficial sem restrição 403.');
+        logger.warn('⚠️ [CaptureJob] Fila de envio zerada. Ativando reabastecimento preventivo de catálogo com links oficiais de afiliado para não interromper envios...');
+        await repository.seedInitialProductsIfEmpty();
       }
     }
 

@@ -35,9 +35,9 @@ services:
       - key: NICHE
         value: "multi"
 
-      # Desativa dados de seed falsos/estáticos para garantir 100% de promoções reais
+      # Catálogo de segurança ativo como buffer para garantir envio mesmo se APIs externas oscilarem
       - key: ENABLE_SEED_PRODUCTS
-        value: "false"
+        value: "true"
 
       # Chave de Inteligência Artificial Gemini (Curadoria Dinâmica e Variação de Copy)
       - key: GEMINI_API_KEY
@@ -129,7 +129,7 @@ services:
       - key: ML_CLIENT_SECRET
         sync: false
       - key: ML_REDIRECT_URI
-        value: "https://ml-afiliados-bot-f1w7.onrender.com/auth/callback"
+        value: "https://bootdevendas.onrender.com/auth/callback"
 
       # ------------------------------------------------------------------------
       # SHOPEE (OPCIONAL)

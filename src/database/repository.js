@@ -655,6 +655,14 @@ const countUsers = async () => {
 
 const purgeSeedProducts = async () => {
     try {
+        const approvedCountRow = await db.get("SELECT COUNT(*) as count FROM queue WHERE status = 'approved'");
+        const approvedCount = approvedCountRow ? parseInt(approvedCountRow.count, 10) : 0;
+        // Não purga os produtos se a fila estiver baixa ou vazia para nunca interromper envios
+        if (approvedCount <= 5) {
+            logger.debug('[Repository] Fila baixa ou vazia. Preservando catálogo de ofertas para garantir publicações contínuas.');
+            return;
+        }
+
         const seedIds = ['MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3'];
         for (const sId of seedIds) {
             await db.run("DELETE FROM queue WHERE product_id = ?", [sId]);
@@ -668,30 +676,26 @@ const purgeSeedProducts = async () => {
     }
 };
 
-const seedInitialProductsIfEmpty = async () => {
+const seedNicheProductsIfEmpty = async (niche) => {
     try {
-        if (!env.enableSeedProducts) {
-            logger.debug('[Seed] Importação de produtos estáticos desativada para priorizar promoções 100% reais (ENABLE_SEED_PRODUCTS = false).');
-            return 0;
-        }
+        const cleanNiche = String(niche || 'casa').toLowerCase();
+        const checkQuery = `
+            SELECT COUNT(*) as count 
+            FROM queue q 
+            JOIN products p ON q.product_id = p.id 
+            WHERE q.status = 'approved' AND (p.description = ? OR p.description LIKE ?)
+        `;
+        const row = await db.get(checkQuery, [cleanNiche, `%${cleanNiche}%`]);
+        const count = row ? parseInt(row.count, 10) : 0;
+        if (count > 0) return count;
 
-        const approvedCountRow = await db.get("SELECT COUNT(*) as count FROM queue WHERE status = 'approved'");
-        const approvedCount = approvedCountRow ? parseInt(approvedCountRow.count, 10) : 0;
-        if (approvedCount > 0) {
-            logger.info(`📦 Fila já possui ${approvedCount} produtos aprovados prontos para publicação.`);
-            return approvedCount;
-        }
-
-        let targetSeedFile = 'initial_products.json';
-        if (env && env.nicheProfile && env.nicheProfile.seedFile) {
-            targetSeedFile = env.nicheProfile.seedFile;
-        }
-        let seedPath = path.join(__dirname, 'seeds', targetSeedFile);
+        let seedFile = cleanNiche === 'pc_gamer' ? 'initial_products_pc.json' : 'initial_products_casa.json';
+        let seedPath = path.join(__dirname, 'seeds', seedFile);
         if (!fs.existsSync(seedPath)) {
             seedPath = path.join(__dirname, 'seeds', 'initial_products.json');
         }
         if (!fs.existsSync(seedPath)) {
-            logger.warn(`⚠️ Arquivo de seed inicial não encontrado em ${seedPath}`);
+            logger.warn(`⚠️ Arquivo de seed do nicho ${cleanNiche} não encontrado em ${seedPath}`);
             return 0;
         }
 
@@ -699,7 +703,7 @@ const seedInitialProductsIfEmpty = async () => {
         const seedItems = JSON.parse(rawSeed);
         if (!Array.isArray(seedItems) || seedItems.length === 0) return 0;
 
-        logger.info(`🌱 Fila vazia detectada! Importando ${seedItems.length} produtos do seed inicial...`);
+        logger.info(`🌱 Reabastecendo fila aprovada com ofertas curadas do nicho [${cleanNiche.toUpperCase()}] (${seedItems.length} itens)...`);
         let imported = 0;
         for (const item of seedItems) {
             try {
@@ -710,6 +714,7 @@ const seedInitialProductsIfEmpty = async () => {
                         price = excluded.price,
                         link = excluded.link,
                         image_url = COALESCE(excluded.image_url, products.image_url),
+                        description = excluded.description,
                         coupon = COALESCE(excluded.coupon, products.coupon),
                         old_price = COALESCE(excluded.old_price, products.old_price),
                         discount_percent = COALESCE(excluded.discount_percent, products.discount_percent)
@@ -720,7 +725,7 @@ const seedInitialProductsIfEmpty = async () => {
                     item.link,
                     item.original_link || item.link,
                     item.image_url || null,
-                    item.description || null,
+                    cleanNiche,
                     item.coupon || '',
                     item.old_price || null,
                     item.discount_percent || null,
@@ -743,8 +748,22 @@ const seedInitialProductsIfEmpty = async () => {
                 logger.debug(`[Seed] Item ${item.id} pulado: ${err.message}`);
             }
         }
-        logger.info(`✅ Seed inicial concluído: ${imported} produtos adicionados com sucesso à fila aprovada!`);
+        logger.info(`✅ Nicho [${cleanNiche.toUpperCase()}] reabastecido com sucesso: ${imported} ofertas prontas na fila!`);
         return imported;
+    } catch (e) {
+        logger.error(`❌ Erro ao reabastecer nicho ${niche}: ${e.message}`);
+        return 0;
+    }
+};
+
+const seedInitialProductsIfEmpty = async () => {
+    try {
+        if (env.isMultiNiche) {
+            const casaCount = await seedNicheProductsIfEmpty('casa');
+            const pcCount = await seedNicheProductsIfEmpty('pc_gamer');
+            return (casaCount || 0) + (pcCount || 0);
+        }
+        return await seedNicheProductsIfEmpty(env.niche || 'casa');
     } catch (e) {
         logger.error(`❌ Erro ao executar seed inicial: ${e.message}`);
         return 0;
@@ -845,6 +864,7 @@ module.exports = {
   saveOrUpdateUser,
   countUsers,
   seedInitialProductsIfEmpty,
+  seedNicheProductsIfEmpty,
   purgeSeedProducts,
   saveOAuthTokens,
   getOAuthTokens,

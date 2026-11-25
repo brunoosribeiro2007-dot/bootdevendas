@@ -197,6 +197,11 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
       if (!item && !env.isMultiNiche) {
         item = await repository.getNextApprovedItem();
       }
+      if (!item && env.enableSeedProducts) {
+        // Se a fila para este nicho estiver vazia, reabastece automaticamente com produtos curados do nicho
+        await repository.seedNicheProductsIfEmpty(targetNiche);
+        item = await repository.getNextApprovedItemByNiche(targetNiche);
+      }
 
       // 🛡️ Filtro de Proteção: se o item da fila for suporte/acessório falso-positivo, descarta imediatamente
       while (item && isDeceptiveAccessory(item)) {
