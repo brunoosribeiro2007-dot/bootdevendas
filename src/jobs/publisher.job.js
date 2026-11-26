@@ -194,7 +194,7 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
 
     for (const targetNiche of targetNiches) {
       let item = await repository.getNextApprovedItemByNiche(targetNiche);
-      if (!item && !env.isMultiNiche) {
+      if (!item) {
         item = await repository.getNextApprovedItem();
       }
       if (!item && env.enableSeedProducts) {

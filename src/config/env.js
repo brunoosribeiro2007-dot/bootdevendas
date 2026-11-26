@@ -1,13 +1,13 @@
 require('dotenv').config();
 const { getNicheProfile, normalizeNicheId } = require('./niches');
 
-const activeNicheId = normalizeNicheId(process.env.NICHE);
+const activeNicheId = normalizeNicheId(process.env.NICHE || 'multi');
 const nicheProfile = getNicheProfile(activeNicheId);
 
 module.exports = {
   niche: activeNicheId,
   isMultiNiche: activeNicheId === 'multi' || Boolean(process.env.WHATSAPP_GROUP_CASA && process.env.WHATSAPP_GROUP_PC_GAMER),
-  enableSeedProducts: (process.env.ENABLE_SEED_PRODUCTS || 'false').toLowerCase() === 'true',
+  enableSeedProducts: (process.env.ENABLE_SEED_PRODUCTS || 'true').toLowerCase() === 'true',
   nicheProfile,
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'production',
@@ -19,14 +19,14 @@ module.exports = {
   cronPublishSchedule: process.env.CRON_PUBLISH_SCHEDULE || '*/3 * * * *',
 
   whatsappTargetNumber: process.env.WHATSAPP_TARGET_NUMBER || '5569984520192',
-  whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || '',
+  whatsappTargetGroup: process.env.WHATSAPP_TARGET_GROUP || '120363429298492381@g.us, 120363429098602670@g.us',
   whatsappTargetChannel: process.env.WHATSAPP_TARGET_CHANNEL || '',
   whatsappApiUrl: process.env.WHATSAPP_API_URL || '',
 
   // Destinos específicos por nicho (para instância única multi-grupos)
-  whatsappGroupCasa: process.env.WHATSAPP_GROUP_CASA || '',
+  whatsappGroupCasa: process.env.WHATSAPP_GROUP_CASA || '120363429298492381@g.us',
   whatsappChannelCasa: process.env.WHATSAPP_CHANNEL_CASA || '',
-  whatsappGroupPcGamer: process.env.WHATSAPP_GROUP_PC_GAMER || '',
+  whatsappGroupPcGamer: process.env.WHATSAPP_GROUP_PC_GAMER || '120363429098602670@g.us',
   whatsappChannelPcGamer: process.env.WHATSAPP_CHANNEL_PC_GAMER || '',
 
   // Links de convite para compartilhamento e crescimento dos grupos
