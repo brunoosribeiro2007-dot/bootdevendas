@@ -32,11 +32,11 @@ describe('Publisher Job - Consistency Enhancements', () => {
         await publisherJob.publishTask();
 
         // Should NOT fetch approved item because it returned early
-        expect(repository.getNextApprovedItem).not.toHaveBeenCalled();
+        expect(repository.getNextApprovedItemByNiche).not.toHaveBeenCalled();
 
         // Simula WhatsApp conectando nesse meio tempo
         publisher.isReady = true; 
-        repository.getNextApprovedItem.mockResolvedValueOnce(null); // Evita loop infinito
+        repository.getNextApprovedItemByNiche.mockResolvedValue(null); // Evita loop infinito
 
         // Avança o timer
         jest.advanceTimersByTime(30000);
@@ -45,8 +45,8 @@ describe('Publisher Job - Consistency Enhancements', () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        // Verificamos se o publishTask executou a retentativa
-        expect(repository.getNextApprovedItem).toHaveBeenCalled();
+        // Verificamos se o publishTask executou a retentativa por nicho
+        expect(repository.getNextApprovedItemByNiche).toHaveBeenCalled();
     });
 
     test('should trigger captureTask if queue is empty', async () => {
@@ -54,7 +54,7 @@ describe('Publisher Job - Consistency Enhancements', () => {
         publisher.isReady = true;
 
         // Mock repository returning null (empty queue)
-        repository.getNextApprovedItem.mockResolvedValue(null);
+        repository.getNextApprovedItemByNiche.mockResolvedValue(null);
 
         // Trigger publishTask
         await publisherJob.publishTask();

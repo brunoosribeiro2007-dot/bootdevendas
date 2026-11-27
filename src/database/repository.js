@@ -543,13 +543,40 @@ const saveCouponsBatch = async (coupons = []) => {
     return saved;
 };
 
-const getActiveCoupons = async () => {
+const getActiveCoupons = async (maxHours = 24) => {
     try {
-        const query = 'SELECT * FROM coupons WHERE is_active = 1 ORDER BY min_amount ASC, updated_at DESC';
+        const USE_POSTGRES = isPostgres();
+        let query;
+        if (USE_POSTGRES) {
+            query = `SELECT * FROM coupons WHERE is_active = 1 AND updated_at >= NOW() - INTERVAL '${maxHours} hours' ORDER BY min_amount ASC, updated_at DESC`;
+        } else {
+            query = `SELECT * FROM coupons WHERE is_active = 1 AND updated_at >= datetime('now', '-${maxHours} hours') ORDER BY min_amount ASC, updated_at DESC`;
+        }
         return await db.all(query, []);
     } catch (err) {
         logger.error(`[Repository] Erro ao listar cupons ativos: ${err.message}`);
         return [];
+    }
+};
+
+const purgeObsoleteProductsAndCoupons = async () => {
+    try {
+        await deactivateExpiredCoupons(24);
+        await pruneOldCoupons(3);
+
+        const obsoletePatterns = [
+            'h61', 'h81', 'b75', 'x79', 'x99', 'lga 775', 'lga 1155', 'lga 1150', 'lga 1156',
+            'rx 580', 'rx 570', 'rx 560', 'rx 550', 'rx 480', 'rx 470',
+            'gt 710', 'gt 730', 'gtx 750', 'ddr3', 'ddr2', 'core 2 duo', 'core 2 quad',
+            'i3-7100', 'i7 4770', 'i7-3770', 'i7 3770', 'i5 3470', 'i5 2400'
+        ];
+
+        for (const pattern of obsoletePatterns) {
+            await db.run("DELETE FROM queue WHERE product_id IN (SELECT id FROM products WHERE LOWER(title) LIKE ?)", [`%${pattern}%`]);
+        }
+        logger.info('🧹 [Repository] Fila purgada de hardware antigo e cupons expirados.');
+    } catch (err) {
+        logger.warn(`[Repository] Falha na purga de itens obsoletos: ${err.message}`);
     }
 };
 
@@ -860,6 +887,7 @@ module.exports = {
   getCouponByCode,
   deactivateExpiredCoupons,
   pruneOldCoupons,
+  purgeObsoleteProductsAndCoupons,
   getUserByEmail,
   saveOrUpdateUser,
   countUsers,

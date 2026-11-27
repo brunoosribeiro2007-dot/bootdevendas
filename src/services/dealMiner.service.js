@@ -16,7 +16,7 @@ const cheerio = require('cheerio');
 const logger = require('../config/logger');
 const env = require('../config/env');
 const { formatarOfertaComIA, gerarBuscasComIA } = require('./geminiAi.service');
-const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+const { isDeceptiveAccessory, isObsoleteHardware } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CONTROLE DE DUPLICAÇÃO DIÁRIA EM MEMÓRIA (SET)
@@ -128,6 +128,12 @@ async function buscarMelhorOfertaML(termo) {
       // Trava de acessório enganoso
       if (isDeceptiveAccessory({ title: item.title, price: item.price })) {
         logger.debug(`[DealMiner] Acessório enganoso descartado: "${item.title}"`);
+        return false;
+      }
+
+      // Trava de hardware obsoleto
+      if (isObsoleteHardware({ title: item.title, price: item.price })) {
+        logger.debug(`[DealMiner] Hardware antigo descartado: "${item.title}"`);
         return false;
       }
 

@@ -3,7 +3,7 @@
  * Classifica e extrai especificações técnicas de ofertas de computadores e hardware gamer.
  */
 
-const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+const { isDeceptiveAccessory, isObsoleteHardware } = require('../helpers/accessoryDetector');
 
 class GamerClassifierService {
   constructor() {
@@ -91,6 +91,18 @@ class GamerClassifierService {
         subCategory: 'Acessórios Secundários',
         specs,
         appealScore: 20,
+        appealBadge: null,
+        isGamer: false
+      };
+    }
+
+    // 0.1 VERIFICAÇÃO: Hardware obsoleto / defasado (RX 580, H61, H81, B75, DDR3, i7 antigo, etc.)
+    if (isObsoleteHardware({ title, price: metadata.price })) {
+      return {
+        category: this.CATEGORIES.OTHER_GAMER,
+        subCategory: 'Hardware Obsoleto',
+        specs,
+        appealScore: 0,
         appealBadge: null,
         isGamer: false
       };

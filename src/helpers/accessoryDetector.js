@@ -144,7 +144,11 @@ function isDeceptiveAccessory(produto) {
   return false;
 }
 
+const { isObsoleteHardware, isProductMatchingNiche } = require('./hardwareFilter');
+
 module.exports = {
-  isDeceptiveAccessory
+  isDeceptiveAccessory,
+  isObsoleteHardware,
+  isProductMatchingNiche
 };
 

@@ -399,15 +399,78 @@ const initializeDB = async () => {
                     OR (LOWER(title) LIKE '%jornalismo%' OR LOWER(title) LIKE '%reportagem%' OR LOWER(title) LIKE '%repórter%' OR LOWER(title) LIKE '%reporter%' OR LOWER(title) LIKE '%entrevista%')
                 );
             `;
+            const cleanupObsoleteHardwareQuery = `
+                DELETE FROM queue WHERE product_id IN (
+                    SELECT id FROM products WHERE 
+                       LOWER(title) LIKE '%rx 580%'
+                    OR LOWER(title) LIKE '%rx 570%'
+                    OR LOWER(title) LIKE '%rx 560%'
+                    OR LOWER(title) LIKE '%rx 550%'
+                    OR LOWER(title) LIKE '%rx 480%'
+                    OR LOWER(title) LIKE '%rx 470%'
+                    OR LOWER(title) LIKE '%h61%'
+                    OR LOWER(title) LIKE '%h81%'
+                    OR LOWER(title) LIKE '%b75%'
+                    OR LOWER(title) LIKE '%x79%'
+                    OR LOWER(title) LIKE '%x99%'
+                    OR LOWER(title) LIKE '%lga 775%'
+                    OR LOWER(title) LIKE '%lga 1155%'
+                    OR LOWER(title) LIKE '%lga 1150%'
+                    OR LOWER(title) LIKE '%lga 1156%'
+                    OR LOWER(title) LIKE '%gt 710%'
+                    OR LOWER(title) LIKE '%gt 730%'
+                    OR LOWER(title) LIKE '%gtx 750%'
+                    OR LOWER(title) LIKE '%ddr3%'
+                    OR LOWER(title) LIKE '%ddr2%'
+                    OR LOWER(title) LIKE '%core 2 duo%'
+                    OR LOWER(title) LIKE '%core 2 quad%'
+                    OR LOWER(title) LIKE '%i7 3770%'
+                    OR LOWER(title) LIKE '%i7-3770%'
+                    OR LOWER(title) LIKE '%i7 4770%'
+                    OR LOWER(title) LIKE '%i3-7100%'
+                    OR LOWER(title) LIKE '%i5 3470%'
+                    OR LOWER(title) LIKE '%i5 2400%'
+                    OR (LOWER(title) LIKE '%ssd%' AND (LOWER(title) LIKE '%120gb%' OR LOWER(title) LIKE '%128gb%' OR LOWER(title) LIKE '%120 gb%' OR LOWER(title) LIKE '%128 gb%'))
+                );
+            `;
+            const cleanupNicheMismatchQuery = `
+                DELETE FROM queue WHERE product_id IN (
+                    SELECT id FROM products WHERE 
+                       (description = 'casa' AND (
+                           LOWER(title) LIKE '%placa mae%' OR LOWER(title) LIKE '%placa-mãe%' OR LOWER(title) LIKE '%placa mãe%'
+                        OR LOWER(title) LIKE '%placa de video%' OR LOWER(title) LIKE '%placa de vídeo%'
+                        OR LOWER(title) LIKE '%rtx %' OR LOWER(title) LIKE '%gtx %' OR LOWER(title) LIKE '%radeon%'
+                        OR LOWER(title) LIKE '%ryzen%' OR LOWER(title) LIKE '%intel core%' OR LOWER(title) LIKE '%memoria ram%'
+                        OR LOWER(title) LIKE '%water cooler%' OR LOWER(title) LIKE '%pc gamer%' OR LOWER(title) LIKE '%gabinete gamer%'
+                       ))
+                    OR (description = 'pc_gamer' AND (
+                           LOWER(title) LIKE '%air fryer%' OR LOWER(title) LIKE '%fritadeira%'
+                        OR LOWER(title) LIKE '%liquidificador%' OR LOWER(title) LIKE '%batedeira%'
+                        OR LOWER(title) LIKE '%panela%' OR LOWER(title) LIKE '%cooktop%' OR LOWER(title) LIKE '%fogao%'
+                        OR LOWER(title) LIKE '%micro-ondas%' OR LOWER(title) LIKE '%aspirador%'
+                       ))
+                );
+            `;
+            const expireCouponsQuery = `
+                UPDATE coupons 
+                SET is_active = 0 
+                WHERE is_active = 1 AND updated_at < ${USE_POSTGRES ? "NOW() - INTERVAL '24 hours'" : "datetime('now', '-24 hours')"};
+            `;
             if (USE_POSTGRES && pool) {
                 await pool.query(cleanupCouponsQuery);
                 await pool.query(cleanupProductsQuery);
                 await pool.query(cleanupAccessoriesQuery);
+                await pool.query(cleanupObsoleteHardwareQuery);
+                await pool.query(cleanupNicheMismatchQuery);
+                await pool.query(expireCouponsQuery);
             } else {
                 const sDb = getSqliteDb();
                 sDb.exec(cleanupCouponsQuery);
                 sDb.exec(cleanupProductsQuery);
                 sDb.exec(cleanupAccessoriesQuery);
+                sDb.exec(cleanupObsoleteHardwareQuery);
+                sDb.exec(cleanupNicheMismatchQuery);
+                sDb.exec(expireCouponsQuery);
             }
         } catch (cleanErr) {}
 

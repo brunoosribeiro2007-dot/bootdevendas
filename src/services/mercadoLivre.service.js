@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
 const env = require('../config/env');
-const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+const { isDeceptiveAccessory, isObsoleteHardware } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PARÂMETROS CONFIGURÁVEIS DE QUALIDADE E REPUTAÇÃO DO PRODUTO (BUSCA AUTOMÁTICA)
@@ -129,6 +129,12 @@ function validarQualidadeProduto(produto, customThresholds = {}) {
     // ── 0. FILTRO DE ACESSÓRIOS SECUNDÁRIOS / ENGANOSOS ──────────────────────
     if (isDeceptiveAccessory(produto)) {
         logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": acessório secundário/enganoso (suporte, capa, película, etc.).`);
+        return false;
+    }
+
+    // ── 0.1 FILTRO DE HARDWARE ANTIGO / OBSOLETO ─────────────────────────────
+    if (isObsoleteHardware(produto)) {
+        logger.debug(`⏩ [Filtro Qualidade] Rejeitado "${title}": hardware antigo/obsoleto (placa-mãe antiga, RX 580, DDR3, etc.).`);
         return false;
     }
 

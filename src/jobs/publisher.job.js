@@ -18,7 +18,7 @@ const logger = require('../config/logger');
 const repository = require('../database/repository');
 const publisher = require('../publishers/whatsapp.publisher');
 const formatterService = require('../services/formatter.service');
-const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+const { isDeceptiveAccessory, isObsoleteHardware, isProductMatchingNiche } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BLOCO 1: UTILITÁRIOS DE FUSO HORÁRIO E JANELA DE OPERAÇÃO
@@ -194,20 +194,26 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
 
     for (const targetNiche of targetNiches) {
       let item = await repository.getNextApprovedItemByNiche(targetNiche);
-      if (!item) {
-        item = await repository.getNextApprovedItem();
-      }
       if (!item && env.enableSeedProducts) {
         // Se a fila para este nicho estiver vazia, reabastece automaticamente com produtos curados do nicho
         await repository.seedNicheProductsIfEmpty(targetNiche);
         item = await repository.getNextApprovedItemByNiche(targetNiche);
       }
 
-      // 🛡️ Filtro de Proteção: se o item da fila for suporte/acessório falso-positivo, descarta imediatamente
-      while (item && isDeceptiveAccessory(item)) {
-        logger.warn(`🚫 [PublisherJob] Rejeitando acessório da fila ID ${item.id} ("${item.title}") por ser suporte/capa em vez de produto principal.`);
+      // 🛡️ Filtro de Proteção Estrito: rejeita acessórios enganosos, hardware obsoleto e vazamento entre nichos
+      while (item && (isDeceptiveAccessory(item) || isObsoleteHardware(item) || !isProductMatchingNiche(item, targetNiche))) {
+        let reason = 'acessório/suporte em vez de produto principal';
+        if (isObsoleteHardware(item)) reason = 'hardware antigo/obsoleto';
+        else if (!isProductMatchingNiche(item, targetNiche)) reason = `incompatível com o nicho ${targetNiche}`;
+
+        logger.warn(`🚫 [PublisherJob] Rejeitando produto da fila ID ${item.id} ("${item.title}") por: ${reason}.`);
         await repository.deleteProductAndQueueItem(item.product_id, item.description);
         item = await repository.getNextApprovedItemByNiche(targetNiche);
+      }
+
+      if (!item) {
+        logger.info(`ℹ️ Fila sem produtos aprovados no momento para o nicho [${targetNiche}].`);
+        continue;
       }
 
       if (item) {

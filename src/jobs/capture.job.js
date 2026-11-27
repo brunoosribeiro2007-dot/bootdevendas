@@ -20,7 +20,7 @@ const formatterService = require('../services/formatter.service');
 const queueService = require('../services/queue.service');
 const couponFetcher = require('../services/couponFetcher.service');
 const { SEARCH_POOLS } = require('../helpers/miningSeeds');
-const { isDeceptiveAccessory } = require('../helpers/accessoryDetector');
+const { isDeceptiveAccessory, isObsoleteHardware, isProductMatchingNiche } = require('../helpers/accessoryDetector');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // BLOCO 1: ESTADO GLOBAL DO JOB
@@ -265,6 +265,19 @@ const captureTask = async () => {
       // 🛡️ ANTI-ACESSÓRIO ENGANOSO: Bloqueia suportes plásticos, capinhas, películas, etc.
       if (isDeceptiveAccessory(product)) {
         logger.info(`⏩ [Anti-Accessory] Produto ignorado por ser acessório/suporte: "${product.title}"`);
+        continue;
+      }
+
+      // 🛡️ HARDWARE OBSOLETO / E-WASTE: Bloqueia placas-mãe antigas (H61/H81/B75), CPUs antigas, RX 580, DDR3, etc.
+      if (isObsoleteHardware(product)) {
+        logger.info(`⏩ [Anti-Obsolete] Produto ignorado por ser hardware antigo/obsoleto: "${product.title}"`);
+        continue;
+      }
+
+      // 🛡️ ISOLAMENTO DE NICHO: Bloqueia tech em casa ou itens domésticos em pc_gamer
+      const itemNiche = product.niche || env.niche;
+      if (!isProductMatchingNiche(product, itemNiche)) {
+        logger.info(`⏩ [Niche-Mismatch] Produto ignorado por incompatibilidade com nicho [${itemNiche}]: "${product.title}"`);
         continue;
       }
 

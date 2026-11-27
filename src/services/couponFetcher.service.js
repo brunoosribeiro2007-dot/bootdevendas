@@ -571,6 +571,11 @@ async function fetchDailyCoupons(forceRefresh = false) {
   logger.info('🔄 [CouponFetcher] Buscando cupons vigentes no Mercado Livre...');
 
   try {
+    // 0. Desativa preventivamente cupons expirados no banco
+    try {
+      await repository.deactivateExpiredCoupons(24);
+    } catch (_) {}
+
     const [apiResults, htmlResults] = await Promise.allSettled([
       fetchFromApi(),
       fetchFromHtml()
@@ -954,24 +959,30 @@ async function resolveCouponForProduct(product) {
     if (product && product.coupon) {
       const rawCoupon = typeof product.coupon === 'object' ? product.coupon.code : product.coupon;
       const extracted = extractCouponCode(rawCoupon);
-      if (extracted) {
-        // Tenta obter descrição da base
+      if (extracted && isValidRealCouponCode(extracted)) {
+        // Tenta obter descrição da base e verifica se o cupom não está explicitamente desativado/expirado
         let rule = (typeof product.coupon === 'object' && product.coupon.rule) ? product.coupon.rule : '';
         let description = (typeof product.coupon === 'object' && product.coupon.description) ? product.coupon.description : '';
+        let isExpired = false;
         try {
           const found = await repository.getCouponByCode(extracted);
           if (found) {
+            if (found.is_active === 0) {
+              isExpired = true;
+            }
             rule = rule || found.rule || '';
             description = description || found.description || '';
           }
         } catch (e) {}
 
-        return createCouponObject({
-          code: extracted,
-          rule,
-          description,
-          source: 'product_announcement'
-        });
+        if (!isExpired) {
+          return createCouponObject({
+            code: extracted,
+            rule,
+            description,
+            source: 'product_announcement'
+          });
+        }
       }
     }
 
