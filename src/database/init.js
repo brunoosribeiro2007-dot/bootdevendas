@@ -374,14 +374,37 @@ const initializeDB = async () => {
         try {
             const cleanupCouponsQuery = `
                 DELETE FROM coupons 
-                WHERE code IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA') 
+                WHERE code IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA', 'CASA15', 'VALE20', 'ELETRO50', 'TECH10', 'UPGRADE20', 'APP10', 'VEMPROAPP') 
+                   OR source = 'ml_cupons_page'
                    OR LENGTH(code) < 3;
             `;
             const cleanupProductsQuery = `
                 UPDATE products 
                 SET coupon = '' 
-                WHERE coupon IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA') 
+                WHERE coupon IN ('COM', 'SEM', 'PARA', 'PRA', 'POR', 'DE', 'DO', 'DA', 'DOS', 'DAS', 'OFF', 'DESCONTO', 'CUPOM', 'FRETE', 'REAIS', 'GRATIS', 'PRODUTO', 'OFERTA', 'CASA15', 'VALE20', 'ELETRO50', 'TECH10', 'UPGRADE20', 'APP10', 'VEMPROAPP') 
                    OR LENGTH(coupon) < 3;
+            `;
+            const cleanupSeedQueueQuery = `
+                DELETE FROM queue WHERE product_id IN (
+                    'MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3', 'MLB46220740', 'MLB5333799729'
+                ) OR product_id IN (
+                    SELECT id FROM products WHERE original_link LIKE '%meli.la/2CQRTt7%' 
+                       OR original_link LIKE '%meli.la/2drHMKg%' 
+                       OR original_link LIKE '%meli.la/1nUFnSV%' 
+                       OR original_link LIKE '%meli.la/2jKmC4s%'
+                       OR original_link LIKE '%meli.la/2chC1oF%'
+                       OR original_link LIKE '%meli.la/1EG8t5F%'
+                );
+            `;
+            const cleanupSeedProductsQuery = `
+                DELETE FROM products WHERE id IN (
+                    'MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3', 'MLB46220740', 'MLB5333799729'
+                ) OR original_link LIKE '%meli.la/2CQRTt7%' 
+                   OR original_link LIKE '%meli.la/2drHMKg%' 
+                   OR original_link LIKE '%meli.la/1nUFnSV%' 
+                   OR original_link LIKE '%meli.la/2jKmC4s%'
+                   OR original_link LIKE '%meli.la/2chC1oF%'
+                   OR original_link LIKE '%meli.la/1EG8t5F%';
             `;
             const cleanupAccessoriesQuery = `
                 DELETE FROM queue WHERE product_id IN (
@@ -459,6 +482,8 @@ const initializeDB = async () => {
             if (USE_POSTGRES && pool) {
                 await pool.query(cleanupCouponsQuery);
                 await pool.query(cleanupProductsQuery);
+                await pool.query(cleanupSeedQueueQuery);
+                await pool.query(cleanupSeedProductsQuery);
                 await pool.query(cleanupAccessoriesQuery);
                 await pool.query(cleanupObsoleteHardwareQuery);
                 await pool.query(cleanupNicheMismatchQuery);
@@ -467,6 +492,8 @@ const initializeDB = async () => {
                 const sDb = getSqliteDb();
                 sDb.exec(cleanupCouponsQuery);
                 sDb.exec(cleanupProductsQuery);
+                sDb.exec(cleanupSeedQueueQuery);
+                sDb.exec(cleanupSeedProductsQuery);
                 sDb.exec(cleanupAccessoriesQuery);
                 sDb.exec(cleanupObsoleteHardwareQuery);
                 sDb.exec(cleanupNicheMismatchQuery);

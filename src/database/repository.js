@@ -682,21 +682,13 @@ const countUsers = async () => {
 
 const purgeSeedProducts = async () => {
     try {
-        const approvedCountRow = await db.get("SELECT COUNT(*) as count FROM queue WHERE status = 'approved'");
-        const approvedCount = approvedCountRow ? parseInt(approvedCountRow.count, 10) : 0;
-        // Não purga os produtos se a fila estiver baixa ou vazia para nunca interromper envios
-        if (approvedCount <= 5) {
-            logger.debug('[Repository] Fila baixa ou vazia. Preservando catálogo de ofertas para garantir publicações contínuas.');
-            return;
-        }
-
-        const seedIds = ['MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3'];
+        const seedIds = ['MLB52595849', 'MLB3735233072', 'MLB500', 'MLB3455211591', 'MLB5188426815', '3', 'MLB46220740', 'MLB5333799729'];
         for (const sId of seedIds) {
             await db.run("DELETE FROM queue WHERE product_id = ?", [sId]);
             await db.run("DELETE FROM products WHERE id = ?", [sId]);
         }
-        await db.run("DELETE FROM queue WHERE product_id IN (SELECT id FROM products WHERE quality_score = 100 AND rating = 4.8 AND reviews_count = 120 AND (original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%'))", []);
-        await db.run("DELETE FROM products WHERE quality_score = 100 AND rating = 4.8 AND reviews_count = 120 AND (original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%')", []);
+        await db.run("DELETE FROM queue WHERE product_id IN (SELECT id FROM products WHERE original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%' OR original_link LIKE '%meli.la/2jKmC4s%' OR original_link LIKE '%meli.la/2chC1oF%' OR original_link LIKE '%meli.la/1EG8t5F%')", []);
+        await db.run("DELETE FROM products WHERE original_link LIKE '%meli.la/2CQRTt7%' OR original_link LIKE '%meli.la/2drHMKg%' OR original_link LIKE '%meli.la/1nUFnSV%' OR original_link LIKE '%meli.la/2jKmC4s%' OR original_link LIKE '%meli.la/2chC1oF%' OR original_link LIKE '%meli.la/1EG8t5F%'", []);
         logger.info('🧹 Limpeza preventiva de produtos estáticos de seed concluída.');
     } catch (e) {
         logger.debug(`[Repository] Erro ao limpar produtos de seed: ${e.message}`);
@@ -704,6 +696,9 @@ const purgeSeedProducts = async () => {
 };
 
 const seedNicheProductsIfEmpty = async (niche) => {
+    if (!env.enableSeedProducts) {
+        return 0;
+    }
     try {
         const cleanNiche = String(niche || 'casa').toLowerCase();
         const checkQuery = `

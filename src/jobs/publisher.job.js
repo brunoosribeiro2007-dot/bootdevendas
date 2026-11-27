@@ -194,11 +194,6 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
 
     for (const targetNiche of targetNiches) {
       let item = await repository.getNextApprovedItemByNiche(targetNiche);
-      if (!item && env.enableSeedProducts) {
-        // Se a fila para este nicho estiver vazia, reabastece automaticamente com produtos curados do nicho
-        await repository.seedNicheProductsIfEmpty(targetNiche);
-        item = await repository.getNextApprovedItemByNiche(targetNiche);
-      }
 
       // 🛡️ Filtro de Proteção Estrito: rejeita acessórios enganosos, hardware obsoleto e vazamento entre nichos
       while (item && (isDeceptiveAccessory(item) || isObsoleteHardware(item) || !isProductMatchingNiche(item, targetNiche))) {
@@ -265,45 +260,11 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
     }
 
     if (totalPublished === 0) {
-      let anyItem = await repository.getNextApprovedItem();
-      if (!anyItem && env.enableSeedProducts) {
-        await repository.seedInitialProductsIfEmpty();
-        anyItem = await repository.getNextApprovedItem();
-      }
-
-      if (anyItem && isDeceptiveAccessory(anyItem)) {
-        logger.warn(`🚫 [PublisherJob] Rejeitando acessório avulso da fila ID ${anyItem.id} ("${anyItem.title}") por ser suporte/capa.`);
-        await repository.deleteProductAndQueueItem(anyItem.product_id, anyItem.description);
-        anyItem = null;
-      }
-
-      if (anyItem) {
-        try {
-          const itemNiche = anyItem.niche || anyItem.description || env.niche;
-          anyItem.niche = itemNiche;
-          if (itemNiche === 'pc_gamer' || (env.nicheProfile && env.nicheProfile.copywriter === 'gamer')) {
-            const gamerCopywriter = require('../services/gamerCopywriter.service');
-            anyItem.formatted_message = await gamerCopywriter.formatForWhatsApp(anyItem, anyItem.link);
-          } else {
-            anyItem.formatted_message = await formatterService.generateFormattedMessage(anyItem, anyItem.link);
-          }
-          const ok = await publisher.publish(anyItem);
-          if (ok) {
-            await repository.deleteProductAndQueueItem(anyItem.product_id, anyItem.description);
-            logger.info(`✅ Item avulso ${anyItem.id} publicado com sucesso.`);
-          } else {
-            await repository.updateQueueStatus(anyItem.id, 'approved');
-          }
-        } catch (e) {
-          await repository.updateQueueStatus(anyItem.id, 'approved');
-        }
-      } else {
-        logger.info('ℹ️ Fila de publicações aprovadas vazia. Disparando captura de promoções reais em segundo plano...');
-        const captureJob = require('./capture.job');
-        const capturePromise = captureJob.captureTask();
-        if (capturePromise && typeof capturePromise.catch === 'function') {
-          capturePromise.catch(err => logger.error('Erro na captura emergencial:', err));
-        }
+      logger.info('ℹ️ Fila de publicações aprovadas vazia. Disparando captura de promoções reais em segundo plano...');
+      const captureJob = require('./capture.job');
+      const capturePromise = captureJob.captureTask();
+      if (capturePromise && typeof capturePromise.catch === 'function') {
+        capturePromise.catch(err => logger.error('Erro na captura emergencial:', err));
       }
     }
   } catch (error) {

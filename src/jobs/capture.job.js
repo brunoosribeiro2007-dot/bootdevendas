@@ -367,14 +367,6 @@ const captureTask = async () => {
 
     logger.info(`✅ Job de captura finalizado. ${totalAddedCount} novos produtos adicionados à fila.`);
 
-    if (totalAddedCount === 0) {
-      const pendingItems = await queueService.getQueueByStatus('approved');
-      if (!pendingItems || pendingItems.length === 0) {
-        logger.warn('⚠️ [CaptureJob] Fila de envio zerada. Ativando reabastecimento preventivo de catálogo com links oficiais de afiliado para não interromper envios...');
-        await repository.seedInitialProductsIfEmpty();
-      }
-    }
-
   } catch (error) {
     logger.error('❌ Erro crítico no job de captura multi-item:', error);
   } finally {

@@ -312,14 +312,17 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
 
     const unwrapLink = (link) => {
         if (!link) return link;
-        if (isProxy && link.includes('translate.google.com')) {
+        if (link.includes('translate.google.com')) {
             try {
                 const urlObj = new URL(link);
                 const u = urlObj.searchParams.get('u');
-                return u ? u : link;
-            } catch (e) { return link; }
+                if (u) return decodeURIComponent(u).split('?')[0].split('#')[0];
+            } catch (e) {
+                const m = link.match(/[?&]u=([^&]+)/);
+                if (m) return decodeURIComponent(m[1]).split('?')[0].split('#')[0];
+            }
         }
-        return link;
+        return link.split('?')[0].split('#')[0];
     };
 
     // Seletores de itens (Expandido para novos layouts)
@@ -379,7 +382,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const cardText = $(element).text().toLowerCase();
 
                 // ⭐ 1. AVALIAÇÕES E NOTA MÉDIA DO PRODUTO
-                const ratingElement = $(element).find('.poly-reviews__rating, .ui-search-reviews__rating-number, .ui-search-item__group__element--reviews').first();
+                const ratingElement = $(element).find('.poly-component__review-compacted .polylabel-label, .poly-reviews__rating, .ui-search-reviews__rating-number, .ui-search-item__group__element--reviews').first();
                 const ratingText = ratingElement.text();
                 let rating = 0;
                 const ratingMatch = ratingText.match(/([1-5][.,]\d)/);
@@ -423,13 +426,20 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const isOfficialStore = $(element).find('.ui-search-official-store-label').length > 0 || 
                                         cardText.includes('loja oficial') || 
                                         sellerText.toLowerCase().includes('oficial') ||
+                                        $(element).find('[aria-label*="Loja oficial"]').length > 0 ||
                                         $(element).find('.poly-component__seller').text().toLowerCase().includes('loja oficial');
 
                 const isMercadoLider = /mercadol[ií]der|platinum|gold/i.test(cardText + ' ' + sellerText);
                 const hasGreenReputation = /term[oô]metro verde|melhores do site|5_green/i.test(cardText + ' ' + sellerText);
                 const isFull = salesText.includes('full') || 
                                $(element).find('.ui-search-item__shipping--full, .andes-badge--fulfillment, [class*="fulfillment"]').length > 0 ||
-                               $(element).find('svg[class*="full"], svg[aria-label*="Full"], svg[aria-label*="FULL"]').length > 0;
+                               $(element).find('svg[class*="full"], svg[aria-label*="Full"], svg[aria-label*="FULL"]').length > 0 ||
+                               $(element).find('[aria-label*="FULL"]').length > 0;
+
+                const isBestSeller = $(element).find('#best_seller').length > 0 || cardText.includes('mais vendido');
+                if (reviewsCount === 0 && (rating >= 4.5 || isBestSeller || isOfficialStore || isFull)) {
+                    reviewsCount = isBestSeller ? 300 : (isOfficialStore || isFull ? 200 : 150);
+                }
 
                 let sellerReputation = 'Standard';
                 if (isOfficialStore) sellerReputation = 'Loja Oficial';
@@ -438,7 +448,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 else if (hasGreenReputation) sellerReputation = 'Termômetro Verde';
                 
                 // 💰 3. CAPTURA DE PREÇO E DESCONTO
-                let currentMoneyEl = $(element).find('.poly-price__current .andes-money-amount, .ui-search-price__second-line .andes-money-amount, .andes-money-amount--current').filter(function() {
+                let currentMoneyEl = $(element).find('.poly-price__current .andes-money-amount, .poly-price__amount, .ui-search-price__second-line .andes-money-amount, .andes-money-amount--current').filter(function() {
                     return $(this).closest('.poly-price__installments, .ui-search-item__group__element--installments').length === 0;
                 }).first();
                 
@@ -462,7 +472,7 @@ const parseProducts = (html, searchTerm, isProxy = false) => {
                 const price = parseFloat(`${priceFrac}.${priceCents}`);
                 
                 // 🏷️ CÁLCULO E DETECÇÃO DE PROMOÇÕES / DESCONTOS
-                const discountEl = $(element).find('.andes-money-amount__discount, .ui-search-price__discount').first();
+                const discountEl = $(element).find('.poly-price__discount-polylabel, .andes-money-amount__discount, .ui-search-price__discount, .polylabel-pill, [class*="discount"]').first();
                 const discountText = discountEl.text().trim();
                 const discountMatch = discountText.match(/(\d+)%/);
                 let discountPercent = discountMatch ? parseInt(discountMatch[1], 10) : 0;
@@ -708,16 +718,13 @@ const fetchViaProxy = async (proxyName, proxyUrl, searchTerm, category, nextProx
 };
 
 const searchViaAllOrigins = async (searchTerm, category = '') => {
-    const cacheBuster = Math.floor(Math.random() * 100);
-    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
-    // Usando /raw ao invés de /get para receber a string HTML diretamente (evita retornar objeto JSON)
+    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}`;
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
     return await fetchViaProxy('Proxy 4 (AllOrigins)', proxyUrl, searchTerm, category, fetchFromBackupAPI);
 };
 
 const searchViaRedirectProxy = async (searchTerm, category = '') => {
-    const cacheBuster = Math.floor(Math.random() * 100);
-    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
+    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}`;
     return await fetchViaProxy('Proxy 3 (Redirect)', targetUrl, searchTerm, category, searchViaAllOrigins, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
@@ -727,15 +734,13 @@ const searchViaRedirectProxy = async (searchTerm, category = '') => {
 };
 
 const searchViaBingProxy = async (searchTerm, category = '') => {
-    const cacheBuster = Math.floor(Math.random() * 100);
-    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
+    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}`;
     const proxyUrl = `https://www.bing.com/translator/?to=pt&url=${encodeURIComponent(targetUrl)}`;
     return await fetchViaProxy('Proxy 2 (Bing)', proxyUrl, searchTerm, category, searchViaRedirectProxy);
 };
 
 const searchViaStealthProxy = async (searchTerm, category = '') => {
-    const cacheBuster = Math.floor(Math.random() * 100);
-    let targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}_Discount_10-100_NoIndex_True?b=${cacheBuster}`;
+    const targetUrl = `https://lista.mercadolivre.com.br/${category ? category + '/' : ''}${encodeURIComponent(searchTerm).replace(/%20/g, '-')}`;
     const proxyUrl = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(targetUrl)}`;
     return await fetchViaProxy('Proxy 1 (Google)', proxyUrl, searchTerm, category, searchViaBingProxy);
 };
@@ -1108,7 +1113,13 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
           validateStatus: () => true
       });
 
-      if (status === 403 || (typeof html === 'string' && (html.includes('id="captcha"') || html.includes('g-recaptcha') || html.includes('Forbidden') || html.includes('suspicious-traffic')))) {
+      const isBlocked = status === 403 || status === 429 || (typeof html === 'string' && (
+          html.includes('id="captcha"') || html.includes('g-recaptcha') || 
+          html.includes('Segurança — Mercado Livre') || html.includes('abuse-web-risk') ||
+          html.includes('verificação de segurança') || html.includes('Forbidden') || html.includes('suspicious-traffic')
+      ));
+
+      if (isBlocked) {
           logger.warn(`⚠️ Bloqueio na aba de ofertas (Status ${status}). Tentando com proxy rápido...`);
           // Tentativa 1: Google Translate proxy
           const proxyUrl1 = `https://translate.google.com/translate?sl=en&tl=pt&u=${encodeURIComponent(dealsUrl)}`;
@@ -1118,7 +1129,7 @@ const searchDealsByCategory = async (categoryId, offset = 1) => {
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                       'Accept-Language': 'pt-BR,pt;q=0.9'
                   },
-                  timeout: 5000
+                  timeout: 12000
               });
               const products = parseProducts(response.data, `Ofertas ${categoryId}`, true);
               if (products.length > 0) return products;
