@@ -195,17 +195,19 @@ Por hoje encerramos nossas ofertas. Amanhã voltamos logo cedo com novos achados
     for (const targetNiche of targetNiches) {
       let item = await repository.getNextApprovedItemByNiche(targetNiche);
 
-      // 🛡️ Filtro de Proteção Estrito: rejeita acessórios enganosos, hardware obsoleto, vazamento entre nichos e links que não sejam meli.la
+      // 🛡️ Filtro de Proteção Estrito: rejeita acessórios enganosos, hardware obsoleto e vazamento entre nichos
+      // Links ML aceitos: meli.la (curto oficial) ou link longo com tag de afiliado matt_tool
+      const isBadMlLink = (lnk) => lnk && (lnk.includes('mercadolivre.com') || lnk.includes('mercadolibre.com')) && !lnk.includes('meli.la') && !lnk.includes('matt_tool=');
       while (item && (
         isDeceptiveAccessory(item) || 
         isObsoleteHardware(item) || 
         !isProductMatchingNiche(item, targetNiche) ||
-        (env.requireMeliShortlink && item.link && (item.link.includes('mercadolivre.com') || item.link.includes('mercadolibre.com')) && !item.link.includes('meli.la'))
+        isBadMlLink(item.link)
       )) {
         let reason = 'acessório/suporte em vez de produto principal';
         if (isObsoleteHardware(item)) reason = 'hardware antigo/obsoleto';
         else if (!isProductMatchingNiche(item, targetNiche)) reason = `incompatível com o nicho ${targetNiche}`;
-        else if (env.requireMeliShortlink && item.link && !item.link.includes('meli.la')) reason = 'não possui link curto oficial meli.la';
+        else if (isBadMlLink(item.link)) reason = 'link ML inválido (sem meli.la nem tag de afiliado)';
 
         logger.warn(`🚫 [PublisherJob] Rejeitando produto da fila ID ${item.id} ("${item.title}") por: ${reason}.`);
         await repository.deleteProductAndQueueItem(item.product_id, item.description);

@@ -162,8 +162,8 @@ const captureTask = async () => {
       // ─── 5. Captura das Abas Oficiais de Ofertas do Mercado Livre ──────────────
       // Categorias: MLB1574 (Casa/Decoração) e MLB5726 (Eletro) para Casa;
       // MLB1648 (Informática), MLB1144 (Games/PS5), MLB1051 (Celulares/S25/iPhone) e MLB1000 (Smart TVs/Eletrônicos) para Informática/Tech
-      const dealsCategories = currentNiche === 'pc_gamer' 
-        ? ['MLB1648', 'MLB1144', 'MLB1051', 'MLB1000'] 
+      const dealsCategories = currentNiche === 'pc_gamer'
+        ? ['MLB1648', 'MLB1144', 'MLB1051', 'MLB1000']
         : ['MLB1574', 'MLB5726'];
       const dealsOffsets = [1, 49, 97]; // Coleta até 3 páginas por categoria
 
@@ -327,12 +327,10 @@ const captureTask = async () => {
 
         if (!finalLink) continue;
 
-        if (env.requireMeliShortlink && (finalLink.includes('mercadolivre.com') || finalLink.includes('mercadolibre.com')) && !isMeliShortLink) {
-          logger.warn(`⏩ Ignorando produto "${product.title}" pois requer exclusivamente o link oficial encurtado meli.la.`);
-          continue;
-        }
+        // Aceita: meli.la, shope.ee, amazon, ou link ML oficial com tag de afiliado (matt_tool)
+        const isMlAffiliateLink = finalLink && (finalLink.includes('mercadolivre.com') || finalLink.includes('mercadolibre.com')) && finalLink.includes('matt_tool=');
 
-        if (!isMeliShortLink && !isShopeeLink && !isAmazonLink) {
+        if (!isMeliShortLink && !isShopeeLink && !isAmazonLink && !isMlAffiliateLink) {
           logger.warn(`⏩ Ignorando produto "${product.title}" pois o link gerado não é um link oficial aceito.`);
           continue;
         }
@@ -361,7 +359,7 @@ const captureTask = async () => {
                   isActive: 1
                 });
               }
-            } catch (_) {}
+            } catch (_) { }
           }
           // Atualiza o cache local para evitar duplicações no mesmo lote
           if (mlbId) existingMlbIds.add(mlbId);
