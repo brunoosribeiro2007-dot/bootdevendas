@@ -122,16 +122,33 @@ const sendInviteTask = async (force = false) => {
       return { success: false, reason: 'whatsapp_not_ready' };
     }
 
-    // Carrega a imagem do meme se disponível
-    const memePath = path.resolve(__dirname, '../assets/convide_amigo.jpg');
-    let imageBuffer = null;
-    if (fs.existsSync(memePath)) {
-      try {
-        imageBuffer = fs.readFileSync(memePath);
-      } catch (err) {
-        logger.warn(`[InviteJob] Não foi possível ler imagem do meme (${err.message}). Usando texto puro.`);
+    // Carrega imagens personalizadas por nicho ou fallback
+    const defaultMemePath = path.resolve(__dirname, '../assets/convide_amigo.jpg');
+    const gamerBannerPath = path.resolve(__dirname, '../assets/convide_amigo_gamer.jpg');
+    const casaBannerPath = path.resolve(__dirname, '../assets/convide_amigo_casa.jpg');
+
+    let defaultBuffer = null;
+    let gamerBuffer = null;
+    let casaBuffer = null;
+
+    if (fs.existsSync(gamerBannerPath)) {
+      try { gamerBuffer = fs.readFileSync(gamerBannerPath); } catch (e) {
+        logger.warn(`[InviteJob] Falha ao ler banner gamer (${e.message}).`);
       }
     }
+    if (fs.existsSync(casaBannerPath)) {
+      try { casaBuffer = fs.readFileSync(casaBannerPath); } catch (e) {
+        logger.warn(`[InviteJob] Falha ao ler banner casa (${e.message}).`);
+      }
+    }
+    if (fs.existsSync(defaultMemePath)) {
+      try { defaultBuffer = fs.readFileSync(defaultMemePath); } catch (e) {
+        logger.warn(`[InviteJob] Falha ao ler imagem padrão (${e.message}).`);
+      }
+    }
+
+    const imageGamer = gamerBuffer || defaultBuffer;
+    const imageCasa = casaBuffer || defaultBuffer;
 
     const results = { casa: false, gamer: false };
 
@@ -140,8 +157,8 @@ const sendInviteTask = async (force = false) => {
     if (targetCasa) {
       const msgCasa = buildInviteMessageCasa(env.linkInviteCasa);
       try {
-        if (imageBuffer && typeof publisher.sendImageMessage === 'function') {
-          results.casa = await publisher.sendImageMessage(imageBuffer, msgCasa, targetCasa);
+        if (imageCasa && typeof publisher.sendImageMessage === 'function') {
+          results.casa = await publisher.sendImageMessage(imageCasa, msgCasa, targetCasa);
         } else {
           results.casa = await publisher.sendTextMessage(msgCasa, targetCasa);
         }
@@ -159,8 +176,8 @@ const sendInviteTask = async (force = false) => {
     if (targetGamer) {
       const msgGamer = buildInviteMessageGamer(env.linkInvitePcGamer);
       try {
-        if (imageBuffer && typeof publisher.sendImageMessage === 'function') {
-          results.gamer = await publisher.sendImageMessage(imageBuffer, msgGamer, targetGamer);
+        if (imageGamer && typeof publisher.sendImageMessage === 'function') {
+          results.gamer = await publisher.sendImageMessage(imageGamer, msgGamer, targetGamer);
         } else {
           results.gamer = await publisher.sendTextMessage(msgGamer, targetGamer);
         }
@@ -172,12 +189,14 @@ const sendInviteTask = async (force = false) => {
 
     // Se nenhum grupo específico estiver definido, tenta destino padrão
     if (!targetCasa && !targetGamer) {
-      const defaultMsg = env.niche === 'pc_gamer'
+      const isGamer = env.niche === 'pc_gamer';
+      const defaultMsg = isGamer
         ? buildInviteMessageGamer(env.linkInvitePcGamer)
         : buildInviteMessageCasa(env.linkInviteCasa);
+      const chosenImage = isGamer ? imageGamer : imageCasa;
 
-      if (imageBuffer && typeof publisher.sendImageMessage === 'function') {
-        results.default = await publisher.sendImageMessage(imageBuffer, defaultMsg);
+      if (chosenImage && typeof publisher.sendImageMessage === 'function') {
+        results.default = await publisher.sendImageMessage(chosenImage, defaultMsg);
       } else {
         results.default = await publisher.sendTextMessage(defaultMsg);
       }
