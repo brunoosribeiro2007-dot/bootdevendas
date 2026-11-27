@@ -324,4 +324,87 @@ router.post('/whatsapp/test', async (req, res) => {
     }
 });
 
+// Rota para atualizar os Cookies do Mercado Livre (para geração de links meli.la)
+router.post('/cookies', async (req, res) => {
+    const { cookies } = req.body || {};
+    if (!cookies || typeof cookies !== 'string') {
+        return res.status(400).json({ error: 'Envie { "cookies": "sua string de cookies aqui" }' });
+    }
+    const env = require('../config/env');
+    const cleanCookies = cookies.trim();
+    env.mlCookieString = cleanCookies;
+    try {
+        await repository.setSetting('ML_COOKIE_STRING', cleanCookies);
+    } catch (e) {
+        logger.warn('Falha ao persistir cookies no banco:', e.message);
+    }
+    logger.info('✅ Cookies do Mercado Livre atualizados com sucesso via API!');
+    res.json({ success: true, message: 'Cookies atualizados com sucesso! A geração de links meli.la agora está ativa.' });
+});
+
+router.get('/cookies', async (req, res) => {
+    const env = require('../config/env');
+    const hasCookies = Boolean(env.mlCookieString);
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <title>Atualizar Cookies Mercado Livre (meli.la)</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 650px; margin: 40px auto; padding: 20px; line-height: 1.6; color: #333; }
+                .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+                h2 { color: #2d3748; margin-top: 0; }
+                .status { padding: 10px 14px; border-radius: 6px; font-weight: bold; margin-bottom: 20px; }
+                .status-active { background: #e6fffa; color: #234e52; border: 1px solid #b2f5ea; }
+                .status-inactive { background: #fff5f5; color: #742a2a; border: 1px solid #fed7d7; }
+                textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e0; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 13px; }
+                button { background: #3182ce; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; }
+                button:hover { background: #2b6cb0; }
+                code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>🔑 Conectar Sessão do Mercado Livre para links meli.la</h2>
+                <div class="status ${hasCookies ? 'status-active' : 'status-inactive'}">
+                    Status: ${hasCookies ? '🟢 Cookies configurados no sistema' : '🔴 Nenhum cookie ativo (links em fallback)'}
+                </div>
+                <p>Para o robô gerar links oficiais <code>meli.la</code> automaticamente para cada produto, cole abaixo os cookies da sua conta de afiliado logada no Mercado Livre:</p>
+                <form id="cookieForm">
+                    <textarea id="cookies" rows="7" placeholder="Ex: cp=...; ssid=...; _csrf=...;"></textarea><br><br>
+                    <button type="submit">Salvar Cookies e Ativar meli.la</button>
+                </form>
+                <p style="font-size: 13px; color: #718096; margin-top: 20px;">
+                    <b>Como pegar seus cookies no computador:</b><br/>
+                    1. Acesse o Mercado Livre logado na sua conta.<br/>
+                    2. Pressione <code>F12</code> &gt; vá na aba <b>Rede (Network)</b> &gt; recarregue a página.<br/>
+                    3. Clique em qualquer requisição para <code>mercadolivre.com.br</code> &gt; copie o cabeçalho <code>cookie</code> e cole aqui.
+                </p>
+            </div>
+            <script>
+                document.getElementById('cookieForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const val = document.getElementById('cookies').value.trim();
+                    if (!val) return alert('Por favor, cole a string de cookies antes de salvar.');
+                    try {
+                        const res = await fetch('/cookies', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cookies: val })
+                        });
+                        const data = await res.json();
+                        alert(data.message || data.error);
+                        location.reload();
+                    } catch (err) {
+                        alert('Erro ao salvar cookies: ' + err.message);
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
+});
+
 module.exports = router;

@@ -21,45 +21,23 @@ class GamerCopywriterService {
   async shortenUrl(longUrl) {
     if (!longUrl || typeof longUrl !== 'string') return longUrl;
 
-    // Se já for um link curto, retorna direto
-    if (/meli\.la|shope\.ee|amzn\.to|t\.co|bit\.ly|is\.gd|tinyurl\.com/i.test(longUrl)) {
+    // Se já for um link curto oficial, retorna direto
+    if (/meli\.la|shope\.ee|amzn\.to/i.test(longUrl)) {
       return longUrl;
     }
 
-    // Provedor 1: is.gd (direto e sem anúncios/redirecionamentos de terceiros)
-    try {
-      const res = await axios.get(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, {
-        timeout: this.shortenerTimeout
-      });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        return res.data.trim();
+    // Se for link do Mercado Livre, limpa para o formato canônico curto oficial
+    const isMeli = longUrl.includes('mercadolivre.com') || longUrl.includes('mercadolibre.com');
+    if (isMeli) {
+      const pMatch = longUrl.match(/\/p\/(MLB\d+)/i) || longUrl.match(/\b(MLB-?\d+)\b/i);
+      const tag = env.mlAffiliateTag || 'bv20260330080614';
+      if (pMatch) {
+        const id = pMatch[1].replace('-', '');
+        if (pMatch[0].startsWith('/p/')) {
+          return `https://www.mercadolivre.com.br/p/${id}?matt_tool=${tag}`;
+        }
+        return `https://produto.mercadolivre.com.br/MLB-${id.replace('MLB', '')}?matt_tool=${tag}`;
       }
-    } catch (e) {
-      logger.debug(`is.gd falhou: ${e.message}`);
-    }
-
-    // Provedor 2: v.gd
-    try {
-      const res = await axios.get(`https://v.gd/create.php?format=simple&url=${encodeURIComponent(longUrl)}`, {
-        timeout: this.shortenerTimeout
-      });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`v.gd falhou: ${e.message}`);
-    }
-
-    // Provedor 3: TinyURL
-    try {
-      const res = await axios.get(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
-        timeout: this.shortenerTimeout
-      });
-      if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
-        return res.data.trim();
-      }
-    } catch (e) {
-      logger.debug(`TinyURL falhou: ${e.message}`);
     }
 
     return longUrl;

@@ -70,6 +70,17 @@ const startServer = async () => {
       if (env.enableSeedProducts) {
         await repository.seedInitialProductsIfEmpty();
       }
+
+      // Carrega cookies da sessão de afiliados salvos no banco, se houver
+      try {
+        const savedCookies = await repository.getSetting('ML_COOKIE_STRING');
+        if (savedCookies && savedCookies.trim()) {
+          env.mlCookieString = savedCookies.trim();
+          logger.info('🔑 Cookies do Mercado Livre recuperados das configurações do banco de dados.');
+        }
+      } catch (cookieErr) {
+        logger.debug('Aviso ao carregar cookies do banco: ' + cookieErr.message);
+      }
       break;
     } catch (err) {
       logger.error(`❌ Tentativa de conexão ao banco ${tentativa}/3 falhou: ${err.message}`);

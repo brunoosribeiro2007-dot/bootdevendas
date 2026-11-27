@@ -318,10 +318,20 @@ class FormatterService {
       }
     }
 
-    // Estratégia D: Fallback oficial do Mercado Livre com parâmetro matt_tool
-    const longAffiliateLink = `${baseLink}?matt_tool=${tag}`;
+    // Estratégia D: Fallback oficial do Mercado Livre com parâmetro matt_tool (formato limpo)
+    let cleanBaseLink = baseLink;
+    const pMatch = baseLink.match(/\/p\/(MLB\d+)/i) || baseLink.match(/\b(MLB-?\d+)\b/i);
+    if (pMatch) {
+      const id = pMatch[1].replace('-', '');
+      if (pMatch[0].startsWith('/p/')) {
+        cleanBaseLink = `https://www.mercadolivre.com.br/p/${id}`;
+      } else {
+        cleanBaseLink = `https://produto.mercadolivre.com.br/MLB-${id.replace('MLB', '')}`;
+      }
+    }
+    const cleanAffiliateLink = `${cleanBaseLink}?matt_tool=${tag}`;
     logger.warn('⚠️ FALLBACK: Retornando link oficial do Mercado Livre com tag de afiliado.');
-    return longAffiliateLink;
+    return cleanAffiliateLink;
   }
 
   /**
