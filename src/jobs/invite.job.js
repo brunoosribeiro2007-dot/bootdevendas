@@ -103,7 +103,7 @@ const sendInviteTask = async (force = false) => {
     const slotKey = `${dateStr}_${timeStr}`;
 
     if (!force) {
-      const scheduledTimes = (env.inviteScheduleHours || '12:15,19:00')
+      const scheduledTimes = (env.inviteScheduleHours || '10:00,13:00,16:30,20:00')
         .split(',')
         .map(t => t.trim());
 
@@ -212,7 +212,7 @@ const startInviteJob = () => {
     return;
   }
 
-  logger.info(`🤝 [InviteJob] Job de convites ativado. Horários configurados: ${env.inviteScheduleHours || '12:15,19:00'} (Fuso Porto Velho)`);
+  logger.info(`🤝 [InviteJob] Job de convites ativado. Horários configurados: ${env.inviteScheduleHours || '10:00,13:00,16:30,20:00'} (Fuso Porto Velho)`);
   // Roda a cada minuto para checar se o minuto atual coincide com os horários configurados
   cron.schedule('* * * * *', () => {
     sendInviteTask(false).catch(err => {

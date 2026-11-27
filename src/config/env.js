@@ -32,7 +32,7 @@ module.exports = {
   // Links de convite para compartilhamento e crescimento dos grupos
   linkInviteCasa: process.env.LINK_INVITE_CASA || 'https://chat.whatsapp.com/Ljx9pOsMFxxIBIL1omOHVM',
   linkInvitePcGamer: process.env.LINK_INVITE_PC_GAMER || 'https://chat.whatsapp.com/HLkYPwQzkGh7xUkA13p6e4',
-  inviteScheduleHours: process.env.INVITE_SCHEDULE_HOURS || '12:15,19:00',
+  inviteScheduleHours: process.env.INVITE_SCHEDULE_HOURS || '10:00,13:00,16:30,20:00',
   enableInviteJob: (process.env.ENABLE_INVITE_JOB || 'true').toLowerCase() === 'true',
 
   mlAffiliateTag: process.env.ML_AFFILIATE_TAG || 'bv20260330080614',

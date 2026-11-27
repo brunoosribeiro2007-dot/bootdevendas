@@ -16,7 +16,7 @@ describe('Invite Job - Share & Community Growth', () => {
     env.whatsappGroupPcGamer = '120363429098602670@g.us';
     env.linkInviteCasa = 'https://chat.whatsapp.com/Ljx9pOsMFxxIBIL1omOHVM';
     env.linkInvitePcGamer = 'https://chat.whatsapp.com/HLkYPwQzkGh7xUkA13p6e4';
-    env.inviteScheduleHours = '12:15,19:00';
+    env.inviteScheduleHours = '10:00,13:00,16:30,20:00';
   });
 
   test('buildInviteMessageCasa should include Casa invite link and engaging copy', () => {

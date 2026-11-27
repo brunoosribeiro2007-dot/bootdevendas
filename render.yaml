@@ -78,7 +78,7 @@ services:
       - key: LINK_INVITE_PC_GAMER
         value: "https://chat.whatsapp.com/HLkYPwQzkGh7xUkA13p6e4"
       - key: INVITE_SCHEDULE_HOURS
-        value: "12:15,19:00"
+        value: "10:00,13:00,16:30,20:00"
       - key: ENABLE_INVITE_JOB
         value: "true"
 
