@@ -319,13 +319,14 @@ const captureTask = async () => {
       }
 
       try {
-        // Gera o link oficial encurtado com rastreamento de afiliado (exclusivamente meli.la para ML)
+        // Gera o link oficial com rastreamento de afiliado (meli.la ou link direto com tag matt_tool)
         const finalLink = await formatterService.formatLink(product.link);
-        const isMeliShortLink = finalLink && finalLink.includes('meli.la');
+        const isMeliLink = finalLink && (finalLink.includes('meli.la') || finalLink.includes('mercadolivre.com'));
         const isShopeeLink = finalLink && (finalLink.includes('shope.ee') || finalLink.includes('shopee.com.br'));
+        const isAmazonLink = finalLink && (finalLink.includes('amzn.to') || finalLink.includes('amazon.com.br'));
 
-        if (!finalLink || (!isMeliShortLink && !isShopeeLink)) {
-          logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi gerado o link oficial meli.la.`);
+        if (!finalLink || (!isMeliLink && !isShopeeLink && !isAmazonLink)) {
+          logger.warn(`⏩ Ignorando produto "${product.title}" pois não foi possível gerar o link de afiliado válido.`);
           continue;
         }
 
